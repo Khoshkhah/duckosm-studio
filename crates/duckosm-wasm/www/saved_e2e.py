@@ -118,6 +118,31 @@ with sync_playwright() as p:
     assert pathlib.Path(dl.value.path()).stat().st_size == cut_len, (pathlib.Path(dl.value.path()).stat().st_size, cut_len)
     print(f"the cut file ({cut_len} bytes) is kept with the area and downloads after a restore")
 
+    # the saved area keeps the column `tags` of every features table (as after a build); only a download has none (duckOSM's GeoParquet export)
+    cols = page.evaluate("window.duckApi.query('DESCRIBE features.buildings').then((r) => r.toArray().map((x) => x.column_name))")
+    assert "tags" in cols, ("a restored features table has its tags column", cols)
+    n = page.evaluate("window.duckApi.query(\"SELECT count(*) AS n FROM features.buildings WHERE map_extract(tags, 'building')[1] IS NOT NULL\").then((r) => Number(r.toArray()[0].n))")
+    assert n > 100, ("the tags of the restored buildings can be read", n)
+    # the editor picks a building of the restored area with its tags
+    page.click("#step7")
+    page.wait_for_selector("#fix-panel")
+    page.click("#fix-tab-building")
+    osm_id = page.evaluate("window.duckApi.query(\"SELECT osm_id FROM features.buildings WHERE osm_type = 'way' AND map_extract(tags, 'building')[1] IS NOT NULL ORDER BY ST_Area(geom) DESC LIMIT 1\").then((r) => String(r.toArray()[0].osm_id))")
+    page.evaluate(f"window.fixesPanel.select('building', 'way', {osm_id})")
+    page.wait_for_function("/All tags in the data \\((\\d+)\\)/.test(document.getElementById('fix-obj')?.textContent || '')", timeout=30_000)
+    tags_n = int(page.evaluate("document.getElementById('fix-obj').textContent.match(/All tags in the data \\((\\d+)\\)/)[1]"))
+    assert tags_n >= 1, ("the editor shows the tags of the picked building", tags_n)
+    page.click("#fix-back")
+    # a download has no tags column: the links of the layers (blob files) and a table of an area saved before this change (no tags column) too
+    page.wait_for_selector("#feature-links a[download]", state="attached", timeout=30_000)
+    got = page.evaluate("""async () => Promise.all([...document.querySelectorAll('#feature-links a[download]')].map(async (a) => {
+        const b = new Uint8Array(await (await fetch(a.href)).arrayBuffer()); return [a.download, new TextDecoder('latin1').decode(b).includes('tags'), b.length]; }))""")
+    assert got and all(not has for _, has, _ in got), ("a downloaded features file has no tags column", [g for g in got if g[1]])
+    page.evaluate("window.duckApi.query('ALTER TABLE features.pois DROP COLUMN tags')")
+    plain = page.evaluate("window.duckApi.featuresPlain('pois').then((b) => b.length)")
+    assert plain > 100, "a table with no tags column (an older saved area) still downloads"
+    print(f"tags: a restored area keeps the tags column (the editor shows {tags_n} tags of building {osm_id}); the {len(got)} downloaded layer files have none")
+
     # a new build with fewer modes replaces the area: no walking table may come back
     page.close()
     page = open_page(ctx)

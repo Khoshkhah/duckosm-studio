@@ -116,6 +116,11 @@ with sync_playwright() as p:
         (out / "make_duckdb.sql").write_bytes(next(z.read(n) for n in names if n.endswith("/make_duckdb.sql")))
     parquet = [n for n in names if n.endswith(".parquet")]
     print(f"zip: {len(parquet)} Parquet files and", sorted(n.split("/", 1)[1] for n in names if not n.endswith(".parquet")))
+    # a features file of a download has no tags column, as duckOSM's GeoParquet export (the saved area keeps the column)
+    with zipfile.ZipFile(out / "all.zip") as z:
+        for n in parquet:
+            if "/features_" in n:
+                assert b"tags" not in z.read(n), f"{n} has a tags column"
     # the .duckdb file: tools/compare_duckdb.py compares it with the file that make_duckdb.sql makes
     t = time.time()
     with page.expect_download(timeout=120_000) as d:
@@ -140,6 +145,10 @@ with sync_playwright() as p:
     }))""")
     for name, data in files:
         (out / name).write_bytes(base64.b64decode(data))
+        if name.startswith("features_"):
+            assert b"tags" not in base64.b64decode(data), f"{name} (the link of the layer) has a tags column"
+            with zipfile.ZipFile(out / "all.zip") as z:
+                assert z.read(next(n for n in z.namelist() if n.endswith("/" + name))) == base64.b64decode(data), f"{name}: the link and the zip give different files"
     # the roads map (map/, card 6): its note, and a picture of it
     page.wait_for_function("/drawn|failed|Show on map/.test(document.getElementById('mapnote').textContent)", timeout=600_000)
     if "Show on map" in page.inner_text("#mapnote"):
