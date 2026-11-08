@@ -24,7 +24,7 @@ duckOSM writes the DuckDB form. The page gives both forms as downloads ([step 5]
 
 ## Keys that join the tables
 
-- `edge_id` (BIGINT) is a hash of `osm_id`, `source` and `target`, the same value that duckOSM 0.6.0 writes. Other projects join on it. Keep it a BIGINT in every join, because a program that reads it as a floating-point number loses digits.
+- `edge_id` (BIGINT) is a hash of `osm_id`, `source` and `target`, the same value that duckOSM writes. Other projects join on it. Keep it a BIGINT in every join, because a program that reads it as a floating-point number loses digits.
 - `source` and `target` (BIGINT) are the `node_id` values of the ends of an edge.
 - `osm_id` (BIGINT) is the OpenStreetMap way of the edge. A way with more than one edge gives more than one row with the same `osm_id`.
 - Geometry columns are `GEOMETRY('OGC:CRS84')` (longitude and latitude). The base-map layers and the doors have a `GEOMETRY` with no CRS, also in longitude and latitude.

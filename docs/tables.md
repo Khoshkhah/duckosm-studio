@@ -1,4 +1,6 @@
-# The tables that duckOSM makes and duckosm-rust does not make yet
+# The tables that duckOSM makes and duckosm-rust did not make yet
+
+Status (2026-11-08): every table of this list is done. The page and the duckOSM engine make all of them. This document is the history of that work (2026-10-22 to 2026-11-03). The tables as they are now: [the manual](manual/tables.md). The engine is in the duckOSM repository, and the name `duckosm-rust` is the old name of the engine and of the browser build.
 
 Status: group 1 done on 2026-10-22 (the result is at the end). Kaveh: "there are many tables is missed yet. we
 should first try to create them".

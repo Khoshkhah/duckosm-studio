@@ -1,6 +1,6 @@
 # Ask and query the data
 
-After a build, you can look at the tables in the page with no download:
+<p class="lead">After a build, you can look at the tables in the page with no download:</p>
 
 - **Query the tables** (card 5): write SQL.
 - **Ask the data** (the card after step 6): write a question in words. An AI service writes the SQL.

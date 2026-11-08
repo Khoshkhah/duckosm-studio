@@ -1,6 +1,6 @@
 # Step 7: Edit OSM data
 
-Use card 7 to fix errors in the OSM data of your area. Each fix is a rule in a list of changes. A rule changes nothing until you build again. [The editing cycle](cycle.md) shows where this step is. The editor is the fixes editor of [duckOSM](https://github.com/Khoshkhah/duckOSM). The same editor runs on its own with the command `duckosm edit`.
+<p class="lead">Use card 7 to fix errors in the OSM data of your area. Each fix is a rule in a list of changes. A rule changes nothing until you build again. [The editing cycle](cycle.md) shows where this step is. The editor is the fixes editor of [duckOSM](https://github.com/Khoshkhah/duckOSM). The same editor runs on its own with the command `duckosm edit`.</p>
 
 ![Card 7: Edit OSM data, with the number of fixes under its title](../img/dashboard/16-fix-card.png)
 

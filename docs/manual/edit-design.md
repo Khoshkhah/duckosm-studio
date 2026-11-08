@@ -1,6 +1,6 @@
 # Step 9: Edit design
 
-Card 9 sets the look of the map and the tile profile. You can use it at all times, also before a build. Click the card to open the panel. The panel is the design panel of [roadstyle](https://github.com/Khoshkhah/roadstyle).
+<p class="lead">Card 9 sets the look of the map and the tile profile. You can use it at all times, also before a build. Click the card to open the panel. The panel is the design panel of [roadstyle](https://github.com/Khoshkhah/roadstyle).</p>
 
 ![Card 9: the name of the design and the tile profile](../img/dashboard/26-design-card.png)
 
