@@ -2271,22 +2271,14 @@ refreshSteps();
 let fixesPanel = null;
 const fixesText = () => fixesPanel?.text() ?? null;
 const loadFixesText = (text) => fixesPanel?.load(text);
-// a road's OSM ID from a row of the dashboard's road table (the road's row -> its OSM ID)
-const osmIdOf = (row) => { const p = window.RS_SIDE?.props?.[row]; return Array.isArray(p) ? p[ROAD_KEYS.indexOf("osm_id")] : p?.osm_id; };
-// the rows of an OSM way (the editor's highlight sets): an index of the road table, made again when the table changes (a new build, the level editor)
-let wayRows = null, wayProps = null;
-const roadRows = (id) => {
-  const props = window.RS_SIDE?.props;
-  if (!props) return [];
-  if (props !== wayProps) { wayProps = props; wayRows = new Map(); props.forEach((_, i) => { const k = Number(osmIdOf(i)); wayRows.has(k) ? wayRows.get(k).push(i) : wayRows.set(k, [i]); }); }
-  return wayRows.get(Number(id)) ?? [];
-};
+// the editor reads a road's OSM ID, and the rows of an OSM way for its highlight sets, from the dashboard's road table (window.RS_SIDE.props) itself. A row of
+// that table is an array of the columns of ROAD_KEYS, so the page gives their names (roadKeys).
 // the note of card 7: the changes, and whether the networks were built with them
 const fixNoteNow = { sum: "No fixes.", why: "" };
 function fixNote(part) { Object.assign(fixNoteNow, part); $("fix-sum").textContent = [fixNoteNow.sum, fixNoteNow.why].filter(Boolean).join(" "); }
 try {
   const frame = (opts) => { const f = rs.frame({ ...opts, panel: $("sb"), back: "Steps" }); f.addEventListener("back", closeFixes); return f; };
-  fixesPanel = await initFixesPanel({ frame, duck, map, status, yaml: jsyaml, roadIdOfRow: osmIdOf, roadRows, areaKey: () => $("name").value.trim(), onChange: (text) => fixNote({ sum: text }),
+  fixesPanel = await initFixesPanel({ frame, duck, map, status, yaml: jsyaml, roadKeys: ROAD_KEYS, areaKey: () => $("name").value.trim(), onChange: (text) => fixNote({ sum: text }),
     onBuild, changesNote: "To load a file, use <b>Fixes</b> in step 4." });
   fixesPanel.restore();                           // the changes of this area name from the last visit (the panel keeps them in this browser)
   $("name").addEventListener("change", () => fixesPanel?.restore());
@@ -2308,14 +2300,20 @@ document.addEventListener("duckosm:built", () => builtOnce());
 const ABOUT = { edges: "One row is one direction of a road (an edge), with its length, speed, cost and OSM tags.", nodes: "The junctions and the ends of the roads.",
   edge_graph: "The legal turns: one row for each move from an edge to the next edge.", restrictions: "The OSM turn restrictions.",
   private_edges: "The roads that this network keeps out: private, forbidden or bus only." };
-const sqlCell = (v) => v == null ? null : typeof v === "bigint" || typeof v === "number" || typeof v === "boolean" || typeof v === "string" ? v
-  : v instanceof Uint8Array ? v : JSON.stringify(v, (k, x) => (typeof x === "bigint" ? x.toString() : x));
+// a cell of the data dock from a DuckDB value. A DECIMAL (Arrow Decimal: its String() is the unscaled integer) becomes a number with its scale, or a plain text
+// when it is too big for a number: with JSON.stringify it was a quoted text, so the table showed "\"919\"" and a chart had no numbers to draw
+const decimalCell = (v, scale) => {
+  const s = String(v), neg = s.startsWith("-"), d = (neg ? s.slice(1) : s).padStart(scale + 1, "0"), t = scale ? `${d.slice(0, -scale)}.${d.slice(-scale)}` : d, n = Number(t);
+  return Math.abs(n) < Number.MAX_SAFE_INTEGER ? (neg ? -n : n) : (neg ? "-" : "") + t;
+};
+const sqlCell = (v, type) => v == null ? null : typeof v === "bigint" || typeof v === "number" || typeof v === "boolean" || typeof v === "string" ? v
+  : v instanceof Uint8Array ? v : type?.scale != null && /^Decimal/.test(String(type)) ? decimalCell(v, type.scale) : JSON.stringify(v, (k, x) => (typeof x === "bigint" ? x.toString() : x));
 // the dock and Ask start at their first use: a new dock puts its "Data" bar under the map at once (Kaveh, 2026-11-06: no SQL panel outside Ask)
 let dataPart, askPart;
 const data = () => dataPart ??= dataDock({
   query: async (sql) => {
-    const res = await duck.query(sql), columns = res.schema.fields.map((f) => ({ name: f.name, type: String(f.type) }));
-    return { columns, rows: res.toArray().map((r) => columns.map((c) => sqlCell(r[c.name]))) };
+    const res = await duck.query(sql), fields = res.schema.fields, columns = fields.map((f) => ({ name: f.name, type: String(f.type) }));
+    return { columns, rows: res.toArray().map((r) => fields.map((f) => sqlCell(r[f.name], f.type))) };
   },
   schema: async () => {
     const tables = duck.tables.filter((t) => t.mode !== "features").map((t) => ({ name: `${t.mode}.${t.table}`, rows: t.rows, about: ABOUT[t.table] ?? "" }));
