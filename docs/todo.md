@@ -37,6 +37,19 @@ gzip; [tables.md](tables.md)). Kaveh chose it on 2026-10-23. Two other ways, for
   - The page does not know the version of roadstyle's module, so `edge_levels_meta.roadstyle_version` keeps the build's.
   - `duckosm-core` takes its levels from roadstyle `aba5884`; the map and the editor from `083224c` ([levels.md](levels.md)).
 
+## The README and the manual
+
+- **Pictures and the live page in the light and the dark theme** (Kaveh, 2026-11-08). Today the README and the manual show
+  one picture for each page, in one theme (the six README cards and the banner have a light and a dark file; the 45 pictures
+  of the manual do not). To do:
+  - Make each picture of the manual twice, in the light and in the dark theme (`docs_shots.py` and `cards_shots` make
+    the pictures; set the page's theme before each shot).
+  - Show the picture that fits the reader's theme: `<picture>` with `prefers-color-scheme` in the README, and the
+    `#only-light` and `#only-dark` marks of mkdocs-material in the manual.
+  - The live page (the links and any frame of it in the README and the manual): check if a link can open the page in a
+    chosen theme. If it cannot, ask for a link parameter in the page (roadstyle's `rsSetTheme`), and use it in the links.
+  - Check the new pictures with `mkdocs build --strict`, and on github.com in both themes.
+
 ## The tables
 
 - **Group 2** ([tables.md](tables.md)) is done: `driving.lane_profile` ([lane_profile.md](lane_profile.md)) and the
