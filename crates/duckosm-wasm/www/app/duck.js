@@ -195,7 +195,8 @@ export const loadSpatial = () => (spatial ??= duckReady.then(() => conn.query("I
 
 // duckOSM's raw.* files of the build, then duckOSM's SQL of the layers (features.sql, from the wasm module) makes features.*. Then raw.*
 // goes away: it is more than half of DuckDB's memory, the map does not read it, and no download has it (a phone has little memory).
-// Each features table also becomes features_<table>.parquet, as duckOSM's GeoParquet export (every column but tags).
+// Each features table also becomes features_<table>.parquet. The saved area keeps these files with the column `tags` (the fixes editor reads it, as after a build);
+// a download has none (duckOSM's GeoParquet export has no tags column): featuresPlain() makes that file when the person downloads.
 export async function loadFeatures(files, sql) {
   await loadSpatial();
   for (const name of ["raw_nodes.parquet", "raw_ways.parquet", "raw_relations.parquet"]) await db.registerFileBuffer(name, files[name]);
@@ -206,7 +207,7 @@ export async function loadFeatures(files, sql) {
   for (const table of names) {
     const name = `features_${table}.parquet`;
     await db.dropFile(name).catch(() => {});     // duckdb-wasm does not see a second COPY to a kept file name
-    await conn.query(`COPY (SELECT * EXCLUDE (tags) FROM features.${table}) TO '${name}' (FORMAT parquet)`);
+    await conn.query(`COPY (SELECT * FROM features.${table}) TO '${name}' (FORMAT parquet)`);
     const bytes = await db.copyFileToBuffer(name);
     await db.dropFile(name);
     const rows = Number((await conn.query(`SELECT count(*) AS n FROM features.${table}`)).toArray()[0].n);
@@ -344,8 +345,20 @@ export async function zipAll(areaName, boundary) {
   const files = { [dir + "README.txt"]: strToU8(readme), [dir + "make_duckdb.sql"]: strToU8(loadSql(areaName)),
                   [dir + "layers.json"]: strToU8(JSON.stringify({ layers }, null, 1)) };
   if (boundary) files[dir + "boundary.geojson"] = strToU8(boundary);
-  for (const t of tables) files[dir + t.name] = [t.bytes, { level: 0 }];
+  for (const t of tables) files[dir + t.name] = [t.mode === "features" ? await featuresPlain(t.table) : t.bytes, { level: 0 }];      // a features file has no tags column in a download
   return { blob: new Blob([zipSync(files)], { type: "application/zip" }), name: slug(areaName) + ".zip" };
+}
+
+// the file of a features table for a download: every column but `tags`, as duckOSM's GeoParquet export. A table that has no `tags` column (an area saved
+// before the saved area kept it) gives all its columns.
+export async function featuresPlain(table) {
+  const cols = (await conn.query(`DESCRIBE features.${table}`)).toArray().map((r) => r.column_name);
+  const name = `download_features_${table}.parquet`;
+  await db.dropFile(name).catch(() => {});
+  await conn.query(`COPY (SELECT * ${cols.includes("tags") ? "EXCLUDE (tags) " : ""}FROM features.${table}) TO '${name}' (FORMAT parquet)`);
+  const bytes = await db.copyFileToBuffer(name);
+  await db.dropFile(name);
+  return bytes;
 }
 
 // the style of the roads map: duckdb-wasm writes roads.parquet (the drawing levels of visualization.edge_levels, else from the tags)

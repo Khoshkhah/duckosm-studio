@@ -2669,7 +2669,7 @@ async function leaveEditor() {
 
 // the downloads: all files in one zip (with make_duckdb.sql), and each table: a row for each table (with what it holds), a column for each mode
 const size = (b) => (b < 2 ** 20 ? `${num(Math.max(1, b / 1024))} KB` : `${mb(b)} MB`);
-let urls = [];
+let urls = [], filesToken = 0;
 let builtFixes = null;                           // the text of the fixes that the last build (or the restored area) used
 let savedCut = null;                             // the slug of a restored area that has a cut file in the browser storage (duck.cut is null then)
 function files() {
@@ -2688,12 +2688,17 @@ function files() {
     `<div class="tb"><b>${name}</b><p>${esc(what)}</p><div class="m">` +
     modes.map((m) => duck.tables.find((t) => t.table === name && t.mode === m)).filter(Boolean).map(link).join("") + "</div></div>").join("") +
     (feats.length ? `<div class="tb"><b>features</b><p>The base-map layers (duckOSM features.*), one file each, with its number of rows. A click downloads the file. ` +
-      `The files have no tags column, as duckOSM's export. <a href="${duck.FEATURES_REFERENCE}" target="_blank" rel="noopener">The columns of each layer</a></p><div class="layers">` +
-      feats.map((t) => {
-        const u = URL.createObjectURL(new Blob([t.bytes], { type: "application/vnd.apache.parquet" }));
-        urls.push(u);
-        return `<a href="${u}" download="${esc(t.name)}" title="Download ${esc(t.name)}, ${size(t.bytes.length)}">${esc(t.table.replace(/_/g, " "))} <span>${num(t.rows)}</span></a>`;
-      }).join("") + "</div></div>" : "");
+      `The files have no tags column, as duckOSM's export (the saved area keeps it). <a href="${duck.FEATURES_REFERENCE}" target="_blank" rel="noopener">The columns of each layer</a></p><div class="layers" id="feature-links"></div></div>` : "");
+  // the links of the layers: the file of a download has no tags column (duck.featuresPlain), so each link is made now
+  const token = ++filesToken;
+  if (feats.length) Promise.all(feats.map((t) => duck.featuresPlain(t.table))).then((all) => {
+    if (token !== filesToken || !$("feature-links")) return;
+    $("feature-links").innerHTML = feats.map((t, i) => {
+      const u = URL.createObjectURL(new Blob([all[i]], { type: "application/vnd.apache.parquet" }));
+      urls.push(u);
+      return `<a href="${u}" download="${esc(t.name)}" title="Download ${esc(t.name)}, ${size(all[i].length)}">${esc(t.table.replace(/_/g, " "))} <span>${num(t.rows)}</span></a>`;
+    }).join("");
+  }).catch((e) => { if ($("feature-links")) $("feature-links").textContent = "The layer files failed: " + e.message; });
 }
 $("reference").href = duck.REFERENCE;
 // the .yaml button shows after every build (Kaveh): the fixes of the build, or, after a build with no fixes, an empty fixes file to start from
