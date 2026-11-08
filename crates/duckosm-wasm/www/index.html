@@ -2328,8 +2328,7 @@ const sqlCell = (v, type) => v == null ? null : typeof v === "bigint" || typeof 
 let dataPart, askPart;
 // what duckOSM knows about its tables (web/ask/schema.js): the tables that Ask may see (all of them, the base-map layers features.* too, but not raw.*), a note for
 // each, the main table (the edges of the driving network), the road ids of a result by a column, the first SQL line, and the text that tells the agent what the data is.
-// A table of this page has {mode, table, rows}; its `name` is the name of its file, so it is not given.
-const pageTables = () => askTables(duck.tables.map(({ mode, table, rows }) => ({ mode, table, rows })));
+const pageTables = () => askTables(duck.tables);
 const sqlQuery = async (sql) => {
   const res = await duck.query(sql), fields = res.schema.fields, columns = fields.map((f) => ({ name: f.name, type: String(f.type) }));
   return { columns, rows: res.toArray().map((r) => fields.map((f) => sqlCell(r[f.name], f.type))) };
