@@ -58,6 +58,9 @@ exclude_docs: |
   /lane_profile.md
   /bus.md
   /edge_graph.md
+  /img/cards/
+  /img/banner.svg
+  /img/banner.png
   /boundary_tool.md
   /relay.md
   /tables.md
