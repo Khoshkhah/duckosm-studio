@@ -13,3 +13,14 @@
 /* home hero */
 .md-typeset .rs-hero img { border-radius: 12px; box-shadow: 0 4px 22px rgba(0, 0, 0, .22); }
 .md-nav__link--active, .md-nav__item--active > .md-nav__link { color: var(--rs-nav-on) !important; font-weight: 600; }
+
+/* the table of contents (right): compact, a line at the left, names that wrap, the active item in the accent colour */
+.md-nav--secondary .md-nav__title { font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; font-weight: 700; box-shadow: none; background: none; }
+.md-nav--secondary .md-nav__list { border-left: 2px solid var(--md-default-fg-color--lightest); padding-left: .2rem; }
+.md-nav--secondary .md-nav__link { font-size: .68rem; line-height: 1.35; margin-top: .45em; padding-left: .55rem; margin-left: -.2rem; border-left: 2px solid transparent;
+  white-space: normal; text-overflow: clip; overflow: visible; }
+.md-nav--secondary .md-nav__list .md-nav__list { border-left: 0; margin-left: .4rem; }
+.md-nav--secondary .md-nav__link--active { border-left-color: var(--rs-nav-on); }
+.md-sidebar--secondary .md-sidebar__scrollwrap { scrollbar-width: thin; }
+.md-nav--secondary code { font-size: .95em; }
+.md-nav--secondary .md-ellipsis { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
