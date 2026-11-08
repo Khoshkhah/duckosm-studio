@@ -489,15 +489,16 @@ roads join, the length of the heads and the shape of the line ends. Everything r
 
 The card shows after a build that has `visualization.edge_levels` (each build of the page has it). The flow:
 
-1. **Edit levels.** The page follows roadstyle's `docs/rust/browser.md`, "The level editor in a page". It makes the level
-   area only when the area's edges changed: `areaIsFor(store, edge_hash)` compares the `edge_hash` of
-   `visualization.edge_levels_meta` with the hash in the store's `edges.json`. To make the area, the page runs roadstyle's
-   query `level_edges` in DuckDB (`duckosmPlan`: the edges of duckOSM's `load_roads`, one row for each `edge_id` of all
-   modes) and writes `edges.parquet`. roadstyle's `makeArea` makes the level area from it, and `saveArea` keeps it in
+1. **Edit levels.** The page follows roadstyle's `docs/rust/browser.md`, "The level editor in a page". roadstyle's `ensureArea` makes the level
+   area only when the area's edges changed: it compares the `edge_hash` of `visualization.edge_levels_meta` with the hash in the store's
+   `edges.json`. To make the area, the page gives `edges()` (`duck.levelEdges`): roadstyle's query `level_edges` in DuckDB (`duckosmPlan`: the edges of
+   duckOSM's `load_roads`, one row for each `edge_id` of all modes) as GeoParquet. roadstyle makes the level area from it and keeps it in
    this browser (`roads.parquet`, `pairs.csv`, `edges.json`, and `edits.csv` only when the store has none, so the edits
-   of an earlier session show again). The store is `browserStore("duckosm:<area name>")`, in the private file system of
-   the site. The card gives the number of roads and the warnings of `makeArea`.
-2. The editor (`levelEditor({map, panel, backLabel, pkgUrl, store, dashboard: rs, prefix: "rs-", levels, host: {replaceRoads}, look})`) keeps the page's roads
+   of an earlier session show again). The store is `browserStore("duckosm:<area name>", name, {memoryFallback: true})`, in the private file system of
+   the site; a file that the browser cannot keep stays in memory for this page (`store.lostBytes()`, and the card says so). The page calls `ensureArea`
+   after a draw, in the background, and gives the same `area` option to the editor, which makes the area once more when the store lost its files.
+   The card gives the number of roads and the warnings.
+2. The editor (`levelEditor({map, panel, backLabel, pkgUrl, store, dashboard: rs, prefix: "rs-", levels, host: {replaceRoads}, look, area})`) keeps the page's roads
    (roadstyle's `host` mode). **At open** it loads the area into its worker and draws its panel: the map does not change, and the editor builds no roads and no tiles of its own
    (Burnaby, 151,770 roads, quiet machine: 2.0 s the first time, with the area made, and 1.5 s the next time; on a machine that other work loads, 3.7 s and 1.9 s, against 34.8 s and 16.4 s when the editor built its own roads and tiles: 15.5 s and 11.1 s on a quiet machine). A test
    keeps it so: the editor's worker gets no `build`, `draw` or `tile` call (`editor_e2e.py`). **At a change** the editor gives `replaceRoads` the rows of the edges that changed, and the page's map

@@ -2471,41 +2471,17 @@ try {
 } catch (e) { openWhy[9] = "The design panel did not start: " + e.message; refreshSteps(); }
 window.designPanel = designPanel;                 // for the tests (design_e2e.py)
 
-// ---- card 8: roadstyle's level editor on the page's map (docs/app.md). The page makes the level area from the tables (makeArea) and keeps
-// it in this browser (browserStore, one for each area name). The editor uses the page's dashboard, map and roads (host mode): the page's roads
+// ---- card 8: roadstyle's level editor on the page's map (docs/app.md). roadstyle makes the level area from the page's edges (ensureArea, and the option
+// `area` of the level editor) and keeps it in this browser (browserStore, one for each area name). The editor uses the page's dashboard, map and roads (host mode): the page's roads
 // stay, and replaceRoads draws the edited edges again in the map worker. The editor solves and cuts no tiles of its own. Its pick adds
 // road and the line ends to the rows of window.RS_SIDE (destroy takes them off). Apply first writes the editor's levels.csv into the tables
 // (visualization.edge_levels), and then the page draws its roads again. ----
 let lookText = null;                                // the page's look (map/look.json), for the editor
-let editor = null, editorStore = null, editedMap = false;   // editedMap: the map has levels that the tables do not have
+let editor = null, editorStore = null, editedMap = false;   // editedMap: the map has redrawn edges that the tables do not have (replaceRoads)
 const editNote = (t) => { $("editnote").textContent = t + lostNote(); };
-// The area's files in this browser (roadstyle's browserStore: the texts in localStorage, which has about 5 MB for the site). A file that
-// the browser cannot keep (Burnaby's pairs.csv is larger; a full storage) stays in memory for this page, and the card says so.
-// ponytail: memory only, lost at a reload; roadstyle moves the large texts to the private file system later.
-function fallbackStore(store) {
-  const mem = new Map();
-  let lost = 0;
-  return { key: store.key, name: store.name, lostBytes: () => lost,
-    async load(n, bytes) { const t = performance.now(); try { return mem.has(n) ? mem.get(n) : await store.load(n, bytes); } finally { lap(`store.load ${n}`, t); } },
-    async save(n, data) {
-      const t0 = performance.now();
-      try {
-      if (!mem.has(n)) {
-        try { return await store.save(n, data); } catch (e) { console.warn(`level editor: ${n} not kept in the browser (${e.message})`); }
-        lost += typeof data === "string" ? data.length : data.byteLength;
-      }
-      mem.set(n, { body: data, mtime: Date.now() / 1000 });
-      } finally { lap(`store.save ${n} (${(typeof data === "string" ? data.length : data.byteLength) >> 10} KB)`, t0); }
-    } };
-}
+// The area's files in this browser: roadstyle's browserStore with memoryFallback (a file that the browser cannot keep stays in memory for this page: lostBytes()).
 const lostNote = () => editorStore?.lostBytes() ? ` The browser could not keep the area files (${num(editorStore.lostBytes() / 2 ** 20, 1)} MB): ` +
   "your edits stay only until you close the page; download edits.csv to keep them." : "";
-// the editor's worker can stop (no memory, a file that does not load): its waiting calls are then rejected with this text
-const workerStopped = (e) => {
-  const m = String(e.reason?.message ?? e.reason ?? "");
-  if (editor && m.includes("the worker stopped")) editNote(`The level editor's worker stopped (${m}). Close the editor and open it again.`);
-};
-window.addEventListener("unhandledrejection", workerStopped);
 function editing(on) {
   document.body.classList.toggle("editing", on);  // the editor holds the page's one panel (roadstyle's editor hides the steps and the title and puts them back)
   if (!on) padMap();                              // the page's sheet in its state again, and the map's padding for it
@@ -2546,38 +2522,22 @@ async function replaceRoads(rows) {
   window.relevelCounts = r.counts;                // for editor_e2e.py
 }
 // The editor's level area, made before the open: after a draw (in the background) or at the open, once for each build (areaPrep is reset by a
-// build and by Apply). The steps are in window.lvTimes (lap).
+// build and by Apply). roadstyle's ensureArea makes the area only when the edges of the build's levels changed (their edge hash), and starts the editor's
+// engine in the background, so that the open only draws the panel. The steps are in window.lvTimes (lap).
 let areaPrep = null;
 async function prepareArea() {
   window.lvTimes = [];
   const timed = (name, p) => { const t = performance.now(); return p.then((v) => { lap(name, t); return v; }); };
-  const [pkg, { levelEditor, prepareEditor, browserStore, saveArea, areaIsFor }, levels] = await Promise.all([timed("roadstyle wasm", duck.roadstyle()),
+  const [pkg, { levelEditor, ensureArea, browserStore }, levels] = await Promise.all([timed("roadstyle wasm", duck.roadstyle()),
     timed("import level_editor.js", import("./map/roadstyle/dashboard/editor/level_editor.js")), timed("storedLevels (CSV from DuckDB)", duck.storedLevels())]);
-  const store = fallbackStore(browserStore("duckosm:" + areaName, areaName));
-  // roadstyle's docs/rust/browser.md, "The level editor in a page": the area is made only when its edges changed (the store's
-  // edges.json has the edge hash of the build's levels), and the editor starts from the map's levels (levels), with no solve
-  let warnings = "";
-  let t = performance.now();
-  const same = levels && await areaIsFor(store, levels.edge_hash);
-  lap(`areaIsFor = ${!!same}`, t);
-  if (!same) {
-    t = performance.now();
-    const edges = await duck.levelEdges();
-    lap("level_edges SQL", t);
-    t = performance.now();
-    const a = pkg.makeArea(edges, JSON.stringify({ id_col: "edge_id" }));
-    lap("makeArea", t);
-    t = performance.now();
-    await saveArea(store, a, levels?.edge_hash ?? "");
-    lap("saveArea", t);   // edits.csv only when the store has none: the edits of an earlier session stay
-    window.editorArea = { roads: a.roadCount, pairs: a.pairCount, warnings: a.warnings };   // for editor_e2e.py
-    if (a.warnings.length) warnings = `. Warnings: ${a.warnings.join("; ")}`;
-    a.free();
-  }
-  // the editor's engine (its worker and the area in it), made now in the background, so that the open only draws the panel; the open finds it by the
-  // edge hash (it is the same until the edges change), also after Apply
-  if (levels?.edge_hash) prepareEditor({ store, pkgUrl: editorPkgUrl(), look: await editorLook(), edgeHash: levels.edge_hash }).catch(() => {});
-  return { levelEditor, store, levels, warnings };
+  const store = browserStore("duckosm:" + areaName, areaName, { memoryFallback: true });
+  // the page's part: the edges of the area (GeoParquet) and their edge hash; the editor gets the same `area` at the open (it makes the area once more when the store lost its files)
+  const area = { edges: duck.levelEdges, edgeHash: levels?.edge_hash ?? "", idCol: "edge_id", pkg };
+  const t = performance.now();
+  const info = await ensureArea({ store, pkgUrl: editorPkgUrl(), look: await editorLook(), ...area });
+  lap(`ensureArea (made: ${info.made})`, t);
+  if (info.made) window.editorArea = { roads: info.roadCount, pairs: info.pairCount, warnings: info.warnings };   // for editor_e2e.py
+  return { levelEditor, store, levels, area, warnings: info.warnings?.length ? `. Warnings: ${info.warnings.join("; ")}` : "" };
 }
 // the worker loads roadstyle's module by this URL (the deploy puts its version on it, version_refs.py)
 const editorPkgUrl = () => new URL("./map/pkg/roadstyle_wasm.js", location.href);
@@ -2592,9 +2552,7 @@ async function openEditor() {
   try {
     editorStore = null;                           // the note of a store of an earlier area goes
     const t0 = performance.now();
-    // the area made before: its files can be gone (the browser cleared the private file system, a full storage), and the editor draws its roads from them
-    if (areaPrep && (await (await areaPrep).store.load("roads.parquet")) == null) areaPrep = null;
-    const { levelEditor, store, levels, warnings } = await (areaPrep ??= prepareArea());
+    const { levelEditor, store, levels, area, warnings } = await (areaPrep ??= prepareArea());
     editorStore = store;
     let t;
     t = performance.now();
@@ -2604,24 +2562,23 @@ async function openEditor() {
     openBusy();                                   // the draw put the box away
     lap(`page's roads (shown before: ${roadsShown})`, t);
     editedMap = false;
-    window.rsDeselect?.();
-    document.querySelectorAll(".maplibregl-popup").forEach((p) => p.remove());
     const pkgUrl = editorPkgUrl();
     t = performance.now();
     // `host`: the editor keeps the page's roads (it builds no roads or tiles of its own) and gives replaceRoads the edges that a change redrew;
-    // `look`: the page's saved look, in which the editor finds the page's select and hover colours (it swaps them for its red and blue picks)
+    // `look`: the page's saved look, in which the editor finds the page's select and hover colours (it swaps them for its red and blue picks);
+    // `area`: the editor makes the level area itself (once more when the store lost its files); it takes the page's selected road and popups off at the open
     editor = await levelEditor({ map, panel: $("sb"), backLabel: "Steps", pkgUrl, store, dashboard: rs, prefix: "rs-", levels: levels ?? undefined,
-      host: { edgeIdCol: "edge_id", replaceRoads }, look: await (lookText ??= duck.pageLookText()) });
+      host: { edgeIdCol: "edge_id", replaceRoads }, look: await editorLook(), area });
+    if (editor.areaInfo?.made) window.editorArea = { roads: editor.areaInfo.roadCount, pairs: editor.areaInfo.pairCount, warnings: editor.areaInfo.warnings };   // for editor_e2e.py
     lap("levelEditor()", t);
     lap("open, all", t0);
     editorStore = store;
     const made = `${num(editor.roads.length)} roads` + warnings;
     window.levelEditorOpen = editor;              // for editor_e2e.py
-    // "solved": after each change (since roadstyle 6be68c2 a head or a cap is drawing only, with no solve)
-    editor.addEventListener("solved", () => {
-      editedMap = true;                           // the editor has levels that the tables do not have
-      editNote(`${made}. Changed: ← Steps applies the new drawing order.`);
-    });
+    // "solved": after each change the card says that ← Steps applies it (editor.dirty tells it at the leave)
+    editor.addEventListener("solved", () => editNote(`${made}. Changed: ← Steps applies the new drawing order.`));
+    // the editor's worker stopped (no memory, a file that does not load)
+    editor.addEventListener("error", (e) => editNote(`The level editor's worker stopped (${e.detail.message}). Close the editor and open it again.`));
     editor.addEventListener("back", leaveEditor);  // "← Steps" (with changes waiting, after the editor's own Apply, Discard or Stay)
     editing(true);
     editNote(`${made}, open in ${num((performance.now() - t0) / 1000, 1)} s`);
@@ -2629,9 +2586,7 @@ async function openEditor() {
     // the editor did not start: its panel goes, and the page's roads are drawn again
     editing(false);
     showRoads();
-    const stale = areaPrep && /make the area first/.test(e.message);   // the browser's files of the area went after the area was made: once more
     areaPrep = null;
-    if (stale) return openEditor();
     editNote("The level editor failed: " + e.message);
   } finally {
     if (!drawing) rs.mapBusy(null);
@@ -2641,13 +2596,13 @@ async function openEditor() {
 // downloads). Nothing applied: the tables stay as they are.
 async function leaveEditor() {
   const tClose = performance.now();
-  if (!editedMap) { closeEditor(); lap("← Steps (no change)", tClose); return editNote("Closed. No change."); }
+  if (!editor.dirty) { closeEditor(); lap("← Steps (no change)", tClose); return editNote("Closed. No change."); }
   try {
     editNote("writing the drawing order into the tables…");
-    const text = async (n) => (await editorStore.load(n))?.body ?? "";
-    const inputs = { "edits.csv": await text("edits.csv"), "heads.csv": await text("heads.csv"), "caps.csv": await text("caps.csv") };
+    const out = await editor.exportFiles();       // the four files as texts, before the editor goes (destroy)
+    const inputs = { "edits.csv": out["edits.csv"], "heads.csv": out["heads.csv"], "caps.csv": out["caps.csv"] };
     const t = performance.now();
-    await duck.saveLevels(await text("levels.csv"), inputs, "this browser: " + areaName);
+    await duck.saveLevels(out["levels.csv"], inputs, "this browser: " + areaName);
     lap("saveLevels (write the tables)", t);
     // the tables have the new levels: the next open gets them (the area and the editor's engine stay: the edges are the same)
     if (areaPrep) areaPrep = areaPrep.then(async (p) => ({ ...p, levels: await duck.storedLevels() })).catch(() => null);
