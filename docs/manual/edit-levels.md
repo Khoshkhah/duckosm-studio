@@ -1,6 +1,6 @@
 # Step 8: Edit levels
 
-Use card 8 when two roads cross or meet on the map and the wrong road is on top. The card opens the level editor in a panel.
+Use card 8 when two roads cross or meet on the map and the wrong road is on top. The card opens the level editor of [roadstyle](https://github.com/Khoshkhah/roadstyle) in a panel.
 
 ![The level editor: two roads are picked, and the apply bar has one change](../img/dashboard/36-levels-editor.png)
 

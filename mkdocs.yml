@@ -1,5 +1,5 @@
 site_name: duckOSM Studio
-site_description: An OpenStreetMap file to a routable road network (GeoParquet and DuckDB), equal to duckOSM 0.6.0. A browser page. duckOSM has the command line and Python.
+site_description: Build the routable road network of any area from OpenStreetMap data in your browser, fix the OSM data, style the map and export the result. The tables are the same as the tables of duckOSM.
 site_url: https://khoshkhah.github.io/duckosm-studio/manual/
 repo_url: https://github.com/Khoshkhah/duckosm-studio
 repo_name: Khoshkhah/duckosm-studio
