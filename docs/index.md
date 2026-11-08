@@ -21,9 +21,10 @@ Choose an area. The page builds the driving, walking and cycling networks. Fix t
 - **Nothing to install.** Open the page and start.
 - **A routable network.** Each edge has a length, a speed and a travel time. The build applies the turn restrictions.
 - **A stable `edge_id`.** The same road has the same `edge_id` in every build.
-- **Fast.** Estonia takes 19 seconds ([benchmark](https://github.com/Khoshkhah/duckosm-studio/blob/main/docs/benchmark.md)).
+- **Fast.** Monaco builds in less than one second. Estonia (a 121 MB region file) builds its driving network in about 10 seconds, and it needs about 710 MiB of memory (measured on 2026-10-22; see [the design](https://github.com/Khoshkhah/duckosm-studio/blob/main/docs/design.md), section 7, "Memory and streaming").
 - **The same tables as [duckOSM](https://github.com/Khoshkhah/duckOSM).**
 - **A fix loop.** Change a road, a building, a node or a turn rule. Build again.
+- **Ask the data.** Query the tables with SQL, or ask a question in words. The roads of the result light on the map, and the answer can be a chart.
 - **Export** to PMTiles, MBTiles, GeoPackage, GeoJSON, kepler.gl, MATSim and SUMO.
 
 ## Read the manual
