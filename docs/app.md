@@ -489,104 +489,25 @@ The check: `fixes_e2e.py` (Monaco). It opens the six tabs (a tab keeps its own o
 
 ### Step 8: edit the levels
 
-Kaveh's words (2026-10-24): "Add editing dashboard to duckosm rust github io dashboard". The card **Edit levels** puts
-roadstyle's level editor on the page's map. The drawing order (`visualization.edge_levels`, [levels.md](levels.md)) comes
-from the tags or from the solver. With the editor, the user changes it by hand: which road goes over which road, where two
-roads join, the length of the heads and the shape of the line ends. Everything runs in the page: GitHub Pages has no server.
+Card 8 is roadstyle's level-edit part (`levelEditPart`, `map/roadstyle/dashboard/editor/level_part.js`, [the manual](manual/edit-levels.md)). The part makes the card, the
+store of the files of each area (`browserStore`, one for each area name, `areaName()`), the level area (`ensureArea`), the open, the close ("← Steps"), the redraw of the changed
+edges and the write-back of the result. The page gives the part its map, its dashboard and the data:
 
-The card shows after a build that has `visualization.edge_levels` (each build of the page has it). The flow:
+- `duck.levelsData()` is roadstyle's `duckosmLevelsData` for duckOSM's tables. It gives `edges()` (the query `level_edges` as GeoParquet), `storedLevels()` and
+  `saveLevels()` (the editor's `levels.csv`, `edits.csv`, `heads.csv` and `caps.csv` go into `visualization.edge_levels` and its tables). The page keeps its downloads: `before` drops
+  what the page drew from the old levels, and `after` puts the Parquet bytes of the written tables into `tables`. Each call reads `db` and `conn` when it runs, because the page asks
+  for the adapter at its start, before the database exists.
+- `relevel(rows)` is the page's map worker, which draws only the changed edges again. `useStyle` is the page's swap of a new roads style (the boundary and the overview stay).
+  `ensureRoads` draws the page's roads when the editor opens before them. `roadCount` is the number of roads for the limit of a browser page.
+- The page calls `levelPart.reset()` at each build and restore, and `levelPart.prepare()` after the first draw, so that the first open is as fast as the next ones.
 
-1. **Edit levels.** The page follows roadstyle's `docs/rust/browser.md`, "The level editor in a page". roadstyle's `ensureArea` makes the level
-   area only when the area's edges changed: it compares the `edge_hash` of `visualization.edge_levels_meta` with the hash in the store's
-   `edges.json`. To make the area, the page gives `edges()` (`duck.levelEdges`): roadstyle's query `level_edges` in DuckDB (`duckosmPlan`: the edges of
-   duckOSM's `load_roads`, one row for each `edge_id` of all modes) as GeoParquet. roadstyle makes the level area from it and keeps it in
-   this browser (`roads.parquet`, `pairs.csv`, `edges.json`, and `edits.csv` only when the store has none, so the edits
-   of an earlier session show again). The store is `browserStore("duckosm:<area name>", name, {memoryFallback: true})`, in the private file system of
-   the site; a file that the browser cannot keep stays in memory for this page (`store.lostBytes()`, and the card says so). The page calls `ensureArea`
-   after a draw, in the background, and gives the same `area` option to the editor, which makes the area once more when the store lost its files.
-   The card gives the number of roads and the warnings.
-2. The editor (`levelEditor({map, panel, backLabel, pkgUrl, store, dashboard: rs, prefix: "rs-", levels, host: {replaceRoads}, look, area})`) keeps the page's roads
-   (roadstyle's `host` mode). **At open** it loads the area into its worker and draws its panel: the map does not change, and the editor builds no roads and no tiles of its own
-   (Burnaby, 151,770 roads, quiet machine: 2.0 s the first time, with the area made, and 1.5 s the next time; on a machine that other work loads, 3.7 s and 1.9 s, against 34.8 s and 16.4 s when the editor built its own roads and tiles: 15.5 s and 11.1 s on a quiet machine). A test
-   keeps it so: the editor's worker gets no `build`, `draw` or `tile` call (`editor_e2e.py`). **At a change** the editor gives `replaceRoads` the rows of the edges that changed, and the page's map
-   worker redraws only those edges and the edges at their end nodes (`relevel`: stage 1 of the area again, 1.0 s on Burnaby; then the visible tiles load again from the map
-   worker, which keeps its tiles and cuts again only the pieces of the changed edges). A head or a cap on Burnaby: 2.0 to 2.5 s until the map is drawn (before: 8.6 to 11.7 s with the same load).
-   MapLibre 5 has no `source.reload()`: `replaceRoads` uses `setTiles` with the same URLs. The picks are the editor's: `look` (the page's
-   `map/look.json`) tells the editor the page's select and hover colours, and it swaps them in the page's road layers (a lighter red for the road that the next click picks first, a lighter blue for the
-   second, red and blue picks); the page's popup and tooltip are off while the editor is open (`quiet` of roadstyle's `select.js`); `destroy` puts the page's paint back. The tables change at **Apply** (the page reads the editor's `levels.csv` from the store at "← Steps"). The page and the editor share one road model: the page makes the area once for an edge hash (not at each open) and, in the idle time after it draws the map, makes the editor's engine (`prepareEditor`: the worker and the `LevelArea`); "← Steps" keeps the engine, and the next open (also after Apply: the edges are the same) uses it. Burnaby: Edit levels 0.8 s the first time, 0.4 s the next. At "← Steps" the page writes the tables and does not draw the map again, because the map worker already has the changes (Burnaby: 1.2 s, against 9.6 s with a new draw). `levels` is the build's `visualization.edge_levels` as CSV text,
-   with the `edge_hash` of `edge_levels_meta` (`duck.storedLevels()`). The editor starts from its stored `levels.csv`
-   when it was solved for the same inputs (roadstyle `6be68c2`: the SHA-256 of `roads.parquet`, `pairs.csv` and
-   `edits.csv`), else from the build's levels (since `083224c`); it solves the whole area only when neither fits. Its panel (roadstyle's `level_editor.html`) is on the right of the
-   map. A click on a road picks it. The panel has the cards with the ends and the heads, and the tabs Edit, History and
-   Issues (roadstyle's guide `docs/guides/levels.md`, "Fix it by hand"). The editor solves again only for a change of
-   the order rules (in the roads around the change). Since roadstyle `6be68c2`, a head or a line end (a cap) is drawing
-   only: the editor saves it and draws the map again at once, with no solve and no **Apply and solve**.
-   The check (`editor_e2e.py` counts the `solve` messages to the editor's worker, 2026-10-25, a busy machine): on
-   Monaco (6,830 roads) the first open starts from the build's levels (`given`) and the second from the stored ones
-   (`stored`), with no solve on either. The opens take 2.2–7.5 s; at `6be68c2` the first open solved (0.13–0.20 s). On
-   Burnaby (76,189 roads) the first open takes 14.1 s and the second 11.5 s, with no solve. A head or a cap change takes
-   4–13 s until the map is drawn again; of this time, the worker makes the new tiles and the road table in 1.6–2.2 s
-   (`build`), and the rest is the map's new tiles on the page.
-3. **← Steps** (after the editor's own *Apply and solve*) writes the editor's `levels.csv` into `visualization.edge_levels`. `edge_levels_meta` gets `source = 'area'`,
-   `area = 'this browser: <area name>'` and a new `created` time. `n_edges` and `edge_hash` do not change, because the
-   edges are the same. The user's own files go into `level_edits`, `level_heads` and `level_caps`, as roadstyle's
-   `save_area_levels` writes them (duckOSM's `duckosm levels` reads them back). The Parquet files, the zip and the
-   `.duckdb` download then have the new tables. The editor closes, and the map draws the roads in the new order.
-4. **← Steps** removes the editor (`destroy()`), which puts the page's road layers and the page's panel back. With changes
-   waiting, the editor first asks: apply, discard or stay. If the editor applied a change in this session, the page then writes
-   the editor's `levels.csv` into the tables as step 3 says; if it applied nothing, the tables do not change.
-5. The editor's History tab has the download of `edits.csv` (`editor.download`); the page's downloads have the files of the tables.
-
-How the editor shares the map:
-
-- A page has one roadstyle dashboard, because its state is in the module. Thus the editor uses the page's dashboard and
-  its prefix `rs-`. It does not make a second dashboard.
-- The page's roads and its base-map layers (the duckOSM layers) are in one tile source, `rs-roads`. The editor takes off
-  only the page's road layers (it finds them by their source and source layer) and keeps them to put back. Its own
-  sources have their own names (`rs-lv-roads`), so the duckOSM base-map layers and OpenFreeMap stay while the editor is
-  open. (Until roadstyle `8208486`, the editor needed the name `rs-roads`, and the base-map layers went away.)
-- The editor's tiles come from the protocol `lv://`, from roadstyle's module in the editor's own worker (`pkgUrl`: the URL of
-  `map/pkg/roadstyle_wasm.js`), not in the map worker.
-- The panel follows the page's theme (the theme tool of the bar and the system's theme): its colors are variables, with a dark set
-  for `:root[data-theme=dark]` and for the system's dark theme.
-- The editor's panel is the page's own panel (`#sb`), as roadstyle's standard host panel: the editor hides the page's steps and title and puts
-  them back with `destroy()`. There is no second panel and no page bar (before 2026-10-30 the editor had a frame, `#lvhost`, and the page had
-  a bar with Apply and Close).
-- The dashboard checks the interaction contract of each roads style (`roadstyle:contract`, since `6be68c2`). The page's
-  look is not "live", so its styles have no contract. The dashboard reads them as version 1 and writes an info line in
-  the console, not an error.
-
-Limits:
-
-- One editor at a time. A new build closes it.
-- The editor's panel covers the right side of the map (400 px). It is not in the page's side panel.
-- The store is for each area name. If a different area gets the same name, the old edits can name roads that the new
-  area does not have.
-- Until roadstyle `65af6e6`, roadstyle's store kept the text files in `localStorage`, which has about 5 MB for the site,
-  and Burnaby's `pairs.csv` (12.2 MB) was larger (Kaveh, 2026-10-25: "exceeded the quota"). Since `65af6e6` every file
-  of the editor is in the site's private file system (OPFS); `localStorage` keeps only the save times. Burnaby's editor
-  now opens with its files kept (76,189 roads, 232,831 pairs, 23 s). If the private file system fails too (a full
-  storage), a file that the browser cannot keep stays in memory for the page, the editor opens, and card 8 says: "The browser could not keep the area files (N MB): your edits stay only until you
-  close the page; download edits.csv to keep them." `editor_e2e.py` tests it with a private file system that refuses each file over 100 KB (Monaco: 2.7 MB stays in
-  memory).
-- A build of the page has no `level_edits`, `level_heads` or `level_caps` tables. Thus the editor starts from the store
-  only, not from the tables of a file.
-- Monaco takes 2.2 to 2.9 s to open (6,830 roads, 21,476 pairs). Since roadstyle `7d4534f`, the editor solves, makes
-  its map and cuts its tiles in a Web Worker, so the page does not stop: the longest task of the main thread while
-  Monaco opens is 0.16 s. `makeArea` still runs in the main thread. A larger area was not tested in the page.
-- If the editor's worker stops (no memory, a file that does not load), its waiting calls fail, and card 8 says so.
-  Close the editor and open it again.
-- `edge_levels_meta.roadstyle_version` keeps the value of the build: the page does not know the version of roadstyle's
-  module.
-
-The check `editor_path_e2e.py` is the editor as a person uses it, with real clicks: build Monaco, Show on map, **Edit levels**, pick two roads on the map, choose their order and add it to the list, **← Steps** with the change waiting (the bar asks: Stay, Discard, Apply), Stay, **Apply and solve**, **← Steps**: the steps come back and the edit is in the tables. It runs on a computer (light and dark) and on a phone (390 × 844, touch), and checks the seven base maps.
-
-The check: `editor_e2e.py` (headless Chromium, Monaco through the File tab). It opens the editor, makes one edit with
-`window.lvApi` (an end head of 7 m) and leaves with **← Steps**, which applies it. Then it checks the tables in the page and in the
-`.duckdb` download, a map of one mode, the duckOSM base-map layers while the editor is open, and **← Steps** with no change. It writes `editor.png` and
-`editor-dark.png` (the dark theme).
+The editor keeps the page's roads (roadstyle's `host` mode) and has two tabs for changes: **Road ends** (one road) and **Stacking** (two roads). The tests are `editor_e2e.py`
+(Monaco: the open, the second open from the stored levels, a head and a cap, Apply, Close, a full storage), `editor_path_e2e.py` (a computer, the dark theme and a phone) and
+`parts_e2e.py`.
 
 ### Step 9: design
+
+Card 9 is roadstyle's design-edit part (`designEditPart`): the card, the design panel, its storage and its tabs come from roadstyle. The page gives the data (`look`, `saveDesign`, `setLook`, `redraw`) and one host tab, **Tiles** (the tile profile).
 
 Card 9 sets the style of the map and the profile of the tiles (the guide is in [the manual](manual/edit-design.md)). The panel is roadstyle's design panel (`map/roadstyle/dashboard/design/`, roadstyle `docs/guides/design-panel.md`), which `build.sh` copies at `ROADSTYLE_COMMIT`. It is on at all times, because the design does not need a build.
 

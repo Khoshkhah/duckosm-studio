@@ -3,6 +3,7 @@
 // roadstyle's SQL for the map module's input (rust/roadstyle-wasm/js/ at ROADSTYLE_COMMIT, copied by build.sh)
 import { readCatalog } from "../map/roadstyle/roads_sql.js";
 import { writeFeatures } from "../map/roadstyle/features_sql.js";
+import { duckosmLevelsData } from "../map/roadstyle/levels_sql.js";   // roadstyle's adapter of the level editor for duckOSM's tables (the same roadstyle commit as the engine)
 // roadstyle's Rust module in the page (map/pkg/): roads_sql.js and features_sql.js ask it for their SQL, and the level editor solves with
 // it. It loads the first time that the page needs it.
 import init, * as roadstylePkg from "../map/pkg/roadstyle_wasm.js";
@@ -644,70 +645,23 @@ export async function relevel(rows) {
   return r.style ? { ...r, style: inFormat(r.style) } : r;
 }
 
-// The level editor (card 7, docs/app.md): the edges of the build's level area (duckOSM's load_roads: roadstyle's query level_edges), as
-// the bytes of edges.parquet for roadstyle's makeArea
-// the stored levels for the level editor (levelEditor's `levels`): the edge hash of visualization.edge_levels_meta and
-// visualization.edge_levels as CSV text; null when the build has no levels
-export async function storedLevels() {
-  if (!tables.some((t) => t.mode === "visualization" && t.table === "edge_levels_meta")) return null;
-  const meta = (await conn.query("SELECT edge_hash FROM visualization.edge_levels_meta")).toArray()[0];
-  if (!meta) return null;
-  try {
-    await db.dropFile("levels.csv").catch(() => {});
-    await conn.query("COPY (SELECT edge_id AS edge, casing_start, casing_level, casing_end, fill_level FROM visualization.edge_levels) " +
-      "TO 'levels.csv' (HEADER)");
-    return { edge_hash: String(meta.edge_hash), csv: new TextDecoder().decode(await db.copyFileToBuffer("levels.csv")) };
-  } finally {
-    await db.dropFile("levels.csv").catch(() => {});
-  }
-}
-
-export async function levelEdges() {
-  const rs = await roadstyle();
-  const plan = JSON.parse(rs.duckosmPlan(JSON.stringify(await readCatalog(rows, "memory")), "all", true, "[]"));
-  try {
-    await db.dropFile("edges.parquet").catch(() => {});
-    await conn.query(`COPY (${plan.level_edges}) TO 'edges.parquet' (FORMAT parquet)`);
-    return await db.copyFileToBuffer("edges.parquet");
-  } finally {
-    await conn.query(plan.drop);                  // the run's tables (none for level_edges: a plain query)
-    await db.dropFile("edges.parquet").catch(() => {});
-  }
-}
-
-// The level editor's result into the tables, as roadstyle's save_area_levels writes it: levels.csv (one row for each edge) as
-// visualization.edge_levels, edge_levels_meta with source 'area', and the editor's own files (inputs: {"edits.csv": text, ...}; an empty
-// one is left out) as level_edits, level_heads and level_caps, the text as it is and the ids BIGINT. duckOSM's `duckosm levels` reads
-// these three tables back. The Parquet files of the downloads follow; the .duckdb download reads the tables.
-const INPUTS = { "edits.csv": ["level_edits", ["a", "b"]], "heads.csv": ["level_heads", ["road"]], "caps.csv": ["level_caps", ["road"]] };
-export async function saveLevels(levelsCsv, inputs, area) {
-  forgetRoads();                                 // the levels of the roads change
-  const [meta] = await rows("SELECT n_edges FROM visualization.edge_levels_meta");
-  await db.registerFileText("levels.csv", levelsCsv);
-  const [{ n }] = await rows("SELECT count(*) AS n FROM read_csv('levels.csv', header = true)");
-  if (Number(n) !== Number(meta.n_edges)) throw new Error(`levels.csv has ${n} edges, the build has ${meta.n_edges}: open the editor again`);
-  await conn.query(`DELETE FROM visualization.edge_levels; INSERT INTO visualization.edge_levels BY NAME
-    SELECT * EXCLUDE (edge) REPLACE (CAST(cap_start AS VARCHAR) AS cap_start, CAST(cap_end AS VARCHAR) AS cap_end), edge AS edge_id
-    FROM read_csv('levels.csv', header = true, types = {'edge': 'BIGINT'})`);
-  await conn.query(`UPDATE visualization.edge_levels_meta SET source = 'area', area = '${area.replaceAll("'", "''")}',
-    created = '${new Date().toISOString().slice(0, 19)}+00:00'`);
-  const out = ["edge_levels", "edge_levels_meta"];
-  for (const [file, [table, ids]] of Object.entries(INPUTS)) {
-    if (!inputs[file]?.trim()) continue;
-    await db.registerFileText(file, inputs[file]);
-    const cast = ids.map((c) => `CAST(NULLIF("${c}", '') AS BIGINT) AS "${c}"`).join(", ");
-    await conn.query(`CREATE OR REPLACE TABLE visualization.${table} AS SELECT * REPLACE (${cast}) FROM read_csv('${file}', header = true, all_varchar = true)`);
-    out.push(table);
-  }
-  for (const table of out) {
-    const name = `${table}_visualization.parquet`;
-    await db.dropFile(name).catch(() => {});     // duckdb-wasm does not see a second COPY to a kept file name
-    await conn.query(`COPY visualization.${table} TO '${name}' (FORMAT parquet)`);
-    const bytes = await db.copyFileToBuffer(name), [{ n: count }] = await rows(`SELECT count(*) AS n FROM visualization.${table}`);
-    const t = { mode: "visualization", table, name, bytes, rows: Number(count) }, i = tables.findIndex((x) => x.name === name);
-    if (i >= 0) tables[i] = t;
-    else tables.push(t);
-  }
+// The level editor's data (card 8, docs/app.md): roadstyle's adapter for duckOSM's tables (levels_sql.js): the edges of the build's level area (roadstyle's query level_edges),
+// the stored levels (the edge hash of visualization.edge_levels_meta and visualization.edge_levels as CSV text; null when the build has no levels) and the write of the
+// editor's result into the tables (visualization.edge_levels, edge_levels_meta, level_edits, level_heads and level_caps). The page keeps its downloads: `before` drops what it
+// drew from the old levels, `after` puts the Parquet bytes of the written tables into `tables` (the .duckdb download reads the tables).
+// The page asks for it at start, before the database exists: each call reads db and conn when it runs (a new build has a new connection).
+export async function levelsData() {
+  const pkg = await roadstyle();
+  const adapter = () => duckosmLevelsData({ db, conn, pkg, catalog: "memory", before: forgetRoads,
+    after: async ({ tables: written, toParquet }) => {
+      for (const table of written) {
+        const name = `${table}_visualization.parquet`, bytes = await toParquet(table), [{ n }] = await rows(`SELECT count(*) AS n FROM visualization.${table}`);
+        const t = { mode: "visualization", table, name, bytes, rows: Number(n) }, i = tables.findIndex((x) => x.name === name);
+        if (i >= 0) tables[i] = t;
+        else tables.push(t);
+      }
+    } });
+  return { edges: () => adapter().edges(), storedLevels: () => adapter().storedLevels(), saveLevels: (f, o) => adapter().saveLevels(f, o) };
 }
 
 // the data of an area from the Overpass API: the highway ways and ferry lines in the bounding box of each outer ring, with all their

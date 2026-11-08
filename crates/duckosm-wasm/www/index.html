@@ -55,7 +55,7 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
   /* the panel's shell (position, tokens, the hide and show buttons with their icons: the markup of roadstyle's template) is dashboard.css. Here: the title of the panel. */
   /* the panel's title: h2 (roadstyle's help window puts its "?" in it); the buttons of the title row */
   .sb-top h2 { margin: 0; font-size: 16px; letter-spacing: -0.01em; text-transform: none; color: var(--ink); display: block; }
-  body.editing #sb #rs-fold-all { display: none; }
+  body[data-rs-editing] #sb #rs-fold-all { display: none; }
   /* the cards are roadstyle's cards that fold (the title row: the title button and the chevron; the box, the padding and the gap are roadstyle's card standard):
      the number, the done mark and the reason of a disabled card are in the title row; the card's own buttons ("?", the zoom to the area) are beside the chevron */
   .step { position: relative; }
@@ -408,7 +408,8 @@ import { initFixesPanel } from "./duckosm/fixes_editor/fixes_panel.js";   // duc
 import { rsKpi } from "./map/roadstyle/dashboard/kpi.js";   // roadstyle's number tile (the area of card 2)
 import * as exporter from "./app/export.js";
 import * as designLib from "./map/roadstyle/dashboard/design/design.js";      // roadstyle's design model: the boundary defaults and the changes of a design
-import { designPanel as rsDesignPanel } from "./map/roadstyle/dashboard/design/design_panel.js";   // roadstyle's design panel (card 9, roadstyle docs/guides/design-panel.md)
+import { designEditPart } from "./map/roadstyle/dashboard/design/design_part.js";   // roadstyle's design editor as one card (card 9): the card, the layout, the restore, the save, the redraw
+import { levelEditPart } from "./map/roadstyle/dashboard/editor/level_part.js";   // roadstyle's level editor as one card (card 8): the store, the area, the open, the close, the redraw, the write-back
 import * as tileProfile from "./app/profile.js";
 import { rsDashboard } from "./map/roadstyle/dashboard/index.js";   // roadstyle's map dashboard (copied by build.sh at ROADSTYLE_COMMIT)
 import { dataDock } from "./map/roadstyle/dashboard/data/data_dock.js";   // roadstyle's data dock (the SQL line and the wide table under the map)
@@ -497,6 +498,9 @@ const rasters = basemaps.find((b) => b.tiles.length);
 const map = new maplibregl.Map({ container: "map", center: [10, 50], zoom: 3, style: { version: 8, glyphs: "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
   sources: { bm: { type: "raster", tiles: rasters.tiles, tileSize: 256 } },
   layers: [{ id: "bg", type: "background", paint: { "background-color": basemaps[0].bg } }, { id: "basemap", type: "raster", source: "bm", layout: { visibility: "none" } }] } });
+// window.mapReady (the tests and the page's own waits): the map has loaded and the cards of roadstyle's parts (8 and 9) exist. The parts start after some awaits, the map may load first.
+let mapLoaded = false, cardsMade = false;
+const markReady = () => { if (mapLoaded && cardsMade) window.mapReady = true; };
 const loaded = new Promise((ok) => map.on("load", ok));      // right after the map is made, before any await: a `load` that comes during a later await would not reach a listener that is added after it
 // the zoom buttons and the compass become tools of roadstyle's bar, the scale bar goes into its corner box with the zoom number: both before rsDashboard
 map.addControl(new maplibregl.NavigationControl(), "top-right");
@@ -615,7 +619,8 @@ loaded.then(() => {
   map.on("zoomend", pin);
   paintBoundary();
   draw.start();
-  window.mapReady = true;
+  mapLoaded = true;
+  markReady();
 });
 
 function pin() {
@@ -637,7 +642,7 @@ function freeInsets() {
 function padMap() {
   const f = freeInsets(), st = document.documentElement.style;
   for (const [k, v] of Object.entries(f)) st.setProperty("--free-" + k[0], v + "px");
-  if (document.body.classList.contains("editing")) return;
+  if (document.body.dataset.rsEditing === "levels") return;
   const b = phone.matches ? f.bottom : 0;
   if (map.getPadding().bottom !== b) map.setPadding({ ...map.getPadding(), bottom: b });
 }
@@ -835,9 +840,10 @@ function list(features) {
     const p = f.properties, ok = p.photon || polygons(f.geometry).length > 0;
     const [title, ...rest] = p.display_name.split(", ");
     return `<label class="rs-opt${ok ? "" : " point"}" data-i="${i}" title="${esc(p.display_name)}"><input type="radio" name="hit" value="${i}"${ok ? "" : " disabled"}>` +
-      `<span><b>${esc(title)}</b><span class="rs-chip">${esc(p.addresstype ?? p.type)}</span>` +
-      (ok ? "" : `<span class="rs-chip">${f.geometry?.type === "Point" ? "a point: " : ""}no boundary</span>`) +
-      `<small>${esc(rest.join(", ") || `${p.osm_type} ${p.osm_id}`)}</small></span></label>`;
+      // a place with no boundary has one short row (a click zooms to it; the full name is in the hover title): the list stays short
+      (ok ? `<span><b>${esc(title)}</b><span class="rs-chip">${esc(p.addresstype ?? p.type)}</span>` +
+            `<small>${esc(rest.join(", ") || `${p.osm_type} ${p.osm_id}`)}</small></span></label>`
+          : `<span><b>${esc(title)}</b><span class="rs-chip">${esc(p.addresstype ?? p.type)}, ${f.geometry?.type === "Point" ? "a point, " : ""}no boundary</span></span></label>`);
   }).join("") || `<p class="small muted">No place found.</p>`;
 }
 
@@ -1361,7 +1367,8 @@ async function restoreSavedArea(slug) {
   $("mapnote").textContent = "";
   setData("preview", null);
   document.querySelectorAll(".saved-area.picked").forEach((r) => { r.classList.remove("picked"); r.querySelector("input").checked = false; });
-  closeEditor();
+  levelPart.close();
+  levelPart.reset();                              // the area, its levels and the editor's engine are of the old build
   roadsRun++;
   await drawing;
   removeRoads();
@@ -1582,7 +1589,8 @@ $("run").onclick = async () => {
   $("builddetails").hidden = true;
   $("showrow").hidden = true;
   $("mapnote").textContent = "";
-  closeEditor();
+  levelPart.close();
+  levelPart.reset();                              // the area, its levels and the editor's engine are of the old build
   roadsRun++;                                     // a draw that runs stops at its next step
   await drawing;
   removeRoads();
@@ -1716,15 +1724,13 @@ const showStyle = (style) => roads.show(style, { after: (st) => { paintBoundary(
 // with name e does not exist"). A draw that is asked for while one runs (a click, the draw after Apply) comes after it, one time only.
 // "Show on map" and the network list are off while a draw runs or the level editor is open.
 let drawing = null, drawAgain = false;
-let opening = false;                              // the level editor is opening
-// "Opening the level editor…" in the map's busy box, as Build and Show on map show their progress (a draw that runs while it opens takes the box and puts it away)
-const openBusy = () => rs.mapBusy("Opening the level editor…");
+let levelPart = null;                            // roadstyle's level-edit part (card 8, below)
 const openWhy = {};                               // a reason that a card that opens a panel cannot open now (OPEN_CARDS): a draw runs, the editor opens, the panel did not start
 const drawControls = () => {
-  const why = drawing ? "Drawing the map…" : editor ? "Close the level editor first." : "";
+  const why = drawing ? "Drawing the map…" : levelPart?.isOpen() ? "Close the level editor first." : "";
   $("show").disabled = $("mapmode").disabled = !!why;
   $("show-why").textContent = why;
-  const editWhy = drawing ? "Wait until the map is drawn." : opening ? "Opening the level editor…" : "";
+  const editWhy = drawing ? "Wait until the map is drawn." : levelPart?.state === "opening" ? "Opening the level editor…" : "";
   openWhy[8] = editWhy;
   refreshSteps();
 };
@@ -1830,7 +1836,7 @@ async function drawRoads() {
     const total = (performance.now() - t0) / 1000;
     logSteps([{ step: "the roads table (DuckDB)", ms: r.roadsSeconds * 1000 }, { step: "the style", ms: r.styleSeconds * 1000, mib: r.liveMiB[0] },
       { step: "draw the map", ms: (total - r.roadsSeconds - r.styleSeconds) * 1000 }], "map");
-    if (!editor && levelsTable()) setTimeout(() => (areaPrep ??= prepareArea()).catch(() => { areaPrep = null; }), 500);   // the editor opens sooner
+    if (!levelPart.isOpen() && levelsTable()) levelPart.prepare().catch(() => {});      // the area and the editor's engine, so that the open only draws the panel
     $("mapnote").textContent = `${num(roadCount[$("mapmode").value] ?? 0)} roads, drawn in ${num(total, 1)} s`;
     // Persist visualization cache (viz_roads.parquet, viz_features.parquet) in OPFS
     const vizMode = $("mapmode").value;
@@ -1861,7 +1867,6 @@ async function visualization() {
   $("showrow").hidden = false;
   refreshSteps();
   $("editnote").textContent = "";
-  areaPrep = null;
   duck.prepareRoads($("mapmode").value).catch(() => {});   // the roads for the map, in the idle time of the build: "Show on map" then does no SQL
   if (roadCount.all < AUTO_DRAW && roadCount.all <= window.mapMaxRoads) freshMap();
   else $("mapnote").textContent = roadCount.all > window.mapMaxRoads ? tooLarge(roadCount.all)
@@ -2040,12 +2045,10 @@ const CARD_HELP = {
 // inputs are not ready (a later step) is disabled, with its reason in the title row ("after step 2"); when a step is finished (a done mark) the next card that
 // is ready opens, and the others fold, unless the person opened or folded cards by hand. A finished step can still be opened. Collapse all / Expand all acts on
 // the cards that are shown, so the page folds a disabled card again at once. ----
-// the cards that open a panel (7, 8, 9): what a click opens, the id and the first text of the note (the line of state), and a reason that the card
+// the card that opens a panel (7; cards 8 and 9 are roadstyle's parts): what a click opens, the id and the first text of the note (the line of state), and a reason that the card
 // cannot open now (openWhy, above drawControls), which shows in the title row as a card that is not ready shows its own
 const OPEN_CARDS = {
   7: { open: () => netBuilt && fixesPanel?.open(), noteId: "fix-sum", note: "No fixes." },
-  8: { open: () => openEditor(), noteId: "editnote", note: "" },
-  9: { open: () => designPanel?.open(), noteId: "design-sum", note: "" },
 };
 const levelsTable = () => duck.tables.some((t) => t.mode === "visualization" && t.table === "edge_levels");
 const cards = [];                                  // the sections, in the order of the steps
@@ -2112,16 +2115,12 @@ document.addEventListener("rs:sectionchange", (e) => {
   if (c.classList.contains("off") && e.detail.state === "unfold") return autoFold(c, true);    // "Expand all" does not open a card that is not ready
   touched = true;
 });
-for (const old of [...document.querySelectorAll("section.step")]) {
-  const h = old.querySelector(":scope > h2"), n = +h.querySelector(".n").textContent;
-  const label = h.textContent.trim().replace(/^\d+/, "").trim(), body = document.createElement("div");
-  body.className = "step-body";
-  while (h.nextSibling) body.append(h.nextSibling);
-  const o = OPEN_CARDS[n];
-  const c = rs.sections.add(o ? { id: `step${n}`, label, step: n, open: () => { h3Mode(false); o.open(); }, note: o.note } : { id: `step${n}`, label, step: n, fold: true, el: body });
-  if (o) Object.assign(c.querySelector(".rs-sec-note"), { id: o.noteId }).setAttribute("aria-live", "polite");
+// a step card (its number is the card's `step`): its ids, the line of state of a card that opens a panel, the reason of a card that is off, the card's own button, and
+// roadstyle's "?". The cards that roadstyle's parts make (8 and 9) get the same.
+function stepCard(c, n, label, noteId, id = `step${n}-card`) {
+  if (noteId) Object.assign(c.querySelector(".rs-sec-note"), { id: noteId }).setAttribute("aria-live", "polite");
   c.classList.add("step");
-  c.id = old.id;
+  c.id = id;
   const hd = c.querySelector(":scope > .rs-sec-hd");
   const title = hd.querySelector(".rs-sec-title");
   title.id = `step${n}`;
@@ -2129,9 +2128,19 @@ for (const old of [...document.querySelectorAll("section.step")]) {
   title.insertAdjacentHTML("afterend", `<span class="after" id="step${n}-why"></span>`);
   const chev = hd.querySelector(":scope > svg");        // the title row: the number (step) and the title, the reason of a card that is off, the card's own button (the zoom to the area, card 2: rs.sections.button), roadstyle's "?" (help button), the chevron
   if (n in CARD_HELP) chev.before(rs.help.button(c, { ...CARD_HELP[n], button: `Help: ${label}` }));
-  old.remove();
   cards.push(c);
+  cards.sort((x, y) => cardN(x) - cardN(y));
   autoFold(c, true);
+}
+for (const old of [...document.querySelectorAll("section.step")]) {
+  const h = old.querySelector(":scope > h2"), n = +h.querySelector(".n").textContent;
+  const label = h.textContent.trim().replace(/^\d+/, "").trim(), body = document.createElement("div");
+  body.className = "step-body";
+  while (h.nextSibling) body.append(h.nextSibling);
+  old.remove();
+  if (n === 8 || n === 9) continue;                 // roadstyle's parts make these two cards (below)
+  const o = OPEN_CARDS[n];
+  stepCard(rs.sections.add(o ? { id: `step${n}`, label, step: n, open: () => { h3Mode(false); o.open(); }, note: o.note } : { id: `step${n}`, label, step: n, fold: true, el: body }), n, label, o?.noteId, old.id);
 }
 {
   const src = $("areas-src");
@@ -2223,7 +2232,7 @@ $("export-list").addEventListener("input", (e) => {
   if (e.target.id === "export-full") patchProfile({ layers: { ...p.layers, edges: e.target.checked } });
   if (e.target.id === "export-auto") patchProfile({ auto: e.target.checked });
 });
-$("export-list").addEventListener("click", (e) => { if (e.target.id === "export-design") { e.preventDefault(); designPanel?.open("tiles"); } });
+$("export-list").addEventListener("click", (e) => { if (e.target.id === "export-design") { e.preventDefault(); designPart?.open("tiles"); } });
 document.addEventListener("duckosm:built", () => { exportBox = null; });
 document.addEventListener("duckosm:drawn", () => { paintTileCount(); });
 $("export-list").addEventListener("click", async (e) => {
@@ -2339,12 +2348,12 @@ rs.sections.add({ id: "ask", label: "Ask the data", note: "A question about the 
 // docs/guides/design-panel.md): it draws into the page's panel (#sb), owns the design and paints the ground, the layers and the opacity of the roads.
 // The page gives it what only the page has: the look of the map (setLook: the same tiles; redraw: a new map), the area boundary (boundary), the tile
 // profile (the host tab "Tiles", app/profile.js) and the place to keep the design with the saved area (design.json, app/area_store.js). ----
-let designSave = null, restyleT0 = null;            // restyleT0: the time of a new look on the same tiles that waits for roadstyle's restyle (rs:stylechange)
+let restyleT0 = null;            // restyleT0: the time of a new look on the same tiles that waits for roadstyle's restyle (rs:stylechange)
 const designSlug = () => areaStore.sanitizeSlug(areaName || $("name").value);
 // a new look on the same tiles (roadstyle's LiveMap.setLook in the map worker): the style, or undefined when the map must be drawn again (redraw)
 async function setDesignLook(text) {
   duck.setLookText(text);
-  if (editor || !roadsShown || drawing) return undefined;
+  if (levelPart?.isOpen() || !roadsShown || drawing) return undefined;
   restyleT0 = performance.now();
   try {
     const style = await duck.setLook();
@@ -2366,8 +2375,6 @@ async function redrawDesign(text, draw) {
   if (restyleT0 != null && window.lastRestyle === "same tiles") window.lastRestyle = "other layers";
   restyleT0 = null;
   if (!draw) return "";
-  if (editor) return "The level editor is open. The map shows this design after you close it and draw again.";
-  if (!roadsShown) return "The map is not drawn yet. The design shows when you draw it (step 6).";
   const t1 = performance.now();
   await showRoads();
   const note = $("mapnote").textContent;
@@ -2377,14 +2384,6 @@ async function redrawDesign(text, draw) {
 function designChanged(p) {
   if (p.format !== duck.tileFormat) { $("tilefmt").value = p.format; $("tilefmt").onchange(); }       // the format of the map follows the profile
   paintTileCount();
-}
-function designSaved(text) {
-  const d = JSON.parse(text);
-  designEdited = designLib.changes({ ...d, profile: 0 }, { ...designPanel.base(), profile: 0 }).length > 0;       // the boundary counts as style
-  $("design-sum").textContent = `${d.name}${designEdited ? " (changed)" : ""}. Tile profile: ${tileProfile.PROFILES[d.profile.preset]?.name ?? "your own"}.`;
-  refreshSteps();
-  clearTimeout(designSave);
-  designSave = setTimeout(() => { if (netBuilt) areaStore.saveDesign(designSlug(), text).catch(() => {}); }, 800);       // with the saved area
 }
 // the Tiles tab (a host tab of the design panel): the controls of the panel's other tabs, and the page reads its own events
 const CLASS_LABEL = { motorway: "Motorway", trunk: "Trunk", primary: "Primary", secondary: "Secondary", tertiary: "Tertiary", unclassified: "Unclassified", residential: "Residential", living_street: "Living street" };
@@ -2432,173 +2431,54 @@ function drawTiles(el, p, put, c) {
     else if (cols) set({ ...profile(), preset: "custom", columns: cols.dataset.cols === "all" ? [...tp.EDGE_COLUMNS] : ["edge_id"] }, true);
   };
 }
-const closeDesign = () => { designPanel?.close(); padMap(); map.resize(); };
+// roadstyle's design-edit part: the card and its line of state, the layout, the restore, the save, the redraw and the link to the Export card. The page gives the data (below), its
+// roads (roadLayers: the part reads their prefix for the panel's restyle), the boundary and the Tiles tab.
+const tilesTab = { id: "tiles", name: "Tiles", key: "profile", make: tileProfile.defaultProfile, normalize: tileProfile.normalizeProfile, draw: drawTiles, keep: "Keep the tile profile in the theme",
+  summary: (p) => `Tile profile: ${tileProfile.PROFILES[p.preset]?.name ?? "your own"}.` };
+let designPart = null;
 try {
-  designPanel = await rsDesignPanel({
-    panel: $("sb"), dashboard: rs, map, look: JSON.parse(await duck.pageLookText()), storageKey: "duckosm",      // localStorage: duckosm.design and duckosm.themes
-    setLook: setDesignLook, redraw: redrawDesign, restyle: { also: ["rs-low-"], imagePrefix: "rs-" },             // rs-low-: the overview copies of the fill layers (addOverview)
-    boundary: (b) => { boundaryNow = b; paintBoundary(); },
-    link: { label: "Export →", onClick: () => {
-      closeDesign();
-      const c = cards.find((x) => x.id === "step10-card");
-      if (c && !c.classList.contains("off")) { autoFold(c, false); c.scrollIntoView({ block: "nearest" }); }
-    } },
-    tabs: [{ id: "tiles", name: "Tiles", key: "profile", make: tileProfile.defaultProfile, normalize: tileProfile.normalizeProfile, draw: drawTiles, keep: "Keep the tile profile in the theme" }],
+  designPart = await designEditPart({
+    dashboard: rs, map, roads, storageKey: "duckosm", boundary: (b) => { boundaryNow = b; paintBoundary(); },      // localStorage: duckosm.design and duckosm.themes
+    card: { id: "step9", label: "Edit design", step: 9, before: "step10" }, link: { label: "Export →", card: "step10" }, tabs: [tilesTab],
+    data: {
+      look: async () => JSON.parse(await duck.pageLookText()),
+      loadDesign: async () => null,                   // the design of a saved area comes through designPart.panel.load when the area is restored
+      saveDesign: async (text) => { if (netBuilt) await areaStore.saveDesign(designSlug(), text); },      // with the saved area
+      setLook: setDesignLook, redraw: redrawDesign,
+      redrawReason: () => (levelPart?.isOpen() ? "The level editor is open. The map shows this design after you close it and draw again." : !roadsShown ? "The map is not drawn yet. The design shows when you draw it (step 6)." : ""),
+    },
   });
-  designPanel.addEventListener("change", (e) => { designSaved(e.detail.text); designChanged(e.detail.design.profile); });
-  designPanel.addEventListener("back", closeDesign);
+  designPanel = designPart.panel;
+  stepCard(rs.sections.get("step9"), 9, "Edit design", "design-sum");
+  designPart.addEventListener("change", (e) => { designEdited = e.detail.edited; designChanged(e.detail.design.profile); refreshSteps(); });
+  designPart.addEventListener("close", padMap);      // the page's sheet and the map's padding come back
   if (!designPanel.restored) designPanel.setHost("profile", { ...tileProfile.defaultProfile(), format: duck.tileFormat });     // no design yet: the tile format that the person chose before
-  designSaved(designPanel.text());
+  designEdited = designPart.edited;
+  refreshSteps();
 } catch (e) { openWhy[9] = "The design panel did not start: " + e.message; refreshSteps(); }
 window.designPanel = designPanel;                 // for the tests (design_e2e.py)
 
-// ---- card 8: roadstyle's level editor on the page's map (docs/app.md). roadstyle makes the level area from the page's edges (ensureArea, and the option
-// `area` of the level editor) and keeps it in this browser (browserStore, one for each area name). The editor uses the page's dashboard, map and roads (host mode): the page's roads
-// stay, and replaceRoads draws the edited edges again in the map worker. The editor solves and cuts no tiles of its own. Its pick adds
-// road and the line ends to the rows of window.RS_SIDE (destroy takes them off). Apply first writes the editor's levels.csv into the tables
-// (visualization.edge_levels), and then the page draws its roads again. ----
-let lookText = null;                                // the page's look (map/look.json), for the editor
-let editor = null, editorStore = null, editedMap = false;   // editedMap: the map has redrawn edges that the tables do not have (replaceRoads)
-const editNote = (t) => { $("editnote").textContent = t + lostNote(); };
-// The area's files in this browser: roadstyle's browserStore with memoryFallback (a file that the browser cannot keep stays in memory for this page: lostBytes()).
-const lostNote = () => editorStore?.lostBytes() ? ` The browser could not keep the area files (${num(editorStore.lostBytes() / 2 ** 20, 1)} MB): ` +
-  "your edits stay only until you close the page; download edits.csv to keep them." : "";
-function editing(on) {
-  document.body.classList.toggle("editing", on);  // the editor holds the page's one panel (roadstyle's editor hides the steps and the title and puts them back)
-  if (!on) padMap();                              // the page's sheet in its state again, and the map's padding for it
-  opening = false;                                // (drawControls: Edit levels is on again unless a draw runs)
-  drawControls();
-}
-// the editor goes away (destroy: its panel, its roads and its listeners); the page's roads come back when draw is true
-function closeEditor(draw = false) {
-  if (!editor) return;
-  editor.destroy();                               // its panel, its roads, the colour and the glow of the picked roads, and the page's steps come back
-  editor = window.levelEditorOpen = null;
-  editing(false);
-  map.resize();
-  if (draw || editedMap) showRoads();
-  editedMap = false;
-}
-// The editor's replaceRoads (roadstyle's host call): the map worker draws the changed edges again (relevel), and the visible tiles load again
-// (a new style, when the answer says so). The tables do not change until Apply.
-// lap(name, t0) keeps the seconds of each step in window.lvTimes (and a performance.measure); editor_e2e.py and the Burnaby test read them
-const lap = (name, t0) => { (window.lvTimes ||= []).push([name, +((performance.now() - t0) / 1000).toFixed(2)]); performance.measure(name, { start: t0 }); };
-async function replaceRoads(rows) {
-  let t = performance.now();
-  const r = await duck.relevel(rows);
-  lap(`relevel worker (${rows.length} rows)`, t);
-  editedMap = true;
-  t = performance.now();
-  if (r.style) {
-    await useStyle(r.style);
-  } else {
-    // the vector sources load their visible tiles again (the map worker's LiveMap keeps the other tiles, so only the pieces of the changed edges are cut again)
-    roads.reloadTiles({ wait: false });
-  }
-  lap(r.style ? "new style" : "tiles reload", t);
-  t = performance.now();
-  await new Promise((ok) => { map.once("idle", ok); setTimeout(ok, 30000); });
-  lap("idle after relevel", t);
-  window.relevelCounts = r.counts;                // for editor_e2e.py
-}
-// The editor's level area, made before the open: after a draw (in the background) or at the open, once for each build (areaPrep is reset by a
-// build and by Apply). roadstyle's ensureArea makes the area only when the edges of the build's levels changed (their edge hash), and starts the editor's
-// engine in the background, so that the open only draws the panel. The steps are in window.lvTimes (lap).
-let areaPrep = null;
-async function prepareArea() {
-  window.lvTimes = [];
-  const timed = (name, p) => { const t = performance.now(); return p.then((v) => { lap(name, t); return v; }); };
-  const [pkg, { levelEditor, ensureArea, browserStore }, levels] = await Promise.all([timed("roadstyle wasm", duck.roadstyle()),
-    timed("import level_editor.js", import("./map/roadstyle/dashboard/editor/level_editor.js")), timed("storedLevels (CSV from DuckDB)", duck.storedLevels())]);
-  const store = browserStore("duckosm:" + areaName, areaName, { memoryFallback: true });
-  // the page's part: the edges of the area (GeoParquet) and their edge hash; the editor gets the same `area` at the open (it makes the area once more when the store lost its files)
-  const area = { edges: duck.levelEdges, edgeHash: levels?.edge_hash ?? "", idCol: "edge_id", pkg };
-  const t = performance.now();
-  const info = await ensureArea({ store, pkgUrl: editorPkgUrl(), look: await editorLook(), ...area });
-  lap(`ensureArea (made: ${info.made})`, t);
-  if (info.made) window.editorArea = { roads: info.roadCount, pairs: info.pairCount, warnings: info.warnings };   // for editor_e2e.py
-  return { levelEditor, store, levels, area, warnings: info.warnings?.length ? `. Warnings: ${info.warnings.join("; ")}` : "" };
-}
-// the worker loads roadstyle's module by this URL (the deploy puts its version on it, version_refs.py)
-const editorPkgUrl = () => new URL("./map/pkg/roadstyle_wasm.js", location.href);
-const editorLook = () => (lookText ??= duck.pageLookText());
-async function openEditor() {
-  // the editor draws every road of the area (all networks): the same limit as the map on a small device
-  if (roadCount.all > window.mapMaxRoads) return editNote(`The level editor shows all ${num(roadCount.all)} roads of the area. ${SMALL_DEVICE ? "This device" : "A browser page"} draws at most ${num(roadLimit())}. ` +
-    `Use ${SMALL_DEVICE ? "a desktop browser or " : ""}a smaller area.`);
-  opening = true;
-  drawControls();
-  openBusy();
-  try {
-    editorStore = null;                           // the note of a store of an earlier area goes
-    const t0 = performance.now();
-    const { levelEditor, store, levels, area, warnings } = await (areaPrep ??= prepareArea());
-    editorStore = store;
-    let t;
-    t = performance.now();
-    await loaded;
-    if (!roadsShown) await showRoads();           // the editor draws on the page's roads
-    else await drawing;
-    openBusy();                                   // the draw put the box away
-    lap(`page's roads (shown before: ${roadsShown})`, t);
-    editedMap = false;
-    const pkgUrl = editorPkgUrl();
-    t = performance.now();
-    // `host`: the editor keeps the page's roads (it builds no roads or tiles of its own) and gives replaceRoads the edges that a change redrew;
-    // `look`: the page's saved look, in which the editor finds the page's select and hover colours (it swaps them for its red and blue picks);
-    // `area`: the editor makes the level area itself (once more when the store lost its files); it takes the page's selected road and popups off at the open
-    editor = await levelEditor({ map, panel: $("sb"), backLabel: "Steps", pkgUrl, store, dashboard: rs, prefix: "rs-", levels: levels ?? undefined,
-      host: { edgeIdCol: "edge_id", replaceRoads }, look: await editorLook(), area });
-    if (editor.areaInfo?.made) window.editorArea = { roads: editor.areaInfo.roadCount, pairs: editor.areaInfo.pairCount, warnings: editor.areaInfo.warnings };   // for editor_e2e.py
-    lap("levelEditor()", t);
-    lap("open, all", t0);
-    editorStore = store;
-    const made = `${num(editor.roads.length)} roads` + warnings;
-    window.levelEditorOpen = editor;              // for editor_e2e.py
-    // "solved": after each change the card says that ← Steps applies it (editor.dirty tells it at the leave)
-    editor.addEventListener("solved", () => editNote(`${made}. Changed: ← Steps applies the new drawing order.`));
-    // the editor's worker stopped (no memory, a file that does not load)
-    editor.addEventListener("error", (e) => editNote(`The level editor's worker stopped (${e.detail.message}). Close the editor and open it again.`));
-    editor.addEventListener("back", leaveEditor);  // "← Steps" (with changes waiting, after the editor's own Apply, Discard or Stay)
-    editing(true);
-    editNote(`${made}, open in ${num((performance.now() - t0) / 1000, 1)} s`);
-  } catch (e) {
-    // the editor did not start: its panel goes, and the page's roads are drawn again
-    editing(false);
-    showRoads();
-    areaPrep = null;
-    editNote("The level editor failed: " + e.message);
-  } finally {
-    if (!drawing) rs.mapBusy(null);
-  }
-};
-// "← Steps": the editor goes, and the edits that it applied (the editor's Apply and solve) go into the tables (visualization.edge_levels and the
-// downloads). Nothing applied: the tables stay as they are.
-async function leaveEditor() {
-  const tClose = performance.now();
-  if (!editor.dirty) { closeEditor(); lap("← Steps (no change)", tClose); return editNote("Closed. No change."); }
-  try {
-    editNote("writing the drawing order into the tables…");
-    const out = await editor.exportFiles();       // the four files as texts, before the editor goes (destroy)
-    const inputs = { "edits.csv": out["edits.csv"], "heads.csv": out["heads.csv"], "caps.csv": out["caps.csv"] };
-    const t = performance.now();
-    await duck.saveLevels(out["levels.csv"], inputs, "this browser: " + areaName);
-    lap("saveLevels (write the tables)", t);
-    // the tables have the new levels: the next open gets them (the area and the editor's engine stay: the edges are the same)
-    if (areaPrep) areaPrep = areaPrep.then(async (p) => ({ ...p, levels: await duck.storedLevels() })).catch(() => null);
-    files();                                      // the download links of the new files
-    levelsApplied = true;
-    // the map already shows the new levels (the map worker redrew each changed edge: replaceRoads), so it is not drawn again
-    editedMap = false;
-    closeEditor();
-    refreshSteps();
-    lap("← Steps (all)", tClose);
-    const n = (f) => Math.max(0, inputs[f].trim().split("\n").length - 1);
-    editNote(`Applied. Rules: ${num(n("edits.csv"))}, heads: ${num(n("heads.csv"))}, line ends: ${num(n("caps.csv"))}. The map has it.`);
-  } catch (e) {
-    editNote("Apply failed: " + e.message);       // the editor stays open
-  }
-}
+// ---- card 8: roadstyle's level-edit part (docs/app.md). The card, the store (one for each area name), the level area, the open, the close, the redraw of the changed edges and the write-back are
+// roadstyle's. The page gives its map, its dashboard and the data: roadstyle's adapter for duckOSM's tables (duck.levelsData: the edges of the area, the stored levels and the write into
+// visualization.edge_levels, with the page's downloads kept in `after`), the redraw of its map worker (relevel) and its own draw. ----
+levelPart = levelEditPart({
+  dashboard: rs, map, pkg: await duck.roadstyle(), pkgUrl: new URL("./map/pkg/roadstyle_wasm.js", location.href), look: await duck.pageLookText(),      // the deploy puts the version on the URL (version_refs.py)
+  areaName: () => areaName, maxRoads: roadLimit(), prefix: "rs-", before: "area-fill", also: ["rs-low-"],
+  card: { id: "step8", label: "Edit levels", step: 8, before: "step9" },
+  data: { ...await duck.levelsData(),
+    relevel: async (rows) => { const r = await duck.relevel(rows); window.relevelCounts = r.counts; return r; },      // relevelCounts: for editor_e2e.py
+    roadCount: async () => roadCount.all,
+    ensureRoads: async () => { await loaded; if (!roadsShown) await showRoads(); else await drawing; },      // the editor draws on the page's roads
+    useStyle },                                       // a new style of the roads after a change: the page's own swap (the boundary, the overview, roadsShown)
+});
+stepCard(rs.sections.get("step8"), 8, "Edit levels", "editnote");
+Object.defineProperty(window, "levelEditorOpen", { get: () => levelPart.editor });      // for editor_e2e.py
+for (const type of ["opening", "open"]) levelPart.addEventListener(type, drawControls);
+levelPart.addEventListener("close", () => { padMap(); drawControls(); });        // the page's sheet in its state again, and the map's padding for it
+levelPart.addEventListener("applied", () => { files(); levelsApplied = true; refreshSteps(); });      // the tables have the new levels: the download links of the new files
+refreshSteps();
+cardsMade = true;
+markReady();
 
 // the downloads: all files in one zip (with make_duckdb.sql), and each table: a row for each table (with what it holds), a column for each mode
 const size = (b) => (b < 2 ** 20 ? `${num(Math.max(1, b / 1024))} KB` : `${mb(b)} MB`);

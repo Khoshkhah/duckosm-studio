@@ -14,7 +14,7 @@
 #                     One rev gives the engine and the editor.
 set -e
 NIGHTLY=nightly-2026-10-15
-ROADSTYLE_COMMIT=692002742bc0e4b31db7bd5a12f1b1dc3b434e6d   # the full SHA: a fetch by SHA needs it
+ROADSTYLE_COMMIT=d153fc79e551da1282ca8ddd92acc5271dc2d0f1   # the full SHA: a fetch by SHA needs it
 ROADSTYLE_REPO=${ROADSTYLE_REPO:-https://github.com/Khoshkhah/roadstyle.git}
 DUCKOSM_REV=$(sed -n 's/.*duckOSM\.git", rev = "\([0-9a-f]*\)".*/\1/p' crates/duckosm-wasm/Cargo.toml | sort -u)
 DUCKOSM_REPO=${DUCKOSM_REPO:-https://github.com/Khoshkhah/duckOSM.git}
@@ -52,7 +52,7 @@ rm -rf crates/duckosm-wasm/www/map/pkg
 mkdir -p crates/duckosm-wasm/www/map/roadstyle
 cp $R/rust/roadstyle-assets/files/static/popup.css $R/rust/roadstyle-assets/files/static/popup.js $R/rust/roadstyle-assets/files/static/level_editor.html \
   crates/duckosm-wasm/www/map/roadstyle/
-cp $R/rust/roadstyle-wasm/js/roads_sql.js $R/rust/roadstyle-wasm/js/features_sql.js crates/duckosm-wasm/www/map/roadstyle/
+cp $R/rust/roadstyle-wasm/js/roads_sql.js $R/rust/roadstyle-wasm/js/features_sql.js $R/rust/roadstyle-wasm/js/levels_sql.js crates/duckosm-wasm/www/map/roadstyle/
 # the options of a dashboard host page (the typed dashboard, its first paint, the base maps and the layers on top): the page fetches them
 cp $R/rust/roadstyle-assets/files/data/host_options.json crates/duckosm-wasm/www/map/roadstyle/
 rm -rf crates/duckosm-wasm/www/map/roadstyle/dashboard crates/duckosm-wasm/www/map/roadstyle/windows.js

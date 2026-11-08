@@ -8,6 +8,7 @@ The page folder is this one by default; a copy with versions (version_refs.py, a
 each request of the page for a file of the site has the version. It uses tests/data/monaco_sample.osm.pbf and tests/data/monaco.geojson. Build the page first (docs/development.md, "WebAssembly").
 The page loads duckdb-wasm and MapLibre from cdn.jsdelivr.net, so the computer needs the network.
 """
+import re
 import json
 import pathlib
 import sys
@@ -252,25 +253,23 @@ with sync_playwright() as p:
     print("after Close: no state left, a click selects a road, a click on empty map clears it")
     page.evaluate("c => window.duckMap.jumpTo(c)", cam)
     page.wait_for_function("window.duckMap.loaded()", timeout=120_000)
-    made = page.evaluate("window.editorArea")
-    page.evaluate("window.editorArea = null")
     t = time.time()
     page.click("#step8")
     page.wait_for_function("window.levelEditorOpen || /failed/.test(document.getElementById('editnote').textContent)", timeout=300_000)
     assert page.evaluate("!!window.levelEditorOpen"), page.inner_text("#editnote")
-    assert page.evaluate("window.editorArea") is None, "the area is not made again: its edges did not change (areaIsFor)"
     print("second open: the editor starts from", page.evaluate("window.levelEditorOpen.answer().resolve"))
     print(f"second open: {time.time() - t:.2f} s from the click until the editor is open, "
           f"{page.evaluate('window.solves')} solve(s)")
     if page.evaluate("window.solves") != 0:      # why: the stored key and the files' key
-        print("stored inputs key:", page.evaluate("""async () => { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle('lv-duckosm_Monaco');
+        print("stored inputs key:", page.evaluate("""async () => { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle('lv-lv-part_Monaco');
             const text = async (n) => (await (await d.getFileHandle(n)).getFile()).arrayBuffer();
             const sha = async (b) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', b))].map((x) => x.toString(16).padStart(2, '0')).join('');
             return [JSON.parse(new TextDecoder().decode(await text('levels_info.json'))).inputs,
               [await sha(await text('roads.parquet')), await sha(await text('pairs.csv')), await sha(await text('edits.csv'))].join(':')]; }"""))
     assert page.evaluate("window.solves") == 0, "the second open of the same area starts from the stored levels"
     print("editor:", page.inner_text("#editnote"))
-    assert made["roads"] > 6000 and made["pairs"] > 0, made      # Monaco: 6,830 roads (13,298 edges)
+    roads_made = int(re.search(r"([\d\s]+) roads", page.inner_text("#editnote")).group(1).replace(" ", "").replace("\u202f", "").replace("\xa0", ""))
+    assert roads_made > 6000, page.inner_text("#editnote")      # Monaco: 6,830 roads (13,298 edges)
     # the editor keeps the page's roads (roadstyle's `host` mode): it builds no roads or tiles of its own (no lv:// tiles, no `build` or `draw` call of
     # its worker), and its panel and end markers are all that is new on the map. A change goes to replaceRoads (the page's map worker: relevel).
     assert page.evaluate("window.duckMap.getStyle().sources['rs-roads'].tiles[0]").startswith("rs://"), "the page's roads stay"
@@ -370,10 +369,10 @@ with sync_playwright() as p:
     page.click("#step8")
     page.wait_for_function("window.levelEditorOpen", timeout=300_000)
     # the area's files are in the site's private file system (roadstyle's browserStore since 65af6e6), heads.csv with the edit
-    heads = page.evaluate("""async () => { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle('lv-duckosm_Monaco');
+    heads = page.evaluate("""async () => { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle('lv-lv-part_Monaco');
         return (await (await d.getFileHandle('heads.csv')).getFile()).text(); }""")
     assert heads.count(road) == 1, heads
-    assert page.evaluate("localStorage.getItem('lv:duckosm:Monaco:pairs.csv')") is None, "no text file in localStorage"
+    assert page.evaluate("localStorage.getItem('lv:lv-part:Monaco:pairs.csv')") is None, "no text file in localStorage"
     page.click("#lv-back")                       # destroy puts the page's road layers back: no new drawing
     page.wait_for_function("window.duckMap.loaded()", timeout=300_000)
     assert page.evaluate("window.duckMap.getStyle().sources['rs-roads'].tiles[0]").startswith("rs://")
@@ -385,7 +384,7 @@ with sync_playwright() as p:
     # a browser that cannot keep large files (a full storage of the site): each file over 100 KB fails in the private file system. The
     # editor opens with those files in memory, it solves, and the card says so.
     # the store empty first: the page makes the area again and writes its files (areaIsFor is false)
-    page.evaluate("async () => { await (await navigator.storage.getDirectory()).removeEntry('lv-duckosm_Monaco', {recursive: true}); }")
+    page.evaluate("async () => { await (await navigator.storage.getDirectory()).removeEntry('lv-lv-part_Monaco', {recursive: true}); }")
     page.evaluate("""() => { const w = FileSystemWritableFileStream.prototype.write; window.realWrite = w;
         FileSystemWritableFileStream.prototype.write = function (data) {
           const n = typeof data === "string" ? data.length : data.byteLength ?? data.size ?? 0;

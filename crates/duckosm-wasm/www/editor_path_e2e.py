@@ -88,12 +88,13 @@ def run(browser, name, dark=False, **context):
     page.wait_for_function(f"duckMap.getGlobalState().rs_theme === '{theme}'", timeout=30_000)
     page.evaluate("rsSetBasemap('blank')")
     # two roads picked with real clicks (taps)
+    page.locator("#sb").get_by_text("Stacking", exact=True).first.click()      # the tab for two roads (the first tab, Road ends, has one road)
     w, h = context["viewport"]["width"], context["viewport"]["height"]
     page.evaluate("duckMap.jumpTo({center: [7.4225, 43.7345], zoom: 15.2, pitch: 0, bearing: 0})")
     page.wait_for_function("window.duckMap.loaded()")
     page.wait_for_timeout(1500)
     spots = page.evaluate("""() => { const m = duckMap, L = m.getStyle().layers.filter((l) => l.id.startsWith('rs-roads-simple') && l.layout?.visibility !== 'none').map((l) => l.id), out = [],
-        a = rs.freeArea(); for (let y = a.top + 20; y < a.bottom - 20 && out.length < 40; y += 23) for (let x = a.lo + 20; x < a.hi - 20; x += 23) {
+        a = rs.freeArea(); for (let y = a.top + 60; y < a.bottom - 20 && out.length < 40; y += 23) for (let x = a.lo + 20; x < a.hi - 20; x += 23) {
         const f = m.queryRenderedFeatures([[x - 2, y - 2], [x + 2, y + 2]], {layers: L}); if (f.length) out.push([x, y, f[0].id]); } return out; }""")
     picked, ids = [], []
     for x, y, i in spots:
@@ -118,13 +119,13 @@ def run(browser, name, dark=False, **context):
         (page.touchscreen.tap if phone else page.mouse.click)(x, y)
         page.wait_for_timeout(900)
         assert popups() == 0, "no popup of the page while the editor is open"
-        assert [ROAD1, ROAD2][k] in paint(), ("the pick colour of road", k + 1)
+        assert [ROAD1, ROAD2][k] in paint(), ("the pick colour of road", k + 1, (x, y), ids, page.inner_text("#sb")[:400])
         if k == 0:
             assert HOVER2 in paint(), "one pick: the hover is the light blue (the next click picks road 2)"
     page.screenshot(path=str(out / f"{name}-1b-picks.png"))
     assert "BETWEEN THESE TWO ROADS" in page.inner_text("#sb").upper(), "two roads picked"
     if not phone:   # the page's own scroll boxes must not cap the editor's tab body: the relation form below the two roads must have room
-        assert page.evaluate("document.querySelector('#sb .scroll.rs-pbody:not([hidden])').getBoundingClientRect().height") > 400, "the editor's body is not capped"
+        assert page.evaluate("document.querySelector('#sb .rs-pbody:not([hidden])').getBoundingClientRect().height") > 400, "the editor's body is not capped"
     # the order of the pair: road 1 on top, added to the list (the change waits)
     page.evaluate("""() => { const b = [...document.querySelectorAll('#sb button')].find((x) => /^1\\S/.test(x.textContent.trim()) && x.getBoundingClientRect().width > 0); b.scrollIntoView({block: 'center'}); }""")
     page.wait_for_timeout(400)
