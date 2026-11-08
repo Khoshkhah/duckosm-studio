@@ -58,6 +58,12 @@ def run(browser, name, **context):
     page.wait_for_function("window.askPart.isOpen()", timeout=10_000)
     page.locator(".rs-ask .rs-ask-q").first.wait_for(state="visible")
     assert "key" in page.inner_text(".rs-ask-need").lower(), "Ask says that it needs a key"
+    # the example questions: roadstyle's six general groups first, then the groups of duckOSM's file (web/ask/questions.js, copied by build.sh); the page has no copy of its own
+    want = page.evaluate("import('./duckosm/ask/questions.js').then((m) => m.QUESTIONS.map((g) => [g.title, g.items.length]))")
+    heads = page.evaluate("[...document.querySelectorAll('.rs-ask-ex .rs-ask-grp')].map((e) => e.textContent)")
+    assert len(heads) == len(want) + 6 and heads[6:] == [t for t, _ in want], ("the groups of duckOSM's file come after roadstyle's six general groups", heads)
+    assert page.locator(".rs-ask-ex .rs-ask-q").count() >= sum(n for _, n in want), "every question of the file is a chip"
+    assert any("chart" in t.lower() for t in page.locator(".rs-ask-ex .rs-ask-q").all_inner_texts()), "the chart questions show"
     head, body = page.evaluate(EDGE, ".rs-ask-who"), page.evaluate(EDGE, ".rs-ask-hint, .rs-ask .rs-ask-q")
     assert head and body and abs(head[0] - body[0]) <= 1, ("the head row and the body of Ask start at the same left edge", head, body)
     page.screenshot(path=str(out / f"{name}-2-ask.png"))

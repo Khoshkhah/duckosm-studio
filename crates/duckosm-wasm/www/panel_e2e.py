@@ -24,7 +24,7 @@ server = start(0, quiet=True, directory=WWW)
 url = f"http://127.0.0.1:{server.server_address[1]}/index.html?maxroads=0"
 errors = []
 CARDS = ["step1-card", "step2-card", "extracts-box", "step4-card", "step5-card", "step6-card", "step7-card", "step8-card", "step9-card", "step10-card"]
-STATE = """() => Object.fromEntries([...document.querySelectorAll('.step')].map((c) => [c.id, (c.classList.contains('folded') ? 'F' : 'O') + (c.classList.contains('off') ? '-off' : '') + (c.querySelector('.done').hidden ? '' : '-done')]))"""
+STATE = """() => Object.fromEntries([...document.querySelectorAll('.step')].map((c) => [c.id, (c.classList.contains('folded') ? 'F' : 'O') + (c.classList.contains('off') ? '-off' : '') + (c.dataset.rsDone ? '-done' : '')]))"""
 checked_links = {}
 
 
@@ -80,12 +80,17 @@ def run(browser, name, dark=False, **context):
     # the accent is roadstyle's (0.26.1: the Sonocount teal; a lighter variant in the dark theme), and the page sets none
     assert page.evaluate("getComputedStyle(document.getElementById('sb')).getPropertyValue('--accent').trim()") == ("#42c2d7" if dark else "#0e7c8e")
     assert not page.evaluate("[...document.styleSheets].some((sh) => { try { return [...sh.cssRules].some((r) => r.style && r.cssText.includes('--accent:') && !sh.href); } catch (e) { return false; } })"), "the page has no --accent of its own"
+    # the colors are roadstyle's tokens: the page defines none of its own (a page palette on :root overrode --bg and --line outside the panel: the dialogs, the toasts and the card edge)
+    own = page.evaluate("""() => { const names = ['--bg', '--ink', '--mut', '--line', '--card', '--accent-fill', '--rs-err', '--rs-warn', '--rs-ok', '--fg', '--muted', '--surface', '--warn', '--error'], found = [];
+        for (const sh of document.styleSheets) { if (sh.href) continue; try { for (const r of sh.cssRules) if (r.style) for (const n of names) if (r.style.getPropertyValue(n)) found.push(n + ' in ' + r.selectorText); } catch (e) { /* no access */ } }
+        return found; }""")
+    assert not own, ("the page defines color tokens of its own", own)
     # step 1 is calm: one field with the "What is here?" icon button inside it, and no extra line of text
-    f = page.evaluate("""() => { const i = document.getElementById('q').getBoundingClientRect(), h = document.getElementById('here').getBoundingClientRect();
+    f = page.evaluate("""() => { const i = document.querySelector('#search .rs-search-box').getBoundingClientRect(), h = document.getElementById('here').getBoundingClientRect();
         return [Math.round(i.top), Math.round(i.height), Math.round(h.top - i.top), Math.round(i.right - h.right), Math.round(h.left - i.left)]; }""")
     assert 0 <= f[2] <= 8 and 0 <= f[3] <= 8 and f[4] > f[1], ("the 'What is here?' button is inside the field, at its right", f)
     assert page.get_attribute("#here", "aria-label") == "What is here? Click the map" and page.get_attribute("#q", "placeholder") == "City, region, country or H3 ID"
-    assert page.evaluate("document.getElementById('find').querySelector('button:not(#here)') === null"), "no Search button"
+    assert page.evaluate("document.getElementById('find').querySelector('button:not(#here, .rs-search-x)') === null"), "no Search button (the field has its own clear button only)"
     text = page.inner_text("#step1-card")
     assert "Type a place first" not in text and "Then click the map" not in text and "Photon" not in text and "OpenStreetMap contributors" not in text, text
     page.screenshot(path=str(out / f"{name}-1a-step1-search.png"))

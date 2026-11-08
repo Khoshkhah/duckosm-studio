@@ -9,12 +9,12 @@
 #                     of roadstyle's engine (roadstyle repository, rust/) at the commit ROADSTYLE_COMMIT, cloned into
 #                     target/roadstyle-<commit> (or ROADSTYLE_REPO, a local copy). duckosm-build takes the levels from an older commit
 #                     (aba5884, crates/duckosm-build/Cargo.toml): at this commit they are the crate roadstyle-levels.
-#   www/duckosm/      duckOSM's fixes editor (web/fixes_editor/, card 7) at the rev of the engine: the rev of the duckOSM git
+#   www/duckosm/      duckOSM's fixes editor (web/fixes_editor/, card 7) and the questions of Ask (web/ask/) at the rev of the engine: the rev of the duckOSM git
 #                     dependency in crates/duckosm-wasm/Cargo.toml, cloned into target/duckosm-<rev> (or DUCKOSM_REPO, a local copy).
 #                     One rev gives the engine and the editor.
 set -e
 NIGHTLY=nightly-2026-10-15
-ROADSTYLE_COMMIT=b9e7944125d0cad54f974f8583345fb35dd2f833   # the full SHA: a fetch by SHA needs it
+ROADSTYLE_COMMIT=29c65b16209bdadbd886a899c1a45b02948b5176   # the full SHA: a fetch by SHA needs it
 ROADSTYLE_REPO=${ROADSTYLE_REPO:-https://github.com/Khoshkhah/roadstyle.git}
 DUCKOSM_REV=$(sed -n 's/.*duckOSM\.git", rev = "\([0-9a-f]*\)".*/\1/p' crates/duckosm-wasm/Cargo.toml | sort -u)
 DUCKOSM_REPO=${DUCKOSM_REPO:-https://github.com/Khoshkhah/duckOSM.git}
@@ -69,4 +69,4 @@ if [ "$(git -C $D rev-parse -q --verify HEAD 2>/dev/null)" != $DUCKOSM_REV ] || 
 fi
 rm -rf crates/duckosm-wasm/www/duckosm
 mkdir -p crates/duckosm-wasm/www/duckosm
-cp -r $D/web/fixes_editor crates/duckosm-wasm/www/duckosm/
+cp -r $D/web/fixes_editor $D/web/ask crates/duckosm-wasm/www/duckosm/      # the fixes editor (card 7) and the questions of Ask (web/ask/questions.js)

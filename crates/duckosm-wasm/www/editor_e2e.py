@@ -37,12 +37,12 @@ def sql(page, text):
 
 
 BOX = "(id) => { const r = document.getElementById(id).getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; }"
-BUSY = "!document.getElementById('mapbusy').hidden"
+BUSY = "document.getElementById('rs-mapbusy')?.hidden === false"
 
 
 def drawn(page, js):
     """Run js (clicks that start a draw), then wait until no draw runs (window.mapDrawing) and the map is drawn or failed. The map's
-    loading veil (#mapbusy) shows at once and goes when the draw stops."""
+    loading veil (#rs-mapbusy, roadstyle's rs.mapBusy) shows at once and goes when the draw stops."""
     page.evaluate(js)
     assert page.evaluate(BUSY), "the loading veil shows at once"
     page.wait_for_timeout(1000)                     # a second click 300 ms later is in
@@ -74,9 +74,9 @@ with sync_playwright() as p:
     # first the veil with the draw's step over the map as it is (the base map of before), then the blank base and the area in view
     page.wait_for_function(BUSY, timeout=600_000, polling=50)
     assert page.evaluate("document.querySelector('input[name=rs-bm]:checked')?.value") != "blank", "the old base map under the veil"
-    print("while the draw runs:", page.inner_text("#mapbusy-text"))
+    print("while the draw runs:", page.inner_text("#rs-mapbusy .rs-mapbusy-t"))
     page.screenshot(path=str(out / "draw-during.png"))
-    page.wait_for_function("/drawn|failed/.test(document.getElementById('mapnote').textContent) && document.getElementById('mapbusy').hidden",
+    page.wait_for_function("/drawn|failed/.test(document.getElementById('mapnote').textContent) && document.getElementById('rs-mapbusy')?.hidden !== false",
                            timeout=600_000)
     assert "drawn" in page.inner_text("#mapnote"), page.inner_text("#mapnote")
     assert page.is_visible("#step8-card"), "card 8 shows after a build with levels"
@@ -177,10 +177,10 @@ with sync_playwright() as p:
     t = time.time()
     page.click("#step8")
     # "Opening the level editor…" is in the map's busy box (spinner and veil), as Build and Show on map show their progress (Kaveh, 2026-11-02)
-    page.wait_for_function("!document.getElementById('mapbusy').hidden && /Opening the level editor/.test(document.getElementById('mapbusy-text').textContent)", timeout=5_000)
+    page.wait_for_function("document.getElementById('rs-mapbusy')?.hidden === false && /Opening the level editor/.test(document.querySelector('.rs-mapbusy-t').textContent)", timeout=5_000)
     page.wait_for_function("window.levelEditorOpen || /failed/.test(document.getElementById('editnote').textContent)", timeout=300_000)
     assert page.evaluate("!!window.levelEditorOpen"), page.inner_text("#editnote")
-    assert page.evaluate("document.getElementById('mapbusy').hidden"), "the busy box stays after the editor is open"
+    assert page.evaluate("document.getElementById('rs-mapbusy')?.hidden !== false"), "the busy box stays after the editor is open"
     # the page gives the editor the map's levels (levelEditor's levels, roadstyle 083224c): no solve also at the first open
     page.wait_for_timeout(500)
     assert max(abs(x - y) for x, y in zip(at(), pos0)) <= 2, ("the view moved when the editor opened", pos0, at())

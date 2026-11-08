@@ -61,7 +61,7 @@ with sync_playwright() as p:
 
     # the card: number 10, ready before a build, with its own button; the panel has six tabs, the header, and the bar
     card = page.locator("#step9-card")
-    assert card.count() == 1 and page.text_content("#step9-card .rs-sec-title").strip() == "Edit design" and page.text_content("#step9-card .n") == "9"
+    assert card.count() == 1 and page.text_content("#step9-card .rs-sec-title").strip() == "Edit design" and page.text_content("#step9-card .rs-sec-n") == "9"
     assert "off" not in (page.get_attribute("#step9-card", "class") or ""), "the design needs no build"
     if "folded" in (page.get_attribute("#step9-card", "class") or ""):
         page.click("#step9")

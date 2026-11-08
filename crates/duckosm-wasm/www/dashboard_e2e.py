@@ -95,7 +95,7 @@ with sync_playwright() as p:
     # one neutral look for the cards that are active: no card has a color of its own, in both themes; a card that is not ready is grey (the panel's tokens)
     def looks():
         return page.evaluate("""() => [...document.querySelectorAll('.step:not(.off)')].map((s) => {
-            const n = s.querySelector('.n'), c = getComputedStyle(s);
+            const n = s.querySelector('.rs-sec-n'), c = getComputedStyle(s);
             return [getComputedStyle(n).backgroundColor, getComputedStyle(n).color, c.borderTopColor, c.backgroundColor, c.getPropertyValue('--c')];
         })""")
     for theme in ("light", "dark"):

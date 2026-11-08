@@ -70,15 +70,15 @@ with sync_playwright() as p:
     assert page.evaluate(BOX, "run")[3] <= H, "Build is in view in the sheet"
     page.tap("#run")
     # first the loading veil over the map that the sheet leaves free (the base map of before), then the blank base and the area in view
-    page.wait_for_function("!document.getElementById('mapbusy').hidden", timeout=600_000, polling=50)
+    page.wait_for_function("document.getElementById('rs-mapbusy')?.hidden === false", timeout=600_000, polling=50)
     assert page.evaluate("document.querySelector('input[name=rs-bm]:checked')?.value") != "blank", "the old base map under the veil"
     page.wait_for_timeout(300)                      # the sheet's height (a transition)
-    if page.evaluate("!document.getElementById('mapbusy').hidden"):
-        busy, pn = page.evaluate(BOX, "mapbusy"), page.evaluate(BOX, "sb")
+    if page.evaluate("document.getElementById('rs-mapbusy')?.hidden === false"):
+        busy, pn = page.evaluate(BOX, "rs-mapbusy"), page.evaluate(BOX, "sb")
         assert abs(busy[3] - grip()[1]) <= 1 and busy[1] >= 40, ("the veil above the sheet and under the bar", busy, grip())
         shot("3a-drawing")
     page.wait_for_function("/drawn|failed/.test(document.getElementById('mapnote').textContent) && window.duckMap.loaded() && "
-                           "document.getElementById('mapbusy').hidden", timeout=600_000)
+                           "document.getElementById('rs-mapbusy')?.hidden !== false", timeout=600_000)
     assert "drawn" in page.inner_text("#mapnote"), page.inner_text("#mapnote")
     assert state() == 1, state()
     page.wait_for_timeout(400)
