@@ -48,6 +48,8 @@ gzip; [tables.md](tables.md)). Kaveh chose it on 2026-10-23. Two other ways, for
     `#only-light` and `#only-dark` marks of mkdocs-material in the manual.
   - The live page (the links and any frame of it in the README and the manual): check if a link can open the page in a
     chosen theme. If it cannot, ask for a link parameter in the page (roadstyle's `rsSetTheme`), and use it in the links.
+  - Charts too (Kaveh, 2026-11-08): the charts of Ask and of the data dock in the manual and the README. Make each chart in both
+    themes, and check that its colors read in the light and in the dark theme.
   - Check the new pictures with `mkdocs build --strict`, and on github.com in both themes.
 
 ## The tables
