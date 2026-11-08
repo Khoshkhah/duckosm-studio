@@ -416,6 +416,7 @@ import { QUESTIONS } from "./duckosm/ask/questions.js";   // duckOSM's example q
 import { askTables, describeTables, mainEdges, roadsBy, startSql, aboutText, roadClasses, hasTags } from "./duckosm/ask/schema.js";   // duckOSM's knowledge of its tables for Ask and the dock
 import { askPanel } from "./map/roadstyle/dashboard/ask/ask_panel.js";   // roadstyle's Ask (an AI agent with the person's own key)
 import { rsFirstPaint } from "./map/roadstyle/dashboard/template.js";   // the classes of <html> before the first paint
+import { roadLayers } from "./map/roadstyle/dashboard/roadlayers.js";   // roadstyle's swap of the roads style on the map (images, sources, layers, rs.setStyle)
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
@@ -1700,19 +1701,17 @@ let roadsRun = 0;
 const ROAD_KEYS = ["name", "edge_id", "osm_id", "highway", "edge_ref", "lanes", "bridge", "tunnel", "access"];   // the popup's fields in the road table (contract 2: not in the tiles)
 // the roads of the base map (OpenFreeMap's transportation layers) go away while the duckOSM roads show, so the two do not compete
 let roadsShown = false;
+// roadLayers (roadstyle): the roads of the page on its map. Its ids start with "rs-" and go under the area's fill; `also` takes off the overview copies of the fill layers (rs-low-).
+const roads = roadLayers({ map, dashboard: rs, prefix: "rs-", before: "area-fill", also: ["rs-low-"] });
 function removeRoads() {
   if (!map.getStyle()) return;
   roadsShown = false;
-  for (const l of map.getStyle().layers) if (l.id.startsWith("rs-")) map.removeLayer(l.id);
-  for (const id of Object.keys(map.getStyle().sources)) if (id.startsWith("rs-")) map.removeSource(id);
+  roads.remove();
   paintBoundary(false);
 }
-const addImages = (images) => Promise.all(Object.entries(images).map(([n, v]) => new Promise((done) => {
-  const o = typeof v === "string" ? { url: v } : v, img = new Image();
-  img.onload = () => { if (!map.hasImage(n)) map.addImage(n, img, { sdf: !!o.sdf, pixelRatio: o.pixelRatio || 1 }); done(); };
-  img.onerror = done;
-  img.src = o.url;
-})));
+// the style on the map: roadLayers puts it there and tells the dashboard (rs.setStyle: the design panel paints the design on it, rs:stylechange); the page adds
+// the boundary's look and the overview copies in `after`
+const showStyle = (style) => roads.show(style, { after: (st) => { paintBoundary(true); addOverview(st); } });   // the fill would change the colors of the roads: paintBoundary(true) hides it, unless the design says that it covers the roads
 // One draw at a time: a draw makes temporary tables in DuckDB and writes roads.parquet, so two draws at once break each other ("Table
 // with name e does not exist"). A draw that is asked for while one runs (a click, the draw after Apply) comes after it, one time only.
 // "Show on map" and the network list are off while a draw runs or the level editor is open.
@@ -1766,21 +1765,6 @@ const smaller = () => {
     + (SMALL_DEVICE ? " a desktop browser or" : "") + " a smaller area. The downloads work.";
 };
 const tooLarge = (n) => `This map has ${num(n)} roads. ${SMALL_DEVICE ? "This device" : "A browser page"} draws at most ${num(roadLimit())} roads (its memory). ` + smaller();
-async function addRoadStyle(style) {
-  const own = style.metadata?.["roadstyle:images"] || {};
-  await addImages(Object.fromEntries(Object.entries(own).map(([n, v]) => ["rs-" + n, v])));
-  // the one vector source "roads" (its source layers: simple, slots, ov<i>): a road's pieces have the road's row as the feature id (contract 2),
-  // so the dashboard lights them all with one feature state
-  for (const [id, src] of Object.entries(style.sources)) map.addSource("rs-" + id, src);
-  for (const l of style.layers) {
-    let json = JSON.stringify(l);
-    for (const n of Object.keys(own)) json = json.replaceAll(`"${n}"`, `"rs-${n}"`);   // the image names in the layout
-    const layer = JSON.parse(json);
-    map.addLayer({ ...layer, id: "rs-" + l.id, source: "rs-" + l.source }, "area-fill");
-  }
-  paintBoundary(true);   // the fill would change the colors of the roads: it hides, unless the design says that it covers the roads
-  addOverview(style);
-}
 // MapLibre draws a tile that is not loaded yet from loaded tiles of the same source, but only from its parents and from children up to 3
 // zooms deeper. A fast zoom out passes zooms with no loaded tile near, and the area stays empty until the new tiles are cut and parsed
 // (0.5 to 0.9 s for a tile of 0.5 to 0.9 MB). So the opaque fill layers (land, water, buildings of the base map) are drawn also from a
@@ -1801,10 +1785,9 @@ function addOverview(style) {
 // A new style for the roads that show (the editor's redraw, a change of the tile format): the old layers and sources go, the new ones come
 async function useStyle(style) {
   removeRoads();
-  await addRoadStyle(style);
+  await showStyle(style);
   roadsShown = true;
   document.dispatchEvent(new Event("duckosm:drawn"));
-  rs.setStyle(style);     // roadstyle's design panel paints the design's ground, layers and opacity again (rs:stylechange)
 }
 async function drawRoads() {
   const run = ++roadsRun, isFresh = fresh;
@@ -1823,10 +1806,9 @@ async function drawRoads() {
     drawStep("drawing: the first tiles…");
     await loaded;
     removeRoads();
-    await addRoadStyle(r.style);
+    await showStyle(r.style);
     // RS_SIDE, the road table, comes after the first tiles
     //   // the road fields (the popup); the level editor puts its own here while it is open
-    rs.setStyle(r.style);   // the dashboard reads the new roads style (its layers and metadata); the design panel paints the design on it (rs:stylechange)
     roadsShown = true;
     document.dispatchEvent(new Event("duckosm:drawn"));
     // the first tiles: the map is drawn when it is idle (at most 60 s)
@@ -2510,9 +2492,8 @@ async function replaceRoads(rows) {
   if (r.style) {
     await useStyle(r.style);
   } else {
-    // MapLibre 5 has no source.reload(): setTiles with the same URLs drops the source's tiles and loads the visible ones again (the map worker's
-    // LiveMap keeps the other tiles, so only the pieces of the changed edges are cut again)
-    for (const [id, s] of Object.entries(map.getStyle().sources)) if (id.startsWith("rs-") && s.type === "vector") map.getSource(id).setTiles(s.tiles);
+    // the vector sources load their visible tiles again (the map worker's LiveMap keeps the other tiles, so only the pieces of the changed edges are cut again)
+    roads.reloadTiles({ wait: false });
   }
   lap(r.style ? "new style" : "tiles reload", t);
   t = performance.now();
