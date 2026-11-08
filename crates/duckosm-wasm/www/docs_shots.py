@@ -8,6 +8,7 @@ comes from cdn.jsdelivr.net. Build the page first (docs/development.md, "WebAsse
 import pathlib
 import sys
 
+from PIL import Image
 from playwright.sync_api import sync_playwright
 
 from serve import WWW, start
@@ -91,6 +92,7 @@ with sync_playwright() as p:
     page.keyboard.press("Enter")
     page.wait_for_selector("#found label", timeout=30_000)
     shot(page, "02-search", "#step1-card")
+    Image.open(out / "02-search.png").crop((0, 0, 4000, 350)).save(out / "02-search.png")      # the card shows the first two matches, not all ten
     page.click("#tab-draw")
     shot(page, "03-draw", "#step1-card")
     page.click("#tab-file")
