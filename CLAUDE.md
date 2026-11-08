@@ -51,7 +51,7 @@ CI (`.github/workflows/ci.yml`) runs on pushes to `main` and on pull requests. `
 
 - Test on Monaco, and on Tartu when needed. Do not run Estonia, Kentucky or any larger area unless Kaveh asks.
 - A failing golden test after a change means that the change altered a result. Never edit a golden file to make a test pass.
-- Ask before `git push`. A change of only the README or `docs/` goes to main at once: push, PR and merge when its CI is green.
+- Sessions may push their own branches and open pull requests without asking. They ask me before they merge into main. A change of only the README or `docs/` goes to main at once: push, PR and merge when its CI is green.
 - `target` is a link to `.shared-target` (shared by the worktrees in `.claude/worktrees/`). Do not set `CARGO_TARGET_DIR` to a worktree folder. When you build a second source tree, touch `crates/*/src/*.rs`, because Cargo can report "fresh" for the other tree.
 - Page work needs a phone-viewport check before a merge. The page uses roadstyle's dashboard template and toolbox unchanged: a missing dashboard part is a roadstyle change, not a page patch.
 - Write all text (docs, comments, commit messages, PR text) in ASD-STE100 Simplified Technical English.
