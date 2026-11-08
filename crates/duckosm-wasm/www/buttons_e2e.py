@@ -77,9 +77,9 @@ def run(browser, name, dark=False, **context):
     assert l["disabled"] and l["cursor"] == "progress" and not l["title"], ("Build is off while it builds (roadstyle's busy button)", l)
     assert page.evaluate("document.getElementById('run').classList.contains('rs-busy')"), "Build shows roadstyle's ring while it builds (rs.busy)"
     assert why("buildhint") == "", ("no text line under Build while it builds", why("buildhint"))
-    # the progress of the build is in one place (the map's busy box): during the build only one visible element says "Building", and it is in #mapbusy
-    says = "[...document.querySelectorAll('body *')].filter((e) => !e.children.length && /\\bbuilding\\b/i.test(e.textContent) && e.tagName !== 'TD' && e.getBoundingClientRect().height > 0).map((e) => !!e.closest('#mapbusy'))"
-    box = "(() => { const e = document.getElementById('mapbusy-text'), r = e.getBoundingClientRect(), s = document.getElementById('sb').getBoundingClientRect(); return {w: r.width, h: r.height, top: r.top, bottom: r.bottom, left: r.left, right: r.right, sbTop: s.top, sbLeft: s.left, sbRight: s.right, vw: innerWidth, vh: innerHeight}; })()"
+    # the progress of the build is in one place (the map's busy box): during the build only one visible element says "Building", and it is in #rs-mapbusy
+    says = "[...document.querySelectorAll('body *')].filter((e) => !e.children.length && /\\bbuilding\\b/i.test(e.textContent) && e.tagName !== 'TD' && e.getBoundingClientRect().height > 0).map((e) => !!e.closest('#rs-mapbusy'))"
+    box = "(() => { const e = document.querySelector('#rs-mapbusy .rs-mapbusy-t'), r = e.getBoundingClientRect(), s = document.getElementById('sb').getBoundingClientRect(); return {w: r.width, h: r.height, top: r.top, bottom: r.bottom, left: r.left, right: r.right, sbTop: s.top, sbLeft: s.left, sbRight: s.right, vw: innerWidth, vh: innerHeight}; })()"
     seen = []
     while not page.evaluate("!document.getElementById('step5-card').classList.contains('off')") and len(seen) < 3000:
         n = page.evaluate(says)

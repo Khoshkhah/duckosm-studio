@@ -46,61 +46,36 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
      templates/dashboard.html that a host page needs), and the content of the cards. */
   /* the panel waits for rsFirstPaint (the script below): no frame shows another form */
   html:not(.rs-tpl-dashboard) #sb { visibility: hidden; }
-  :root {
-    --bg: #ffffff; --surface: #f6f7f9; --fg: #111827; --muted: #6b7280; --line: #e5e7eb;
-    --warn: #b45309; --warn-soft: #fef3c7;
-    --error: #b91c1c; --shadow: 0 10px 30px rgba(15, 23, 42, 0.18), 0 2px 6px rgba(15, 23, 42, 0.08);
-  }
-  /* the one theme value of the dashboard: roadstyle's theme button sets data-rs-theme on <html> */
-  :root[data-rs-theme=dark] {
-    --bg: #17181c; --surface: #22242a; --fg: #f3f4f6; --muted: #9ca3af; --line: #33363d;
-    --warn: #fbbf24; --warn-soft: #3b2f12;
-    --error: #f87171; --shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  }
-  /* in the panel the colors are the panel's (--bg, --ink, --mut, --line, --card, --accent: roadstyle's, set on #sb and flipped by its data-theme; the page has no accent of its own) */
-  #sb {
-    --fg: var(--ink); --muted: var(--mut); --surface: var(--card);
-    --accent-soft: color-mix(in srgb, var(--accent) 16%, var(--bg)); --warn: #b45309; --warn-soft: #fef3c7; --error: #b91c1c;
-  }
-  #sb[data-theme=dark] { --warn: #fbbf24; --warn-soft: #3b2f12; --error: #f87171; }
+  /* the colors are roadstyle's tokens (--bg, --ink, --mut, --line, --card, --accent, --rs-err, --rs-warn, --rs-ok: dashboard.css; they follow data-rs-theme on <html>). The page has no color of its own. */
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
-  body { font: 14px/1.45 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg); background: var(--bg); }
+  body { font: 14px/1.45 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: var(--bg); }
   #map { position: fixed; inset: 0; }
   /* the part of the map that the panel and the bar leave free (freeInsets() in the script sets --free-l, --free-r, --free-b) */
-  /* the map while a draw runs: a light veil over the whole map (also the strip beside the bar), and roadstyle's ring (rs-spinner) with the draw's step
-     (showRoads) in the part of the map that the panel, the bar or the phone's sheet leave free */
-  #mapbusy { position: fixed; inset: 0; box-sizing: border-box; padding: var(--free-t, 0px) var(--free-r, 0px) var(--free-b, 0px) var(--free-l, 0px); z-index: 1; display: flex; align-items: center;
-    justify-content: center; background: color-mix(in srgb, var(--bg) 40%, transparent); pointer-events: none; }
-  #mapbusy[hidden] { display: none; }
-  #mapbusy > span { display: flex; align-items: center; gap: 8px; background: var(--bg); color: var(--fg); padding: 6px 12px; border-radius: 99px; font-size: 13px; box-shadow: var(--shadow); }
   /* the panel's shell (position, tokens, the hide and show buttons with their icons: the markup of roadstyle's template) is dashboard.css. Here: the title of the panel. */
   /* the panel's title: h2 (roadstyle's help window puts its "?" in it); the buttons of the title row */
-  .sb-top h2 { margin: 0; font-size: 16px; letter-spacing: -0.01em; text-transform: none; color: var(--fg); display: block; }
+  .sb-top h2 { margin: 0; font-size: 16px; letter-spacing: -0.01em; text-transform: none; color: var(--ink); display: block; }
   body.editing #sb #rs-fold-all { display: none; }
   /* the cards are roadstyle's cards that fold (the title row: the title button and the chevron; the box, the padding and the gap are roadstyle's card standard):
      the number, the done mark and the reason of a disabled card are in the title row; the card's own buttons ("?", the zoom to the area) are beside the chevron */
   .step { position: relative; }
-  .step > .rs-sec-hd .rs-sec-title:disabled { cursor: default; color: var(--muted); }
-  .step > .rs-sec-hd .after { font-size: 12px; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--muted); }
-  .step > .rs-sec-hd .done { color: var(--accent); font-size: 13px; font-weight: 700; text-transform: none; }
+  .step > .rs-sec-hd .rs-sec-title:disabled { cursor: default; color: var(--mut); }
+  .step > .rs-sec-hd .after { font-size: 12px; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--mut); }
   .step.off > .rs-sec-hd :is(.rs-icon-btn, .rs-help-btn) { opacity: 0.5; }
-  .step.off { background: var(--surface); }
-  .step.off .n { background: var(--line); color: var(--muted); }
+  .step.off { background: var(--card); }
   /* the panel's sections give their text the ink (dashboard.css); the muted lines of the cards stay muted */
-  #sb .muted, #sb .why { color: var(--muted); }
-  .sb-top p { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; }
+  #sb .muted, #sb .why { color: var(--mut); }
+  .sb-top p { margin: 2px 0 0; color: var(--mut); font-size: 12.5px; }
   /* the panel's type: the cards' own sizes (roadstyle's template sets 13px for its controls) */
-  :where(#sb) h2 { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 10px; }
+  :where(#sb) h2 { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--mut); margin: 0 0 10px; }
   /* a plain button, a filled one (sb-primary), a red one (sb-danger), a disabled one and a busy one (rs.busy) are roadstyle's (dashboard.css) */
   #sb .step-body button:has(> svg):not(.rs-sel-btn) { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }      /* an icon and a word in one line */
   .step-body { display: flex; flex-direction: column; gap: 10px; }
   .step-body > * { margin-top: 0 !important; margin-bottom: 0 !important; }
-  .step .n { width: 20px; height: 20px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-size: 11px; flex: none; }
   /* card 5: one line of the build, the downloads on one row and the folded table downloads */
   .step .line { margin: 0; }
-  .step h3 { display: inline; margin: 0; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
-  .step details > summary:has(h3) { color: var(--muted); }
+  .step h3 { display: inline; margin: 0; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--mut); }
+  .step details > summary:has(h3) { color: var(--mut); }
   .dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 10px; }      /* two buttons in a row: four (.zip, .duckdb, .osm.pbf, .yaml) do not fit in one row of the panel */
   .dl [hidden] { display: none; }
   .dl button { padding: 6px 8px; white-space: nowrap; }
@@ -108,10 +83,10 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
   #sb svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
   #sb .sb-top svg { width: 16px; height: 16px; stroke-width: 1.8; }
   a { color: var(--accent); }
-  .muted { color: var(--muted); }
+  .muted { color: var(--mut); }
   .small { font-size: 12.5px; }
   /* an action button is disabled until its inputs are ready; the reason is the text under it (.why) */
-  .why { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); }
+  .why { margin: 6px 0 0; font-size: 12.5px; color: var(--mut); }
   .why:empty { display: none; }
   .build-go { display: grid; margin-top: 12px; gap: 6px; }                     /* Build in card 4, under its options; the reason under it, as under every button */
   .build-go #run { justify-self: end; min-width: 160px; padding: 8px 14px; }
@@ -123,13 +98,6 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
   #sb .step-body .rs-tab { flex: 1 1 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; }
   #sb .step-body .rs-tab svg { width: 16px; height: 16px; }
 
-  /* the search field is one field: the search icon at the left, the "What is here?" button (rs.toggle) at the right. roadstyle's search field
-     (rs.search) has no place for an icon button in the field yet: until it has one, the field is the page's own. */
-  .field { position: relative; }
-  .field > svg { position: absolute; left: 11px; top: 9px; color: var(--muted); pointer-events: none; }
-  #sb .field input[type=search] { height: 36px; padding: 0 40px 0 36px; }
-  #sb .here { position: absolute; right: 4px; top: 4px; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; }
-
   /* the matches are roadstyle's option rows (rs-opt); the rest of the address: at most two lines in the card; the whole address is in the title */
   #found { margin-top: 10px; }
   #found .rs-opt small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
@@ -137,12 +105,12 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
 
   .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
   #h3-panel .rs-sel { margin-bottom: 8px; }
-  .h3-box { padding: 9px 11px; background: var(--bg); border-radius: 9px; font-size: 12.5px; color: var(--muted); }
+  .h3-box { padding: 9px 11px; background: var(--bg); border-radius: 9px; font-size: 12.5px; color: var(--mut); }
   .h3-box p { margin: 0; }
   .h3-box #h3-grid-note:not(:empty) { margin-top: 4px; }
-  #hint { margin: 0; padding: 9px 11px; background: var(--bg); border-radius: 9px; font-size: 12.5px; color: var(--muted); }
+  #hint { margin: 0; padding: 9px 11px; background: var(--bg); border-radius: 9px; font-size: 12.5px; color: var(--mut); }
 
-  .source { margin-top: 8px; font-size: 12.5px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+  .source { margin-top: 8px; font-size: 12.5px; color: var(--mut); display: flex; gap: 6px; align-items: center; }
 
   /* the extracts are roadstyle's option rows (rs-opt), with Get or Use and the download at the end; a download: roadstyle's bar (rs.progress) and Cancel under the name */
   #extracts .rs-opt { align-items: center; }
@@ -171,50 +139,46 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
   .pick span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* card 4: the networks as three option rows side by side, the layers as one option row with its reason, then the optional parts as rows that open */
   #step4-card details.drow { margin: 0; padding: 10px 0 0; border-radius: 0; background: none; border-top: 1px solid var(--line); }       /* flat rows: roadstyle's rule makes a details a box (padding, radius, background) */
-  #step4-card details.drow > summary { display: flex; align-items: center; justify-content: space-between; list-style: none; color: var(--fg); font-size: 13px; font-weight: 500; }
+  #step4-card details.drow > summary { display: flex; align-items: center; justify-content: space-between; list-style: none; color: var(--ink); font-size: 13px; font-weight: 500; }
   #step4-card details.drow > summary::-webkit-details-marker { display: none; }
-  #step4-card details.drow > summary::after { content: ""; width: 7px; height: 7px; margin-right: 3px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); transition: transform 0.15s; }
+  #step4-card details.drow > summary::after { content: ""; width: 7px; height: 7px; margin-right: 3px; border-right: 2px solid var(--mut); border-bottom: 2px solid var(--mut); transform: rotate(-45deg); transition: transform 0.15s; }
   #step4-card details.drow[open] > summary::after { transform: rotate(45deg); }
   #step4-card details.drow > :not(summary) { margin-top: 10px; }
   #step4-card .pick { margin-bottom: 0; }
-  #step4-card .progress { margin: 0; }
   #step4-card .steplog th, #step4-card .steplog td { padding: 3px 4px; }
   /* the table of the networks: roadstyle's table, with no row that acts */
   #resultline .rs-table tbody tr { cursor: default; }
   #resultline .rs-table tbody tr:hover { background: none; }
   #resultline .rs-table th { cursor: default; position: static; }
-  #resultline .rs-table td:first-child svg { width: 16px; height: 16px; margin-right: 6px; vertical-align: -3px; color: var(--muted); }
-  details { margin-top: 10px; } summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
-  .progress { margin: 10px 0 0; padding: 9px 11px; border-radius: 9px; background: var(--surface); font-size: 12.5px; white-space: pre-wrap; }
-  .progress:empty { display: none; }
+  #resultline .rs-table td:first-child svg { width: 16px; height: 16px; margin-right: 6px; vertical-align: -3px; color: var(--mut); }
+  details { margin-top: 10px; } summary { cursor: pointer; color: var(--mut); font-size: 12.5px; }
   .steplog { width: 100%; margin-top: 6px; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
   .steplog th, .steplog td { padding: 3px 6px; border-bottom: 1px solid var(--line); }
-  .steplog th { text-align: right; color: var(--muted); font-weight: 500; }
+  .steplog th { text-align: right; color: var(--mut); font-weight: 500; }
   .steplog th:first-child, .steplog td:first-child { text-align: left; }
   .steplog td { text-align: right; white-space: nowrap; }
   .steplog td:first-child { white-space: normal; }
   /* card 4 after a build: one muted line, and the build details' text rows */
-  #buildstatus.done { padding: 0; background: none; color: var(--muted); }
   #builddetails td[colspan] { text-align: left; white-space: normal; }
   #builddetails th, #builddetails td { padding: 3px 4px; }
-  .steplog tr.group td { padding-top: 9px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; border-bottom: 0; }
+  .steplog tr.group td { padding-top: 9px; color: var(--mut); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; border-bottom: 0; }
   .steplog tr.total td { font-weight: 600; border-bottom: 0; }
   /* the time cell: a bar for the share of the slowest step */
   .steplog td.t { background: linear-gradient(to left, color-mix(in srgb, var(--accent) 22%, transparent) var(--w), transparent var(--w)); }
   .grid2 { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; }
-  textarea { color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 9px; }
+  textarea { color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 9px; }
   textarea { width: 100%; padding: 8px 10px; font: 12.5px/1.4 ui-monospace, monospace; resize: vertical; }
   /* one block for each table: its name, what it holds, and a link for each mode */
   #files .tb { padding: 8px 0; border-top: 1px solid var(--line); font-size: 12.5px; }
   #files .tb b { font-family: ui-monospace, monospace; font-size: 12px; }
-  #files .tb p { margin: 2px 0 4px; color: var(--muted); font-size: 11.5px; }
+  #files .tb p { margin: 2px 0 4px; color: var(--mut); font-size: 11.5px; }
   #files .tb .m { display: flex; flex-wrap: wrap; gap: 4px 14px; font-variant-numeric: tabular-nums; }
   #files .tb .m .i { white-space: nowrap; }
-  #files .tb .m .i span { color: var(--muted); font-size: 11.5px; }
+  #files .tb .m .i span { color: var(--mut); font-size: 11.5px; }
   #files .layers { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px; margin-top: 6px; }
   #files .layers a { display: flex; justify-content: space-between; gap: 8px; padding: 4px 8px; border-radius: 6px;
-    background: var(--surface); text-decoration: none; font-variant-numeric: tabular-nums; }
-  #files .layers a span { color: var(--muted); font-size: 11.5px; }
+    background: var(--card); text-decoration: none; font-variant-numeric: tabular-nums; }
+  #files .layers a span { color: var(--mut); font-size: 11.5px; }
 
   body.picking #map canvas { cursor: crosshair; }
   body.h3 #map canvas { cursor: pointer; }
@@ -225,9 +189,7 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
     html, body { overflow: hidden; overscroll-behavior: none; }
     #sb .sb-body { overscroll-behavior: contain; }
     .sb-top p { display: none; }
-    #sb .step-body button:is(:not([class*="rs-"]), .rs-toggle):not(.here), #sb .rs-tab, #sb :is(input[type=text], .field input[type=search]) { min-height: 44px; }      /* plain buttons; roadstyle's parts have their own phone sizes */
-    .field > svg { top: 13px; }
-    #sb .here { width: 36px; height: 36px; }
+    #sb .step-body button:not([class*="rs-"]), #sb .rs-tab, #sb :is(input[type=text], input[type=search]) { min-height: 44px; }      /* plain buttons; roadstyle's parts have their own phone sizes */
   }
 /* a saved area is a roadstyle option row (rs-opt): the name, the date and the size, a chip for each network, then Open and Delete */
 .saved-area .sa-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
@@ -268,7 +230,6 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
 </svg>
 
 <div id="map" role="region" aria-label="Map of the area"></div>
-<div id="mapbusy" hidden><span><span class="rs-spinner"></span><span id="mapbusy-text"></span></span></div>
 
 <div id="sb" data-theme="light" role="complementary" aria-label="duckOSM">
 <div class="sb-card">
@@ -288,11 +249,7 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
 </div>
 
 <section id="find" role="tabpanel" aria-labelledby="tab-find">
-  <form id="search" class="field" role="search">
-    <svg><use href="#i-search"/></svg>
-    <input id="q" type="search" placeholder="City, region, country or H3 ID" aria-label="Name of a place or an H3 cell ID" autocomplete="off">
-    <button id="here" type="button" class="here" aria-pressed="false" aria-label="What is here? Click the map" title="What is here? Click the map"><svg><use href="#i-target"/></svg></button>
-  </form>
+  <div id="search" role="search"></div>
   <div id="found" class="rs-opts" role="radiogroup" aria-label="The matches"></div>
 </section>
 
@@ -376,7 +333,7 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
   </details>
   <div class="build-go"><button id="run" class="sb-primary" disabled>Build<svg><use href="#i-arrow"/></svg></button>
   <p id="buildhint" class="why" aria-live="polite"></p></div>
-  <p id="buildstatus" class="progress" aria-live="polite"></p>
+  <p id="buildstatus" class="rs-status" aria-live="polite"></p>
   <div id="buildinfo" class="rs-scroll">
   <details id="builddetails" class="drow" hidden><summary>Build details</summary><table class="steplog"><tbody></tbody></table></details>
   <details id="steplog" class="drow" hidden><summary>Time and memory of each step</summary>
@@ -409,7 +366,7 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
   </div>
   <div id="showrow" style="margin-top:10px" hidden><div class="row"><button id="show">Show on map</button></div>
     <p id="show-why" class="why"></p></div>
-  <p id="mapnote" class="progress" aria-live="polite"></p>
+  <p id="mapnote" class="rs-status" aria-live="polite"></p>
 </section>
 
 <!-- cards 7, 8 and 9 open a panel: each is one button (roadstyle's card with `open`), and its note is the line of state (OPEN_CARDS) -->
@@ -429,7 +386,7 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
   <h2 id="step10"><span class="n">10</span>Export</h2>
   <input id="export-mode" type="hidden" value="driving">
   <div id="export-list"></div>
-  <p id="export-status" class="progress" aria-live="polite"></p>
+  <p id="export-status" class="rs-status" aria-live="polite"></p>
 </section>
 
 </div>
@@ -562,10 +519,15 @@ const rs = rsDashboard(map, { style: null, prefix: "rs-", tiles: true,
   select_color: "#7c4dff",   // the look's theme.selection.select
   street_view: "window", street_view_key: localKeys.google ?? "", mapillary_token: localKeys.mapillary ?? "", google_3d: true, dashboard: host.dashboard });
 // roadstyle's parts in the cards (roadstyle docs/guides/dashboard-parts.md). Each input keeps the id that the page code and the tests use.
-const here = rs.toggle($("here"), (on) => { if (on) tool(null); picking(on); });      // "What is here?": on until the click on the map
+const hereBtn = Object.assign(document.createElement("button"), { id: "here", type: "button", title: "What is here? Click the map", ariaLabel: "What is here? Click the map", innerHTML: icon("target") });
+hereBtn.setAttribute("aria-pressed", "false");
+const here = rs.toggle(hereBtn, (on) => { if (on) tool(null); picking(on); });      // "What is here?": on until the click on the map
+// the search field: roadstyle's rs.search (the button is inside it, `end`). The list of the places is the page's own (#found, with the boundaries), so the field has no suggestions.
+rs.search($("search"), { placeholder: "City, region, country or H3 ID", label: "Name of a place or an H3 cell ID", end: hereBtn, onSubmit: () => search(), onClear: () => search() });
+$("search").querySelector("input").id = "q";
 const drop = rs.drop($("drop"), { accept: ".geojson,.json", text: "Drop a GeoJSON file here or on the map, or <u>choose a file</u>", onFiles: (f) => openFile(f[0]), onClear: () => unselectArea() });
 $("drop").querySelector("input").id = "file";
-const bufferNum = rs.number($("buffer-field"), { label: "Buffer around the area", unit: "m", min: 0, max: 50000, step: 50, value: 0, onChange: () => rebuffer() });
+const bufferNum = rs.number($("buffer-field"), { label: "Buffer around the area", unit: "m", min: 0, max: 50000, step: 50, snap: false, value: 0, onChange: () => rebuffer() });
 $("buffer-field").querySelector("input").id = "buffer";
 // no road popup or selection while the user draws a shape or picks a point (the dashboard has its own click on the roads)
 document.addEventListener("rs:select", () => {
@@ -798,7 +760,7 @@ async function setArea(polys, props, { zoom = true, findExtracts = true } = {}) 
   const vertices = polys.flat().reduce((s, r) => s + r.length - 1, 0);
   $("summary").innerHTML =
     `<div class="rs-kpis">${rsKpi("Area", num(km2, 2), `km²${m > 0 ? ` · +${num(m)} m` : ""}`)}${rsKpi("Polygons", num(polys.length), "")}${rsKpi("Vertices", num(vertices), "")}</div>` +
-    (km2 > 10000 ? `<div class="rs-callout" style="--rs-callout:var(--warn)">Large area. The build can take minutes and use more than 1 GB of memory.</div>` : "");
+    (km2 > 10000 ? `<div class="rs-callout" style="--rs-callout:var(--rs-warn)">Large area. The build can take minutes and use more than 1 GB of memory.</div>` : "");
   if (!findExtracts) {
     cover = props.geofabrik || [];
     $("save").disabled = false;
@@ -948,7 +910,6 @@ async function search() {
     if (!mine.signal.aborted) $("found").innerHTML = `<p class="rs-status error"><span>The search failed: ${esc(e.message)}</span></p>`;
   }
 }
-$("search").onsubmit = (ev) => { ev.preventDefault(); search(); };
 $("q").oninput = () => { clearTimeout(typing); typing = setTimeout(search, 300); };
 
 // what is here: the areas at 5 levels around the point that the user clicks
@@ -1463,7 +1424,7 @@ async function restoreSavedArea(slug) {
     status("Failed to restore area: " + e.message, 6000);
   } finally {
     building = false;
-    if (!drawing) $("mapbusy").hidden = true;
+    if (!drawing) rs.mapBusy(null);
     canBuild();
   }
 }
@@ -1544,12 +1505,11 @@ function initSavedAreaBanner() {
 }
 
 // ---- step 4: build ----
-// The progress of a build is shown in one place: the map's busy box (#mapbusy; also on a phone, where the page opens the sheet only to its middle height).
+// The progress of a build is shown in one place: the map's busy box (rs.mapBusy; also on a phone, where the page opens the sheet only to its middle height).
 // The Build button shows a spinner and is off. The line in card 4 has the result of the build (or its error) when it ends.
 const progress = (text, { final = false } = {}) => {
-  if (building && !final) { $("mapbusy-text").textContent = text.charAt(0).toUpperCase() + text.slice(1); $("mapbusy").hidden = false; return; }
-  $("buildstatus").classList.remove("done");
-  $("buildstatus").textContent = text;
+  if (building && !final) { rs.mapBusy(text.charAt(0).toUpperCase() + text.slice(1)); return; }
+    $("buildstatus").textContent = text;
 };
 // card 4's "Build details": the build's summary (one line for each part: "driving: 2765 edges, 1719 nodes, ...") as one small table: a row
 // for each mode with its numbers in columns, then one row for each other part. A line of another form stays as text.
@@ -1576,7 +1536,6 @@ function buildDetails(summary) {
   }
   $("builddetails").querySelector("tbody").innerHTML = rows.concat(other).join("");
   $("builddetails").hidden = false;
-  $("buildstatus").classList.add("done");
 }
 // the log: a row for each step of the build, the tables and the map, under a heading for each part. The memory is that of
 // the part: the build module (its WebAssembly memory, which only grows), DuckDB (its buffers) or the map module.
@@ -1728,7 +1687,7 @@ $("run").onclick = async () => {
     progress("Error: " + e.message, { final: true });
   }
   building = false;
-  if (!drawing) $("mapbusy").hidden = true;
+  if (!drawing) rs.mapBusy(null);
   canBuild();
 };
 
@@ -1757,7 +1716,7 @@ const addImages = (images) => Promise.all(Object.entries(images).map(([n, v]) =>
 let drawing = null, drawAgain = false;
 let opening = false;                              // the level editor is opening
 // "Opening the level editor…" in the map's busy box, as Build and Show on map show their progress (a draw that runs while it opens takes the box and puts it away)
-const openBusy = () => { $("mapbusy-text").textContent = "Opening the level editor…"; $("mapbusy").hidden = false; };
+const openBusy = () => rs.mapBusy("Opening the level editor…");
 const openWhy = {};                               // a reason that a card that opens a panel cannot open now (OPEN_CARDS): a draw runs, the editor opens, the panel did not start
 const drawControls = () => {
   const why = drawing ? "Drawing the map…" : editor ? "Close the level editor first." : "";
@@ -1779,11 +1738,11 @@ function showRoads() {
     } while (drawAgain);
   })().finally(() => {
     drawing = window.mapDrawing = null;
-    $("mapbusy").hidden = true;
+    rs.mapBusy(null);
     drawControls();
     refreshSteps();
   });
-  $("mapbusy").hidden = false;
+  rs.mapBusy("Drawing the map…");
   drawControls();
   return drawing;
 }
@@ -1852,7 +1811,7 @@ async function drawRoads() {
     $("mapnote").textContent = tooLarge(n);
     return;
   }
-  const drawStep = (t) => { $("mapnote").textContent = $("mapbusy-text").textContent = t; };
+  const drawStep = (t) => { $("mapnote").textContent = t; rs.mapBusy(t); };
   drawStep("drawing: the roads table and the style…");
   try {
     const t0 = performance.now();
@@ -2136,7 +2095,7 @@ function refreshSteps() {
     c.classList.toggle("off", !!why);
     c.querySelector(".rs-sec-title").disabled = !!(why || busy);
     c.querySelector(".after").textContent = why || busy || "";
-    c.querySelector(".done").hidden = !done || !!why;
+    rs.sections.done(c.dataset.rsSection, !!done && !why);
     if (why && !c.classList.contains("folded")) autoFold(c, true);      // a card that is not ready keeps only its title
   }
   if (areasCard && !areasCard.hidden && !areasAutoFolded && !touched && STEP[1].done()) { areasAutoFolded = true; autoFold(areasCard, true); }     // an area is chosen: the list folds
@@ -2174,18 +2133,16 @@ for (const old of [...document.querySelectorAll("section.step")]) {
   body.className = "step-body";
   while (h.nextSibling) body.append(h.nextSibling);
   const o = OPEN_CARDS[n];
-  const c = rs.sections.add(o ? { id: `step${n}`, label, open: () => { h3Mode(false); o.open(); }, note: o.note } : { id: `step${n}`, label, fold: true, el: body });
+  const c = rs.sections.add(o ? { id: `step${n}`, label, step: n, open: () => { h3Mode(false); o.open(); }, note: o.note } : { id: `step${n}`, label, step: n, fold: true, el: body });
   if (o) Object.assign(c.querySelector(".rs-sec-note"), { id: o.noteId }).setAttribute("aria-live", "polite");
   c.classList.add("step");
   c.id = old.id;
   const hd = c.querySelector(":scope > .rs-sec-hd");
   const title = hd.querySelector(".rs-sec-title");
   title.id = `step${n}`;
-  title.insertAdjacentHTML("beforebegin", `<span class="n">${n}</span>`);
   if (n === 2) Object.assign(rs.sections.button(`step${n}`, { icon: icon("zoom"), title: "Zoom to the area", onClick: zoomToArea }), { id: "zoom-area", disabled: true });
   title.insertAdjacentHTML("afterend", `<span class="after" id="step${n}-why"></span>`);
-  const chev = hd.querySelector(":scope > svg");        // the title row: the number, the title, the reason of a card that is off, the card's own button (the zoom to the area, card 2: rs.sections.button), the done mark, roadstyle's "?" (help button), the chevron
-  chev.insertAdjacentHTML("beforebegin", '<span class="done" hidden title="Done">✓</span>');
+  const chev = hd.querySelector(":scope > svg");        // the title row: the number (step) and the title, the reason of a card that is off, the card's own button (the zoom to the area, card 2: rs.sections.button), roadstyle's "?" (help button), the chevron
   if (n in CARD_HELP) chev.before(rs.help.button(c, { ...CARD_HELP[n], button: `Help: ${label}` }));
   old.remove();
   cards.push(c);
@@ -2266,7 +2223,7 @@ async function paintTileCount() {
   try { box = await exportExtent(); } catch (e) { out.textContent = `The extent of the network is not known: ${e.message}`; return; }
   const [lo, hi] = profileZooms(box, p);
   zoomNums[0].set(lo, true); zoomNums[1].set(hi, true);
-  for (const x of $("export-zmax-f").querySelectorAll("input, button")) x.disabled = p.auto;      // rs.number has no disabled state: its input and its - and + buttons
+  zoomNums[1].disabled(p.auto);
   const n = exporter.tileCount(box, lo, hi), bad = n > p.maxTiles;
   out.textContent = bad ? `${num(n)} tiles: too many (at most ${num(p.maxTiles)}). Use fewer zooms or raise the limit in step 9.` : `${num(n)} tiles.`;
   tileCount = { text: out.textContent, bad };
@@ -2394,8 +2351,10 @@ const data = () => dataPart ??= dataDock({
 $("query-tables").onclick = () => data().open();
 const ask = () => askPart ??= askPanel({ data: data(), dialect: "DuckDB",
   about: "The road networks of one area, built by duckOSM from OpenStreetMap. Each network is a schema: driving, walking and cycling. In a network, edges has one row for each direction of a road; edge_id is its id, osm_id the OSM way. The map draws the roads by edge_id.",
-  examples: ["Which one-way roads have no name?", "Which primary roads are longer than 300 m?", "Draw a bar chart of the km of road in each class.",
-    "Draw a histogram of the road lengths.", "Show a pie chart of the one-way and the two-way roads."] });
+  examples: { groups: [
+    { title: "The roads of this area", items: ["Which one-way roads have no name?", "Which primary roads are longer than 300 m?"] },
+    { title: "Charts of the roads", items: ["Draw a bar chart of the km of road in each class.", "Draw a histogram of the road lengths.", "Show a pie chart of the one-way and the two-way roads."] },
+  ] } });
 Object.defineProperties(window, { dataPart: { get: data }, askPart: { get: ask } });   // for the tests
 rs.sections.add({ id: "ask", label: "Ask the data", note: "A question about the roads, in words", open: () => ask().open(), icon: "ask", background: true, after: "step6" });
 
@@ -2679,7 +2638,7 @@ async function openEditor() {
     if (stale) return openEditor();
     editNote("The level editor failed: " + e.message);
   } finally {
-    if (!drawing) $("mapbusy").hidden = true;
+    if (!drawing) rs.mapBusy(null);
   }
 };
 // "← Steps": the editor goes, and the edits that it applied (the editor's Apply and solve) go into the tables (visualization.edge_levels and the
