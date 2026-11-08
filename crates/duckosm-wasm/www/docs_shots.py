@@ -8,6 +8,7 @@ comes from cdn.jsdelivr.net. Build the page first (docs/development.md, "WebAsse
 import pathlib
 import sys
 
+from PIL import Image
 from playwright.sync_api import sync_playwright
 
 from serve import WWW, start
@@ -91,6 +92,7 @@ with sync_playwright() as p:
     page.keyboard.press("Enter")
     page.wait_for_selector("#found label", timeout=30_000)
     shot(page, "02-search", "#step1-card")
+    Image.open(out / "02-search.png").crop((0, 0, 4000, 440)).save(out / "02-search.png")      # the card shows the first three matches, not all ten
     page.click("#tab-draw")
     shot(page, "03-draw", "#step1-card")
     page.click("#tab-file")
@@ -168,6 +170,9 @@ with sync_playwright() as p:
     page.click("#rs-toolbar .bm-ctrl .bm-icon")
     shot(page, "14-base-map-box")
     page.keyboard.press("Escape")
+    page.click("#rs-toolbar .rs-set-ctrl button")                      # the settings box (the gear)
+    shot(page, "44-settings-box", "#rs-settings-box")
+    page.click("#rs-toolbar .rs-set-ctrl button")
 
     # the dark theme
     page.evaluate("rsSetTheme('dark')")
@@ -187,7 +192,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(2000)
     shot(page, "42-dock-chart")
     page.evaluate("window.askPart.open()")
-    page.locator(".rs-ask .rs-chip").first.wait_for(state="visible")
+    page.locator(".rs-ask .rs-ask-q").first.wait_for(state="visible")
     page.wait_for_timeout(1000)
     shot(page, "43-ask")
     page.evaluate("window.askPart.close(); window.dataPart.view('table'); window.dataPart.close()")
@@ -222,7 +227,7 @@ with sync_playwright() as p:
     page.wait_for_function("duckMap.queryRenderedFeatures({layers: ['fix-nodes-pt']}).length > 0", timeout=20_000)
     page.evaluate(f"window.fixesPanel.select('node', 'node', {j['id']})")
     page.wait_for_function(f"document.getElementById('fix-id').value === '{j['id']}' && document.querySelector('#fixf-highway')", timeout=20_000)
-    page.select_option("#fixf-highway", "traffic_signals")
+    page.select_option("#fixf-highway", "traffic_signals", force=True)
     page.wait_for_timeout(800)
     shot(page, "19-fix-node")
     page.click("#fix-tab-turns")
@@ -255,11 +260,24 @@ with sync_playwright() as p:
         for (const a of items) for (const b of items) if (a !== b && a.ends.some((e) => b.ends.includes(e)) && Math.hypot(a.q.x - b.q.x, a.q.y - b.q.y) > 40) return [[a.q.x + c.left, a.q.y + c.top], [b.q.x + c.left, b.q.y + c.top]];
         return null; }""" % LAYERS)
     assert pair, "two roads that join, in the free part of the map"
-    for x, y in pair:
-        page.mouse.click(x, y)
-        page.wait_for_timeout(1200)
+    tab = lambda name: (page.locator("#sb [role=tab]", has_text=name).first.click(), page.wait_for_timeout(800))
+    # one road: the tab Road ends (the shape and the head length of each end)
+    page.mouse.click(*pair[0])
     page.wait_for_selector("#lv-cards .card, #lv-cards [data-hroad]", timeout=10_000)
+    page.wait_for_timeout(1500)
+    shot(page, "46-levels-road-ends")
+    # the second road: a click on a row of "Rules now" picks the two roads of the rule (a click on the map can miss the second road)
+    tab("Stacking")
+    page.wait_for_selector("#lv-rel > *", timeout=10_000)
+    page.locator("#lv-rel > *").first.click()
+    page.mouse.move(900, 80)                                          # the pointer off the list: no tooltip in the picture
+    page.wait_for_function("document.querySelectorAll('#lv-cards .num, #lv-cards [data-hroad]').length >= 2 || document.getElementById('lv-add-sec').hidden === false", timeout=10_000)
+    page.wait_for_timeout(1500)
     shot(page, "36-levels-editor")
+    tab("History")
+    shot(page, "47-levels-history")
+    tab("Issues")
+    shot(page, "48-levels-issues")
     page.click("#lv-back")
     page.wait_for_function("!window.levelEditorOpen && !window.mapDrawing && window.duckMap.loaded()", timeout=300_000)
 
@@ -275,6 +293,15 @@ with sync_playwright() as p:
     shot(page, "29-design-text")
     page.click("#design-tab-layers")
     shot(page, "30-design-layers")
+    # the 3D walls by type: the switch on, the map tilted over the buildings of Monaco
+    page.eval_on_selector("[data-p='walls.on']", "(el) => el.click()")
+    page.evaluate("document.querySelector(\"[data-p='walls.on']\").scrollIntoView({block: 'center'})")
+    page.evaluate("duckMap.jumpTo({center: [7.4246, 43.7384], zoom: 16.8, pitch: 60, bearing: -30, padding: {left: 300}})")
+    page.wait_for_function("!window.duckMap.isMoving() && window.duckMap.loaded()")
+    page.wait_for_timeout(2500)
+    shot(page, "45-design-walls")
+    page.eval_on_selector("[data-p='walls.on']", "(el) => el.click()")
+    page.evaluate("duckMap.jumpTo({center: [7.4246, 43.7384], zoom: 16, pitch: 0, bearing: 0, padding: {left: 0}})")
     page.click("#design-tab-tiles")
     shot(page, "31-design-tiles")
     page.click("#design-tab-theme")

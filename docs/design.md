@@ -1,7 +1,7 @@
 # Design of duckosm-rust
 
 Status: started as a draft for review by Kaveh on 2026-10-21. The Rust code exists. The tables of sections 2 and 3
-give the state of each part.
+give the state of each part. Since 2026-11-04 the Rust engine is in the duckOSM repository (`rust/`), and this repository has the browser page (duckOSM Studio). This document is the design and the history of the engine. How to work on the page now: [development.md](development.md). The names `duckosm-rust` and "release 0.3.0" are old.
 
 The repository is `duckosm-rust`. It is a Cargo workspace. Its first crate is `duckosm-core`.
 

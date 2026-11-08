@@ -48,6 +48,18 @@ export list and of card 7, in both themes, and fails on a control that does not 
 python3 crates/duckosm-wasm/www/parts_e2e.py out-parts
 ```
 
+## The pictures of the manual and of the README
+
+`docs_shots.py` makes the pictures of the manual (`docs/img/dashboard/`). It builds Monaco in headless Chromium and takes one picture of each part of the page. Build the page first. The Search picture needs the network.
+
+```bash
+python3 crates/duckosm-wasm/www/docs_shots.py          # writes docs/img/dashboard/
+```
+
+Run it on a current build (`build.sh` at the pins), and say in the pull request which commit the pictures show. `cards_shots.py` makes pictures of each card for a layout review.
+
+`readme_cards.py` makes the six cards of "What you can do" in `README.md` from six of these pictures (`docs/img/cards/`, a light and a dark set; the README chooses with `<picture>`). Run it again after `docs_shots.py`. The banner is `docs/img/banner.svg` (light) and `banner-dark.svg`. `banner.png` (1280 x 640, the size of a GitHub social preview) and `banner-dark.png` are their pictures. The social preview uses `banner.png`. The README uses the same script to give the banner the card look (`docs/img/cards/banner.png` and `banner-dark.png`). The logos in `docs/img/logos/` are copies of the logos of duckOSM and roadstyle.
+
 ## Toolchain status (2026-10-21)
 
 | Tool | Status |

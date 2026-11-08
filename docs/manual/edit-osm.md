@@ -1,6 +1,6 @@
 # Step 7: Edit OSM data
 
-Use card 7 to fix errors in the OSM data of your area. Each fix is a rule in a list of changes. A rule changes nothing until you build again. [The editing cycle](cycle.md) shows where this step is.
+<p class="lead">Use card 7 to fix errors in the OSM data of your area. Each fix is a rule in a list of changes. A rule changes nothing until you build again. [The editing cycle](cycle.md) shows where this step is. The editor is the fixes editor of [duckOSM](https://github.com/Khoshkhah/duckOSM). The same editor runs on its own with the command `duckosm edit`.</p>
 
 ![Card 7: Edit OSM data, with the number of fixes under its title](../img/dashboard/16-fix-card.png)
 
@@ -21,6 +21,23 @@ The panel has six tabs. The bar at the bottom of each tab has these buttons:
 | **Review changes** | Opens the tab **Changes**. |
 
 To undo a change in a field, press ↺. To close the panel, press **Steps** or **Hide panel**.
+
+### The colors on the map
+
+The map shows the state of each road with a color, on the fill of the road:
+
+| Color | Meaning |
+|---|---|
+| Blue | The picked object. |
+| Amber | An object that has a rule in your changes. |
+| Red | A road that your changes delete. |
+| Green | A road that a turn rule uses (see [Fix a turn](#fix-a-turn)). |
+
+When you move the pointer over an object of the open tab, the object lights. A tab lights only its own objects.
+
+### A table with no tags
+
+A table of an area that an older version of the page saved can have no `tags` column. The editor then shows the object with no tags, and a note says so. A rule that you add still works. To get the tags, build the area again.
 
 ![The panel hidden: the map has the whole width](../img/dashboard/23-fix-panel-hidden.png)
 
@@ -45,7 +62,7 @@ Use **Modes** to remove the road from one network, **Other tags** to add or dele
 
 ![The Building tab with numbered walls on the map](../img/dashboard/18-fix-building.png)
 
-1. Click a building. To see the walls of all buildings in view, turn on **Show the walls of all buildings in view** (zoom 16 or more).
+1. Click a building. The building under the pointer lights before you click. To see the walls of all buildings in view, turn on **Show the walls of all buildings in view** (zoom 16 or more).
 2. Change the levels, the height, the roof or the materials.
 3. Change the type of a wall, or give it a **Door**.
 4. Press **Add to changes**.
@@ -60,7 +77,7 @@ The map shows each wall in the color of its type:
 | **party wall** | Purple | Two buildings share the wall. |
 | **courtyard wall** | Teal | The wall is part of an inner ring. |
 
-Examine the walls that say "guess" or "no street seen". [wall-types.md](https://github.com/Khoshkhah/duckosm-studio/blob/main/docs/wall-types.md) tells how the page finds the type. In the list **Doors**, you can change the kind of each door.
+Move the pointer over a wall on the map, or over a row of the list of walls. The map lights the wall and shows its number, and the row of the list lights too. Examine the walls that say "guess" or "no street seen". [wall-types.md](https://github.com/Khoshkhah/duckosm-studio/blob/main/docs/wall-types.md) tells how the page finds the type. In the list **Doors**, you can change the kind of each door.
 
 ## Fix a node
 
@@ -79,9 +96,19 @@ A node is a traffic signal, a crossing, a stop sign, a give-way sign, a bus stop
 A turn rule says that a driver cannot make a turn at a junction, or must make it. The rules are for the driving network only.
 
 1. Click the road where the turn starts, or type its way ID. Press **Find turns**.
-2. In the list **Junction at the end of the road**, pick the junction.
+2. Pick the junction: click a white dot on the map, or use the list **Junction**. A junction is a place where three or more roads meet.
 3. For each road that leaves the junction, choose **Allowed**, **No** or **Only**.
 4. Press **Add to changes**.
+
+The map shows the roads of the junction:
+
+| Color | Road |
+|---|---|
+| Blue | The road that the turn starts on. |
+| Green | A road that leaves the junction (a road that you can turn to). |
+| Violet | A road that only arrives at the junction (a one-way road into it). |
+
+A one-way road has a gray dot at its start junction. If the road or the node that you picked is not in the data, the panel says so.
 
 ## Add a new road
 

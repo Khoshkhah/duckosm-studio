@@ -1,6 +1,6 @@
 # Ask and query the data
 
-After a build, you can look at the tables in the page with no download:
+<p class="lead">After a build, you can look at the tables in the page with no download:</p>
 
 - **Query the tables** (card 5): write SQL.
 - **Ask the data** (the card after step 6): write a question in words. An AI service writes the SQL.
@@ -45,6 +45,8 @@ Only one `SELECT` or `WITH` statement runs. The dock refuses a statement that ch
 2. Click the card **Ask the data**.
 3. Click **Key**, select the service, paste the key and click **Save**.
 4. Write a question, for example "Which primary roads are longer than 300 m?". Press **Enter**.
+
+You can also click an example question. The panel lists them in groups. The first groups are general. After them come the 14 groups of [duckOSM](https://github.com/Khoshkhah/duckOSM), with 115 questions in all: the roads, the road details, the junctions and turns, the traffic signals and crossings, the buildings and walls, the levels, heights and roofs, your changes, the shapes on the map, the colors and focus of the roads, the H3 cells and the boundary, the water, 3D and base maps, the look of the shapes, and the charts of the data. A click puts the question in the box.
 
 To get a chart, ask for it, for example "Draw a bar chart of the km of road in each class.". Ask draws the chart in the data dock. Ask can draw a bar, line, histogram, scatter or pie chart.
 

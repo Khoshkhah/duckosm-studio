@@ -1,6 +1,6 @@
 # Steps 5 and 6: Result and map
 
-After a build, step 5 gives you the tables, and step 6 draws the roads on the map.
+<p class="lead">After a build, step 5 gives you the tables, and step 6 draws the roads on the map.</p>
 
 ## Step 5: The result
 
@@ -10,7 +10,7 @@ After a build, step 5 gives you the tables, and step 6 draws the roads on the ma
 
 | Button | File | Use |
 |---|---|---|
-| **.zip** | All tables as Parquet files | Open them in Python, QGIS or DuckDB. |
+| **.zip** | All tables as Parquet files, with `make_duckdb.sql`, the boundary and a README | Open them in Python, QGIS or DuckDB. |
 | **.duckdb** | One DuckDB database | Open it with DuckDB. |
 | **.osm.pbf** | The OSM data, cut to the area. Only when the page cut the data. | Build again without the large file. |
 | **.yaml** | The fixes file of this build. With no fixes: an empty fixes file to start from. | Use it in the next build. |
@@ -29,7 +29,7 @@ FROM driving.edges GROUP BY highway ORDER BY edges DESC;
 
 ![The list of tables of a build](../img/dashboard/38-each-table.png)
 
-Open **Each table** to see each table and its number of rows. [The tables](tables.md) explains each table.
+Open **Each table** to see each table, what it is for and its number of rows in each network. A link with the name of a network (for example "driving 2,765 rows") downloads that table as a Parquet file. **The columns of each table** opens the reference. [The tables](tables.md) explains each table.
 
 ## Step 6: Show the roads
 

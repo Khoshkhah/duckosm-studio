@@ -1,6 +1,6 @@
 # Step 10: Export
 
-Card 10 makes files for other software. It is gray until a build ends. The page makes each file in your browser.
+<p class="lead">Card 10 makes files for other software. It is gray until a build ends. The page makes each file in your browser.</p>
 
 ![Card 10: the formats of the export, in groups](../img/dashboard/11b-export.png)
 
@@ -84,7 +84,7 @@ The `edge_id` and `node_id` values are 64-bit numbers. The files write them as t
 | 3 The data | The arrow in a row of the region list | An `.osm.pbf` region file |
 | 5 The result | **.zip**, **.duckdb**, **.osm.pbf**, **.yaml** | The tables, the database, the cut area and the fixes ([the fixes file](fixes-file.md)) |
 | 7 Edit OSM data | **Download** (tab **Changes**) | The fixes file |
-| 8 Edit levels | **Download edits.csv** | Your level rules |
+| 8 Edit levels | **edits.csv**, **heads.csv**, **caps.csv** (tab **History**) | Your level rules, head lengths and end shapes |
 | 9 Edit design | **Download**, **Download all my themes** | `.design.json`, `duckosm-themes.json` |
 | 10 Export | **Download** | One of the formats above |
 
