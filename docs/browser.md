@@ -1,6 +1,6 @@
 # duckOSM in the browser
 
-Status: B1, B2, B3 and B4 done on 2026-10-22 (the results are under each step). B2 depends on public Overpass
+Status (2026-11-08): this is the history of the first browser build (2026-10-22). The page has changed much since: [app.md](app.md) tells the page as it is now. The SQL box of B1 is gone (the data dock of [the manual](manual/ask.md) replaced it). B1, B2, B3 and B4 done on 2026-10-22 (the results are under each step). B2 depends on public Overpass
 servers, which were full during the test. Decision by Kaveh (2026-10-22): **the main goal of duckosm-rust is that duckOSM runs
 in the browser.** The speed of the native program is a side effect. First without the map (the visualization
 part); the map comes after.

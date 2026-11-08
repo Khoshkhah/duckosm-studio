@@ -1,6 +1,6 @@
 # The tables
 
-A build writes a set of tables. The `.zip` download has each table as a Parquet file. The `.duckdb` download has all tables, in schemas. [Columns of the tables](../output-tables.md) lists every column. [The roads](roads.md) tells you which roads each network has.
+<p class="lead">A build writes a set of tables. The `.zip` download has each table as a Parquet file. The `.duckdb` download has all tables, in schemas. [Columns of the tables](../output-tables.md) lists every column. [The roads](roads.md) tells you which roads each network has.</p>
 
 ![The list of tables of a build, with their number of rows](../img/dashboard/38-each-table.png)
 
