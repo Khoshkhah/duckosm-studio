@@ -725,6 +725,7 @@ function unselectArea() {
 for (const b of document.querySelectorAll(".area-clear")) b.onclick = unselectArea;
 function clearArea() {
   area = null;
+  syncBoundary();
   setData("area", null);
   setData("pin", null);
   $("zoom-area").disabled = true;
@@ -759,6 +760,7 @@ async function setArea(polys, props, { zoom = true, findExtracts = true } = {}) 
     try { polys = await bufferPolys(base, m); } catch (e) { status("The buffer failed: " + e.message, 6000); polys = base; }
   }
   area = { polys, base, props };
+  syncBoundary();
   $("save").disabled = true;
   canBuild();
   // terra-draw shows the drawn shapes itself; a copy in the area layer stays behind when a shape moves
@@ -1721,7 +1723,13 @@ function removeRoads() {
 }
 // the style on the map: roadLayers puts it there and tells the dashboard (rs.setStyle: the design panel paints the design on it, rs:stylechange); the page adds
 // the boundary's look and the overview copies in `after`
-const showStyle = (style) => roads.show(style, { after: (st) => { paintBoundary(true); addOverview(st); } });   // the fill would change the colors of the roads: paintBoundary(true) hides it, unless the design says that it covers the roads
+// The area is the roads style's source "boundary" (roadLayers makes it rs-boundary): roadstyle's Street View coverage is drawn inside the area of the page,
+// and it takes the area from this role. Its line is invisible: the page's own layers draw the area (the dashboard's boundary look is off: dim and limit are false).
+const areaFC = () => (area ? { type: "FeatureCollection", features: [{ type: "Feature", properties: {}, geometry: geometry(area.polys) }] } : empty);
+const syncBoundary = () => map.getSource("rs-boundary")?.setData(areaFC());
+const withBoundary = (st) => ({ ...st, sources: { ...st.sources, boundary: { type: "geojson", data: areaFC() } },
+  layers: [...st.layers, { id: "boundary-area", type: "line", source: "boundary", paint: { "line-opacity": 0 } }] });
+const showStyle = (style) => roads.show(withBoundary(style), { after: (st) => { paintBoundary(true); addOverview(st); } });   // the fill would change the colors of the roads: paintBoundary(true) hides it, unless the design says that it covers the roads
 // One draw at a time: a draw makes temporary tables in DuckDB and writes roads.parquet, so two draws at once break each other ("Table
 // with name e does not exist"). A draw that is asked for while one runs (a click, the draw after Apply) comes after it, one time only.
 // "Show on map" and the network list are off while a draw runs or the level editor is open.
