@@ -647,11 +647,13 @@ function padMap() {
   if (map.getPadding().bottom !== b) map.setPadding({ ...map.getPadding(), bottom: b });
 }
 
-// zoom the map to a geometry of any type; with `ifHidden`, only when a part of it is out of the view
+// zoom the map to a geometry of any type; with `ifHidden` (the preview of a hover), only when a part of it is out of the view
+// or when it is small in the view (less than a quarter of the view's width and of its height): a small place in a wide view must zoom too
 const fitTo = (g, { ifHidden = false } = {}) => loaded.then(() => {
   const c = g.coordinates.flat(Infinity), xs = c.filter((_, i) => i % 2 === 0), ys = c.filter((_, i) => i % 2 === 1);
   const sw = [Math.min(...xs), Math.min(...ys)], ne = [Math.max(...xs), Math.max(...ys)], view = map.getBounds();
-  if (ifHidden && view.contains(sw) && view.contains(ne)) return;
+  const small = (ne[0] - sw[0]) < (view.getEast() - view.getWest()) / 4 && (ne[1] - sw[1]) < (view.getNorth() - view.getSouth()) / 4;
+  if (ifHidden && view.contains(sw) && view.contains(ne) && !small) return;
   const f = freeInsets();
   map.fitBounds([sw, ne], { padding: { top: 60 + f.top, bottom: 60 + (phone.matches ? 0 : f.bottom), right: 60 + f.right, left: 60 + f.left }, maxZoom: 15, duration: 600 });
 });
