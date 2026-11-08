@@ -82,6 +82,11 @@ def run(browser, name, **context):
     assert len(heads) == len(want) + 6 and heads[6:] == [t for t, _ in want], ("the groups of duckOSM's file come after roadstyle's six general groups", heads)
     assert page.locator(".rs-ask-ex .rs-ask-q").count() >= sum(n for _, n in want), "every question of the file is a chip"
     assert any("chart" in t.lower() for t in page.locator(".rs-ask-ex .rs-ask-q").all_inner_texts()), "the chart questions show"
+    # a chart in the Ask card is a chart: the page's icon rule (once `#sb svg`) made every svg of the panel 18 px wide and outlined the bars of a chart (width of the chart svg)
+    w = page.evaluate("""() => { const host = document.querySelector('#sb .rs-ask .rs-ask-ex') || document.querySelector('#sb .rs-ask'); const box = document.createElement('div'); box.className = 'rs-ask-chart'; host.parentElement.insertBefore(box, host);
+        window.rs.chart(box, {kind: 'bar', x: 'highway', y: 'km', columns: [{name: 'highway', type: 'VARCHAR'}, {name: 'km', type: 'DOUBLE'}], rows: [['residential', 30.5], ['primary', 12.5], ['service', 8.1]], small: true, onPick: null});
+        const svg = box.querySelector('svg'), r = svg.getBoundingClientRect(); box.remove(); return Math.round(r.width); }""")
+    assert w > 100, ("the chart svg in the Ask card is an 18 px icon", w)
     head, body = page.evaluate(EDGE, ".rs-ask-who"), page.evaluate(EDGE, ".rs-ask-hint, .rs-ask .rs-ask-q")
     assert head and body and abs(head[0] - body[0]) <= 1, ("the head row and the body of Ask start at the same left edge", head, body)
     page.screenshot(path=str(out / f"{name}-2-ask.png"))
