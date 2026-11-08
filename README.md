@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="docs/img/banner.png" alt="duckOSM Studio: build the road network of any area from OpenStreetMap in your browser. Built with duckOSM and roadstyle." width="100%">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/img/cards/banner-dark.png">
+    <img src="docs/img/cards/banner.png" alt="duckOSM Studio: build the road network of any area from OpenStreetMap in your browser. Built with duckOSM and roadstyle." width="100%">
+  </picture>
 </p>
 
 <p align="center">

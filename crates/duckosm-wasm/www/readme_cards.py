@@ -1,8 +1,8 @@
-"""The cards of "What you can do" in README.md, a light and a dark set (the dark one is for a GitHub page in the dark theme, chosen by <picture> in README.md): a page picture of docs/img/dashboard/ with a title and a line of text under it, in a card with
+"""The banner of README.md and the cards of "What you can do" in README.md, a light and a dark set (the dark one is for a GitHub page in the dark theme, chosen by <picture> in README.md): a page picture of docs/img/dashboard/ with a title and a line of text under it, in a card with
 rounded corners, a thin border and a soft shadow, on a transparent ground. A README cannot set a shadow or a card with CSS, so the card is a picture
 (the alt text in README.md has the same words). Playwright draws each card.
 
-    python crates/duckosm-wasm/www/readme_cards.py        (writes docs/img/cards/<name>.png and <name>-dark.png)
+    python crates/duckosm-wasm/www/readme_cards.py        (writes docs/img/cards/<name>.png and <name>-dark.png, and banner.png and banner-dark.png in the same folder: the banner with the same card look)
 """
 import base64
 import pathlib
@@ -29,6 +29,13 @@ body.dark .card{background:#151b23;border-color:#3d444d;box-shadow:0 0 0 1px rgb
 body.dark img{border-bottom-color:#3d444d}body.dark .t{color:#f0f6fc}body.dark .t span{color:#9198a1}
 </style><div class=card id=c><img src="data:image/png;base64,@IMG@"><div class=t><b>@TITLE@</b><span>@TEXT@</span></div></div>"""
 
+BANNER = """<!doctype html><meta charset=utf-8><style>
+html,body{margin:0;background:transparent}body{width:944px;padding:22px;box-sizing:border-box}
+.card{border:1px solid #d0d7de;border-radius:18px;box-shadow:0 6px 18px rgba(15,23,42,.18);overflow:hidden;line-height:0}
+.card img{display:block;width:100%}
+body.dark .card{border-color:#3d444d;box-shadow:0 0 0 1px rgba(240,246,252,.06),0 8px 24px rgba(240,246,252,.10)}
+</style><div class=card><img id=i src="data:image/png;base64,@IMG@"></div>"""
+
 OUT.mkdir(parents=True, exist_ok=True)
 with sync_playwright() as p:
     browser = p.chromium.launch()
@@ -41,4 +48,13 @@ with sync_playwright() as p:
             page.wait_for_timeout(150)
             page.locator("body").screenshot(path=str(OUT / f"{name}{suffix}.png"), omit_background=True)
             print("wrote", (OUT / f"{name}{suffix}.png").relative_to(ROOT))
+    # the banner: banner.png (light) and banner-dark.png of docs/img/, as the cards
+    page = browser.new_page(viewport={"width": 944, "height": 600}, device_scale_factor=1.5)
+    for suffix in ("", "-dark"):
+        data = base64.b64encode((ROOT / f"docs/img/banner{suffix}.png").read_bytes()).decode()
+        page.set_content(BANNER.replace("@IMG@", data))
+        page.evaluate(f"document.body.classList.toggle('dark', {str(bool(suffix)).lower()})")
+        page.wait_for_timeout(150)
+        page.locator("body").screenshot(path=str(OUT / f"banner{suffix}.png"), omit_background=True)
+        print("wrote", (OUT / f"banner{suffix}.png").relative_to(ROOT))
     browser.close()
