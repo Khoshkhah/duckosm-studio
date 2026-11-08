@@ -649,8 +649,10 @@ export async function relevel(rows) {
 // the stored levels (the edge hash of visualization.edge_levels_meta and visualization.edge_levels as CSV text; null when the build has no levels) and the write of the
 // editor's result into the tables (visualization.edge_levels, edge_levels_meta, level_edits, level_heads and level_caps). The page keeps its downloads: `before` drops what it
 // drew from the old levels, `after` puts the Parquet bytes of the written tables into `tables` (the .duckdb download reads the tables).
+// The page asks for it at start, before the database exists: each call reads db and conn when it runs (a new build has a new connection).
 export async function levelsData() {
-  return duckosmLevelsData({ db, conn, pkg: await roadstyle(), catalog: "memory", before: forgetRoads,
+  const pkg = await roadstyle();
+  const adapter = () => duckosmLevelsData({ db, conn, pkg, catalog: "memory", before: forgetRoads,
     after: async ({ tables: written, toParquet }) => {
       for (const table of written) {
         const name = `${table}_visualization.parquet`, bytes = await toParquet(table), [{ n }] = await rows(`SELECT count(*) AS n FROM visualization.${table}`);
@@ -659,6 +661,7 @@ export async function levelsData() {
         else tables.push(t);
       }
     } });
+  return { edges: () => adapter().edges(), storedLevels: () => adapter().storedLevels(), saveLevels: (f, o) => adapter().saveLevels(f, o) };
 }
 
 // the data of an area from the Overpass API: the highway ways and ferry lines in the bounding box of each outer ring, with all their

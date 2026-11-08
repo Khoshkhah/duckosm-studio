@@ -496,6 +496,9 @@ const rasters = basemaps.find((b) => b.tiles.length);
 const map = new maplibregl.Map({ container: "map", center: [10, 50], zoom: 3, style: { version: 8, glyphs: "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
   sources: { bm: { type: "raster", tiles: rasters.tiles, tileSize: 256 } },
   layers: [{ id: "bg", type: "background", paint: { "background-color": basemaps[0].bg } }, { id: "basemap", type: "raster", source: "bm", layout: { visibility: "none" } }] } });
+// window.mapReady (the tests and the page's own waits): the map has loaded and the cards of roadstyle's parts (8 and 9) exist. The parts start after some awaits, the map may load first.
+let mapLoaded = false, cardsMade = false;
+const markReady = () => { if (mapLoaded && cardsMade) window.mapReady = true; };
 const loaded = new Promise((ok) => map.on("load", ok));      // right after the map is made, before any await: a `load` that comes during a later await would not reach a listener that is added after it
 // the zoom buttons and the compass become tools of roadstyle's bar, the scale bar goes into its corner box with the zoom number: both before rsDashboard
 map.addControl(new maplibregl.NavigationControl(), "top-right");
@@ -614,7 +617,8 @@ loaded.then(() => {
   map.on("zoomend", pin);
   paintBoundary();
   draw.start();
-  window.mapReady = true;
+  mapLoaded = true;
+  markReady();
 });
 
 function pin() {
@@ -834,9 +838,10 @@ function list(features) {
     const p = f.properties, ok = p.photon || polygons(f.geometry).length > 0;
     const [title, ...rest] = p.display_name.split(", ");
     return `<label class="rs-opt${ok ? "" : " point"}" data-i="${i}" title="${esc(p.display_name)}"><input type="radio" name="hit" value="${i}"${ok ? "" : " disabled"}>` +
-      `<span><b>${esc(title)}</b><span class="rs-chip">${esc(p.addresstype ?? p.type)}</span>` +
-      (ok ? "" : `<span class="rs-chip">${f.geometry?.type === "Point" ? "a point: " : ""}no boundary</span>`) +
-      `<small>${esc(rest.join(", ") || `${p.osm_type} ${p.osm_id}`)}</small></span></label>`;
+      // a place with no boundary has one short row (a click zooms to it; the full name is in the hover title): the list stays short
+      (ok ? `<span><b>${esc(title)}</b><span class="rs-chip">${esc(p.addresstype ?? p.type)}</span>` +
+            `<small>${esc(rest.join(", ") || `${p.osm_type} ${p.osm_id}`)}</small></span></label>`
+          : `<span><b>${esc(title)}</b><span class="rs-chip">${esc(p.addresstype ?? p.type)}, ${f.geometry?.type === "Point" ? "a point, " : ""}no boundary</span></span></label>`);
   }).join("") || `<p class="small muted">No place found.</p>`;
 }
 
@@ -2473,6 +2478,8 @@ for (const type of ["opening", "open"]) levelPart.addEventListener(type, drawCon
 levelPart.addEventListener("close", () => { padMap(); drawControls(); });        // the page's sheet in its state again, and the map's padding for it
 levelPart.addEventListener("applied", () => { files(); levelsApplied = true; refreshSteps(); });      // the tables have the new levels: the download links of the new files
 refreshSteps();
+cardsMade = true;
+markReady();
 
 // the downloads: all files in one zip (with make_duckdb.sql), and each table: a row for each table (with what it holds), a column for each mode
 const size = (b) => (b < 2 ** 20 ? `${num(Math.max(1, b / 1024))} KB` : `${mb(b)} MB`);
