@@ -52,7 +52,7 @@ def run(browser, name, **context):
     page.wait_for_function("window.dataPart.result() && window.dataPart.result().columns[0].name === 'a'", timeout=30_000)
     cells = page.evaluate("window.dataPart.result().rows[0]")
     assert cells[:3] == [919, 3.5, -3.5] and int(cells[3]) == 7, ("DECIMAL cells are numbers", cells)
-    page.evaluate("window.dataPart.run()")                             # the start query again
+    page.evaluate("window.dataPart.run(\"SELECT highway, count(*) AS edges, round(sum(length_m) / 1000, 1) AS km FROM driving.edges GROUP BY highway ORDER BY edges DESC\")")   # the start query again: run() with no text runs the SQL in the box
     page.wait_for_function("window.dataPart.result() && window.dataPart.result().rows.length > 1", timeout=60_000)
     ids = page.evaluate("window.dataPart.roads(\"SELECT edge_id FROM driving.edges WHERE highway = 'primary'\").then((x) => x.length)")
     assert ids > 0, ("a query of road ids gives roads on the map", ids)
