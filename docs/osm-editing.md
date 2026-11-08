@@ -1,7 +1,7 @@
 # Editing OSM data in the page: design and plan
 
-Status: design, 2026-11-03. Kaveh asked for a good design to edit OSM data in the page, and to add information that OSM does not give
-in a usable form: building faces, roof type, colors and floors. Only the section "What exists today" is built.
+Status: built (M0 to M5, 2026-11-03), and since then the editor is the fixes editor of duckOSM (`web/fixes_editor/`, copied by `build.sh` at one pin). This document is the design and the plan of 2026-11-03. The page as it is now: [app.md](app.md), "Step 7", and [the manual](manual/edit-osm.md). The file names in the plan (`app/fixes.js`, `app/fixes_panel.js`, `app/presets.json`) are now in duckOSM. Kaveh asked for a good design to edit OSM data in the page, and to add information that OSM does not give
+in a usable form: building faces, roof type, colors and floors.
 
 ## What the user gets
 

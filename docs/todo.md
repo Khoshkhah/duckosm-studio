@@ -29,7 +29,7 @@ gzip; [tables.md](tables.md)). Kaveh chose it on 2026-10-23. Two other ways, for
   (about 20 MB the first time, the same sea as duckOSM), or make the sea from the coastline ways of the region file
   (no download, but no sea for Monaco, whose file has no coastline) ([features.md](features.md)).
 
-- **The level editor (card 8)**: done in part (2026-10-24, [app.md](app.md), "Step 8: edit the levels"). Still to do:
+- **The level editor (card 8)**: done. Since 2026-11 it is roadstyle's level editor, and the page keeps only the data adapter ([app.md](app.md), "Step 8: edit the levels"). These notes are from 2026-10-24 to 2026-10-25 and are history:
   - The editor's place in the page's side panel (now on the right of the map). Done at roadstyle `8208486`: the
     duckOSM base-map layers stay while the editor is open, and the panel follows the page's theme.
   - `makeArea` runs in the main thread: a large area (Tartu) can stop the page while the level area is made. The
@@ -44,7 +44,7 @@ gzip; [tables.md](tables.md)). Kaveh chose it on 2026-10-23. Two other ways, for
 
 ## Publishing
 
-- Done: the page is on GitHub Pages at <https://khoshkhah.github.io/duckosm-rust/>, from this repository
+- Done: the page is on GitHub Pages at <https://khoshkhah.github.io/duckosm-studio/>, from this repository
   (`.github/workflows/pages.yml`, on each push to `main`). A page repository `duckosm-web` is not necessary: the
   repository is public since 2026-10-24. The relay allows `https://khoshkhah.github.io` ([relay.md](relay.md)).
 - The repository secret `GOOGLE_MAPS_KEY` (Kaveh adds it): without it, the page asks the user for a key.

@@ -1,6 +1,6 @@
 # Steps 3 and 4: Data and build
 
-In step 3, you choose the OSM data. In step 4, you build the network in your browser.
+<p class="lead">In step 3, you choose the OSM data. In step 4, you build the network in your browser.</p>
 
 ## Step 3: Choose the data
 
@@ -10,16 +10,17 @@ In step 3, you choose the OSM data. In step 4, you build the network in your bro
 |---|---|
 | **Region file** | You have an `.osm.pbf` file of a country or a region, or you want one from Geofabrik. |
 | **Overpass** | The area is small and you have no file. |
-| **Cut file** | You have an `.osm.pbf` file that is already cut to the area. This file gives no layers. |
+| **Cut file** | You have an `.osm.pbf` file that is already cut to the area. Press **Select a cut file (.osm.pbf)**. This file gives no layers. |
 
 ### Get a region file
 
 The tab lists the [Geofabrik](https://download.geofabrik.de) files that cover your area.
 
-1. Press **Get** on a row. The page downloads the file and keeps it in your browser.
-2. On the next visit, press **Use** on a row that says **kept**.
+1. Click a row to see the file on the map.
+2. Press **Get** on a row. The page downloads the file and keeps it in your browser. A bar shows the progress. **Cancel** stops it.
+3. On the next visit, press **Use** on a row that says **kept**.
 
-To remove a kept file, press **Delete** under the list.
+The arrow button of a row saves the `.osm.pbf` file on your computer. **Select a region file (.osm.pbf)** at the top of the tab uses a file that you have. Under **Kept in this browser**, each kept file has a **Delete** button. If no Geofabrik file covers the area, use the Overpass tab.
 
 ### Use Overpass
 

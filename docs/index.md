@@ -1,20 +1,70 @@
----
-hide:
-  - navigation
-  - toc
----
-
 # duckOSM Studio
 
-**Make a routable road network from OpenStreetMap data, in your browser.**
+<p class="lead">Build the routable road network of any area from OpenStreetMap data, in your browser.</p>
 
 Choose an area. The page builds the driving, walking and cycling networks. Fix the OSM data, build again, and export. The build runs in your browser.
 
+<div class="rs-hero" markdown>
 ![The page after a build: the roads of Monaco on the map](img/dashboard/12-map-after-build.png)
+</div>
 
 [Open duckOSM Studio](https://khoshkhah.github.io/duckosm-studio/){ .md-button .md-button--primary }
 [Make your first map](first_map.md){ .md-button }
 [View on GitHub](https://github.com/Khoshkhah/duckosm-studio){ .md-button }
+
+## What you can do
+
+<div class="grid cards" markdown>
+
+-   :material-map-search-outline:{ .lg .middle } **Choose and build**
+
+    ---
+
+    Search a place, draw a shape, load a file or pick H3 cells. Build the three networks.
+
+    [:octicons-arrow-right-24: The area](manual/area.md) · [Data and build](manual/build.md)
+
+-   :material-pencil-outline:{ .lg .middle } **Fix the OSM data**
+
+    ---
+
+    Change a road, a building, a node or a turn rule. Build again.
+
+    [:octicons-arrow-right-24: Edit OSM data](manual/edit-osm.md)
+
+-   :material-layers-outline:{ .lg .middle } **Levels and design**
+
+    ---
+
+    Say which bridge or road is on top. Choose a theme, or set each color and width.
+
+    [:octicons-arrow-right-24: Edit levels](manual/edit-levels.md) · [Edit design](manual/edit-design.md)
+
+-   :material-chat-question-outline:{ .lg .middle } **Ask the data**
+
+    ---
+
+    Query the tables with SQL, or ask a question in words. The roads of the result light on the map.
+
+    [:octicons-arrow-right-24: Ask and query the data](manual/ask.md)
+
+-   :material-export-variant:{ .lg .middle } **Export**
+
+    ---
+
+    PMTiles, MBTiles, GeoPackage, GeoJSON, kepler.gl, MATSim and SUMO.
+
+    [:octicons-arrow-right-24: Export](manual/export.md)
+
+-   :material-table:{ .lg .middle } **The tables**
+
+    ---
+
+    The same tables as duckOSM, with a stable `edge_id`.
+
+    [:octicons-arrow-right-24: The tables](manual/tables.md)
+
+</div>
 
 ## What you get
 

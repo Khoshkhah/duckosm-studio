@@ -1,6 +1,6 @@
 # The editing cycle
 
-Build the road network of an area. Fix the OpenStreetMap (OSM) data. Build again. Export.
+<p class="lead">Build the road network of an area. Fix the OpenStreetMap (OSM) data. Build again. Export.</p>
 
 ![The cycle: choose an area, get the OSM data, build, check the map and the tables, edit the OSM data and build again, edit levels and design, export](../img/cycle.svg)
 
