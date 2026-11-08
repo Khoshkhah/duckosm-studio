@@ -1,5 +1,5 @@
 site_name: duckOSM Studio
-site_description: An OpenStreetMap file to a routable road network (GeoParquet and DuckDB), equal to duckOSM 0.6.0. A browser page. duckOSM has the command line and Python.
+site_description: Build the routable road network of any area from OpenStreetMap data in your browser, fix the OSM data, style the map and export the result. The tables are the same as the tables of duckOSM.
 site_url: https://khoshkhah.github.io/duckosm-studio/manual/
 repo_url: https://github.com/Khoshkhah/duckosm-studio
 repo_name: Khoshkhah/duckosm-studio
@@ -12,17 +12,52 @@ theme:
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
+      primary: custom
+      accent: custom
       toggle: { icon: material/weather-night, name: Dark mode }
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
+      primary: custom
+      accent: custom
       toggle: { icon: material/weather-sunny, name: Light mode }
   features:
     - navigation.tabs
+    - navigation.tabs.sticky
     - navigation.sections
+    - navigation.indexes
     - navigation.top
+    - navigation.tracking
     - navigation.footer
+    - toc.follow
     - search.suggest
+    - search.highlight
     - content.code.copy
+
+extra_css:
+  - stylesheets/extra.css
+
+nav:
+  - Home: index.md
+  - Make your first map: first_map.md
+  - Steps:
+      - The editing cycle: manual/cycle.md
+      - The page: dashboard.md
+      - "1 and 2: The area": manual/area.md
+      - "3 and 4: Data and build": manual/build.md
+      - "5 and 6: Result and map": manual/result.md
+      - "7: Edit OSM data": manual/edit-osm.md
+      - "8: Edit levels": manual/edit-levels.md
+      - "9: Edit design": manual/edit-design.md
+      - "10: Export": manual/export.md
+  - Ask the data: manual/ask.md
+  - Reference:
+      - The fixes file: manual/fixes-file.md
+      - The tables: manual/tables.md
+      - The roads: manual/roads.md
+      - Columns of the tables: output-tables.md
+      - Concepts: concepts.md
+      - Command line and Python: cli.md
+      - When the page does not work: troubleshooting.md
 
 markdown_extensions:
   - admonition
@@ -30,6 +65,9 @@ markdown_extensions:
   - md_in_html
   - tables
   - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - pymdownx.highlight
   - pymdownx.inlinehilite
   - pymdownx.superfences:
@@ -58,6 +96,7 @@ exclude_docs: |
   /lane_profile.md
   /bus.md
   /edge_graph.md
+  /img/cards/
   /boundary_tool.md
   /relay.md
   /tables.md

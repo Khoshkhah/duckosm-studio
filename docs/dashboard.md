@@ -24,6 +24,8 @@ The page saves each build in your browser.
 - Press **Open** to load the area with no new build.
 - Press **Delete** two times to delete the area.
 
+A saved area keeps the tags of the buildings and the other map features. So you can edit them in [step 7](manual/edit-osm.md) after **Open**. The files that you download have no tags column.
+
 **Opens fast** shows that the drawing of the roads is saved too. If you clear the site data, the saved areas go.
 
 ## The bar of tools
@@ -41,11 +43,27 @@ The page saves each build in your browser.
 | Road | Filters the road types. It is off on this page. |
 | Building | Shows the buildings in 3D. It needs the OpenFreeMap base map. |
 | Colors | Colors the roads by a value. It is off on this page. |
-| Gear | The settings, for example the keys for Google and Mapillary. |
+| Gear | The settings: the layout, the transparency of the layers, and the keys for Google and Mapillary. |
 
 The **(i)** button at the bottom right of the map shows the sources of the base maps.
 
 Street View and Google 3D need a key. Press the gear to save your key. The deployed page has its own Google key.
+
+## Settings
+
+![The settings box with the layout, the transparency and the keys](img/dashboard/44-settings-box.png)
+
+Press the gear to open the settings box.
+
+- **Toolbar** puts the bar of tools at the left, the top, the right or the bottom of the map.
+- **Toolbar place** puts the bar at the start, the middle or the end of its edge.
+- **Panel** puts the panel at the left or the right.
+- **Panel look** shows the panel as a frame or as a card.
+- **Scale and zoom** shows or hides the scale bar and the zoom buttons.
+- **Transparency** has three sliders: the bar and the panel, the boxes, the popup and the tooltip, and the card behind the text.
+- **Keys** saves your Google Maps key and your Mapillary token.
+
+The page keeps your choices in this browser.
 
 ## Choose a base map
 
