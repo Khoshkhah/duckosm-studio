@@ -56,6 +56,17 @@ def run(browser, name, **context):
     page.wait_for_function("window.dataPart.result() && window.dataPart.result().rows.length > 1", timeout=60_000)
     ids = page.evaluate("window.dataPart.roads(\"SELECT edge_id FROM driving.edges WHERE highway = 'primary'\").then((x) => x.length)")
     assert ids > 0, ("a query of road ids gives roads on the map", ids)
+    # Ask and the dock see the base-map tables (duckOSM's askTables: every table of the file but raw.*): the traffic signals are in features.traffic. The main table is the driving edges,
+    # with its columns (the agent reads them first), and a table has the note of duckOSM (TABLE_NOTES)
+    sch = page.evaluate("window.dataPart.schema().then((s) => s.tables.map((t) => ({name: t.name, main: !!t.main, cols: (t.columns || []).map((c) => c.name), about: t.about || ''})))")
+    names = [t["name"] for t in sch]
+    assert "features.traffic" in names and "driving.edges" in names and not any(n.startswith("raw.") for n in names), ("Ask sees the base-map tables, not raw.*", names)
+    main = [t for t in sch if t["main"]]
+    assert len(main) == 1 and main[0]["name"] == "driving.edges" and "highway" in main[0]["cols"], ("the main table is the driving edges, with its columns", main)
+    assert next(t for t in sch if t["name"] == "driving.edges")["about"], "a table has the note of duckOSM"
+    n_sig = page.evaluate("window.duckApi.query(\"SELECT count(*) AS n FROM features.traffic WHERE kind = 'traffic_signals'\").then((r) => Number(r.toArray()[0].n))")
+    assert n_sig >= 0, n_sig
+    print(f"ask: the schema has {len(names)} tables, features.traffic included ({n_sig} traffic signals); the main table is {main[0]['name']}")
     page.screenshot(path=str(out / f"{name}-1-dock.png"))
     if phone:
         assert page.evaluate("document.documentElement.scrollWidth") <= 390, "the page with the dock is wider than the phone"

@@ -412,6 +412,7 @@ import * as tileProfile from "./app/profile.js";
 import { rsDashboard } from "./map/roadstyle/dashboard/index.js";   // roadstyle's map dashboard (copied by build.sh at ROADSTYLE_COMMIT)
 import { dataDock } from "./map/roadstyle/dashboard/data/data_dock.js";   // roadstyle's data dock (the SQL line and the wide table under the map)
 import { QUESTIONS } from "./duckosm/ask/questions.js";   // duckOSM's example questions of Ask, in groups (copied by build.sh at the engine's rev)
+import { askTables, describeTables, mainEdges, roadsBy, startSql, aboutText, roadClasses, hasTags } from "./duckosm/ask/schema.js";   // duckOSM's knowledge of its tables for Ask and the dock
 import { askPanel } from "./map/roadstyle/dashboard/ask/ask_panel.js";   // roadstyle's Ask (an AI agent with the person's own key)
 import { rsFirstPaint } from "./map/roadstyle/dashboard/template.js";   // the classes of <html> before the first paint
 
@@ -2315,9 +2316,6 @@ function onBuild() {
 // table, the chart, the light on the map and the agent. "Query the tables" (card 5) opens the dock; the card "Ask the data" opens Ask.
 let builtOnce, builtNow = new Promise((ok) => { builtOnce = ok; });
 document.addEventListener("duckosm:built", () => builtOnce());
-const ABOUT = { edges: "One row is one direction of a road (an edge), with its length, speed, cost and OSM tags.", nodes: "The junctions and the ends of the roads.",
-  edge_graph: "The legal turns: one row for each move from an edge to the next edge.", restrictions: "The OSM turn restrictions.",
-  private_edges: "The roads that this network keeps out: private, forbidden or bus only." };
 // a cell of the data dock from a DuckDB value. A DECIMAL (Arrow Decimal: its String() is the unscaled integer) becomes a number with its scale, or a plain text
 // when it is too big for a number: with JSON.stringify it was a quoted text, so the table showed "\"919\"" and a chart had no numbers to draw
 const decimalCell = (v, scale) => {
@@ -2328,28 +2326,29 @@ const sqlCell = (v, type) => v == null ? null : typeof v === "bigint" || typeof 
   : v instanceof Uint8Array ? v : type?.scale != null && /^Decimal/.test(String(type)) ? decimalCell(v, type.scale) : JSON.stringify(v, (k, x) => (typeof x === "bigint" ? x.toString() : x));
 // the dock and Ask start at their first use: a new dock puts its "Data" bar under the map at once (Kaveh, 2026-11-06: no SQL panel outside Ask)
 let dataPart, askPart;
+// what duckOSM knows about its tables (web/ask/schema.js): the tables that Ask may see (all of them, the base-map layers features.* too, but not raw.*), a note for
+// each, the main table (the edges of the driving network), the road ids of a result by a column, the first SQL line, and the text that tells the agent what the data is.
+// A table of this page has {mode, table, rows}; its `name` is the name of its file, so it is not given.
+const pageTables = () => askTables(duck.tables.map(({ mode, table, rows }) => ({ mode, table, rows })));
+const sqlQuery = async (sql) => {
+  const res = await duck.query(sql), fields = res.schema.fields, columns = fields.map((f) => ({ name: f.name, type: String(f.type) }));
+  return { columns, rows: res.toArray().map((r) => fields.map((f) => sqlCell(r[f.name], f.type))) };
+};
+let askAbout = "";                                   // the text of askPanel's `about`: schema() makes it (the dock asks for the schema before the first question)
 const data = () => dataPart ??= dataDock({
-  query: async (sql) => {
-    const res = await duck.query(sql), fields = res.schema.fields, columns = fields.map((f) => ({ name: f.name, type: String(f.type) }));
-    return { columns, rows: res.toArray().map((r) => fields.map((f) => sqlCell(r[f.name], f.type))) };
-  },
+  query: sqlQuery,
   schema: async () => {
-    const tables = duck.tables.filter((t) => t.mode !== "features").map((t) => ({ name: `${t.mode}.${t.table}`, rows: t.rows, about: ABOUT[t.table] ?? "" }));
-    const main = tables.find((t) => t.name === "driving.edges") ?? tables.find((t) => t.name.endsWith(".edges"));
-    if (main) {
-      const [schemaName, table] = main.name.split(".");
-      const cols = (await duck.query(`SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = '${schemaName}' AND table_name = '${table}'`)).toArray();
-      Object.assign(main, { main: true, columns: cols.map((c) => ({ name: c.column_name, type: c.data_type })) });
-    }
-    return { tables };
+    const tables = pageTables(), names = tables.map((t) => t.name);
+    askAbout = aboutText({ tables: names, classes: await roadClasses(sqlQuery, names), hasTags: await hasTags(sqlQuery) });
+    return describeTables(tables, mainEdges(names), sqlQuery);
   },
   ready: builtNow,
-  roadsBy: (sql, column) => `SELECT DISTINCT edge_id FROM driving.edges WHERE "${column}" IN (SELECT "${column}" FROM (${sql}))`,
-  sql: "SELECT highway, count(*) AS edges, round(sum(length_m) / 1000, 1) AS km FROM driving.edges GROUP BY highway ORDER BY edges DESC",
+  roadsBy: (sql, column) => roadsBy(mainEdges(pageTables().map((t) => t.name)))(sql, column),
+  sql: startSql(mainEdges(pageTables().map((t) => t.name))),
 });
 $("query-tables").onclick = () => data().open();
 const ask = () => askPart ??= askPanel({ data: data(), dialect: "DuckDB",
-  about: "The road networks of one area, built by duckOSM from OpenStreetMap. Each network is a schema: driving, walking and cycling. In a network, edges has one row for each direction of a road; edge_id is its id, osm_id the OSM way. The map draws the roads by edge_id.",
+  get about() { return askAbout; },                  // duckOSM's aboutText (schema() sets it)
   examples: QUESTIONS });      // roadstyle's general groups first, then duckOSM's groups (web/ask/questions.js)
 Object.defineProperties(window, { dataPart: { get: data }, askPart: { get: ask } });   // for the tests
 rs.sections.add({ id: "ask", label: "Ask the data", note: "A question about the roads, in words", open: () => ask().open(), icon: "ask", background: true, after: "step6" });
