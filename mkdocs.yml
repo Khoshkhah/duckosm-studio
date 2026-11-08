@@ -97,10 +97,6 @@ exclude_docs: |
   /bus.md
   /edge_graph.md
   /img/cards/
-  /img/banner.svg
-  /img/banner.png
-  /img/banner-dark.svg
-  /img/banner-dark.png
   /boundary_tool.md
   /relay.md
   /tables.md
