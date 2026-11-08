@@ -47,6 +47,13 @@ def run(browser, name, **context):
     page.wait_for_function("window.dataPart.result() && window.dataPart.result().rows.length > 0", timeout=120_000)
     r = page.evaluate("(() => { const r = window.dataPart.result(); return {cols: r.columns.map((c) => c.name), rows: r.rows.length}; })()")
     assert r["cols"][:3] == ["highway", "edges", "km"] and r["rows"] > 5, ("the start query", r)
+    # a DECIMAL column (a sum or a count cast to DECIMAL) is a number in the table and for a chart, not a quoted text ("\"919\"", Kaveh 2026-11-08)
+    page.evaluate("window.dataPart.run(\"SELECT 919::DECIMAL(38,0) AS a, 3.5::DECIMAL(10,2) AS b, (-3.5)::DECIMAL(10,2) AS c, 7::BIGINT AS d\")")
+    page.wait_for_function("window.dataPart.result() && window.dataPart.result().columns[0].name === 'a'", timeout=30_000)
+    cells = page.evaluate("window.dataPart.result().rows[0]")
+    assert cells[:3] == [919, 3.5, -3.5] and int(cells[3]) == 7, ("DECIMAL cells are numbers", cells)
+    page.evaluate("window.dataPart.run()")                             # the start query again
+    page.wait_for_function("window.dataPart.result() && window.dataPart.result().rows.length > 1", timeout=60_000)
     ids = page.evaluate("window.dataPart.roads(\"SELECT edge_id FROM driving.edges WHERE highway = 'primary'\").then((x) => x.length)")
     assert ids > 0, ("a query of road ids gives roads on the map", ids)
     page.screenshot(path=str(out / f"{name}-1-dock.png"))
