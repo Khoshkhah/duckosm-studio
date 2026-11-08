@@ -1,4 +1,13 @@
-# duckOSM Studio
+---
+title: duckOSM Studio
+---
+
+# duckOSM Studio { .rs-sr }
+
+<div class="rs-hero" markdown>
+![duckOSM Studio: build the road network of any area from OpenStreetMap in your browser](img/banner.png#only-light)
+![duckOSM Studio: build the road network of any area from OpenStreetMap in your browser](img/banner-dark.png#only-dark)
+</div>
 
 <p class="lead">Build the routable road network of any area from OpenStreetMap data, in your browser.</p>
 
