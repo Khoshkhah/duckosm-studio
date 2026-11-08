@@ -63,3 +63,5 @@ gzip; [tables.md](tables.md)). Kaveh chose it on 2026-10-23. Two other ways, for
   (`.github/workflows/pages.yml`, on each push to `main`). A page repository `duckosm-web` is not necessary: the
   repository is public since 2026-10-24. The relay allows `https://khoshkhah.github.io` ([relay.md](relay.md)).
 - The repository secret `GOOGLE_MAPS_KEY` (Kaveh adds it): without it, the page asks the user for a key.
+- The repository secret `MAPILLARY_TOKEN` (Kaveh adds it, a Mapillary client token): `pages.yml` puts it into the page as the default of
+  `mapillary_token`. Without it, the user saves a token in Settings, Keys.

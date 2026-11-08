@@ -1,7 +1,7 @@
 # The browser page on GitHub Pages: https://khoshkhah.github.io/duckosm-studio/ (README.md, "the browser page").
 # The job builds the WebAssembly modules with crates/duckosm-wasm/build.sh (the module with threads needs nightly
-# Rust, as in ci.yml), puts the Google Maps key of the repository secret GOOGLE_MAPS_KEY into the deployed copy of
-# the page, builds the manual (mkdocs.yml, docs/) into the folder manual/ of the site, and deploys crates/duckosm-wasm/www/.
+# Rust, as in ci.yml), puts the Google Maps key of the repository secret GOOGLE_MAPS_KEY and the Mapillary token of the
+# secret MAPILLARY_TOKEN into the deployed copy of the page, builds the manual (mkdocs.yml, docs/) into the folder manual/ of the site, and deploys crates/duckosm-wasm/www/.
 # The key is never in git. The site is public, so the key must be
 # limited to https://khoshkhah.github.io/* and to the Maps JavaScript API (roadstyle docs/guides/google-key.md).
 # Pages cannot send the COOP and COEP headers: www/coi-serviceworker.js adds them in the browser.
@@ -58,6 +58,23 @@ jobs:
           sed -i "s#street_view_key: localKeys.google ?? \"\"#street_view_key: localKeys.google ?? \"$GOOGLE_MAPS_KEY\"#" $f
           test "$(grep -c "$GOOGLE_MAPS_KEY" $f)" = 1
           echo "The page has the key."
+      - name: Put the Mapillary token into the deployed page
+        env:
+          MAPILLARY_TOKEN: ${{ secrets.MAPILLARY_TOKEN }}
+        run: |
+          set -e
+          if [ -z "$MAPILLARY_TOKEN" ]; then
+            echo "::notice::The repository secret MAPILLARY_TOKEN is not set: the page asks the user for a token (Settings, Keys)."
+            exit 0
+          fi
+          echo "::add-mask::$MAPILLARY_TOKEN"
+          f=crates/duckosm-wasm/www/index.html
+          # the one place: the dashboard's mapillary_token (a token that the person saves in the settings is used first, and a token
+          # in local_keys.json on localhost is before it: the page reads `localKeys.mapillary ?? ""`)
+          test "$(grep -cF 'mapillary_token: localKeys.mapillary ?? ""' $f)" = 1
+          sed -i "s#mapillary_token: localKeys.mapillary ?? \"\"#mapillary_token: localKeys.mapillary ?? \"$MAPILLARY_TOKEN\"#" $f
+          test "$(grep -c "$MAPILLARY_TOKEN" $f)" = 1
+          echo "The page has the token."
       - name: Put the version on the page's own file references
         # Pages sends max-age=600: without a version, a browser can get the new index.html with an old app/duck.js.
         # version_refs.py does not write in the page's own folder, so it changes a copy, and the copy is the site.
