@@ -14,7 +14,7 @@
 #                     One rev gives the engine and the editor.
 set -e
 NIGHTLY=nightly-2026-10-15
-ROADSTYLE_COMMIT=29c65b16209bdadbd886a899c1a45b02948b5176   # the full SHA: a fetch by SHA needs it
+ROADSTYLE_COMMIT=a5c94d958c9d4d98a5dd1823965471020d9bda96   # the full SHA: a fetch by SHA needs it
 ROADSTYLE_REPO=${ROADSTYLE_REPO:-https://github.com/Khoshkhah/roadstyle.git}
 DUCKOSM_REV=$(sed -n 's/.*duckOSM\.git", rev = "\([0-9a-f]*\)".*/\1/p' crates/duckosm-wasm/Cargo.toml | sort -u)
 DUCKOSM_REPO=${DUCKOSM_REPO:-https://github.com/Khoshkhah/duckOSM.git}
