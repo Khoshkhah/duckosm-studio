@@ -52,7 +52,7 @@ rm -rf crates/duckosm-wasm/www/map/pkg
 mkdir -p crates/duckosm-wasm/www/map/roadstyle
 cp $R/rust/roadstyle-assets/files/static/popup.css $R/rust/roadstyle-assets/files/static/popup.js $R/rust/roadstyle-assets/files/static/level_editor.html \
   crates/duckosm-wasm/www/map/roadstyle/
-cp $R/rust/roadstyle-wasm/js/roads_sql.js $R/rust/roadstyle-wasm/js/features_sql.js crates/duckosm-wasm/www/map/roadstyle/
+cp $R/rust/roadstyle-wasm/js/roads_sql.js $R/rust/roadstyle-wasm/js/features_sql.js $R/rust/roadstyle-wasm/js/levels_sql.js crates/duckosm-wasm/www/map/roadstyle/
 # the options of a dashboard host page (the typed dashboard, its first paint, the base maps and the layers on top): the page fetches them
 cp $R/rust/roadstyle-assets/files/data/host_options.json crates/duckosm-wasm/www/map/roadstyle/
 rm -rf crates/duckosm-wasm/www/map/roadstyle/dashboard crates/duckosm-wasm/www/map/roadstyle/windows.js
