@@ -7,6 +7,7 @@ All versions are on the GitHub Releases page of `Khoshkhah/duckosm-rust`. There 
 
 ### Added
 
+- **With a DEM, the 3D terrain and the hillshade come from the area's own ground** (roadstyle `c76c9a17`, PRs 145, 146 and 147: the terrain file, `rsGround` and its attribution). After a build or a restore with `main.elevation_grid`, roadstyle's engine makes the terrain file (Terrarium PNG tiles in one PMTiles archive), the page writes it to the browser disk (OPFS, `ground.pmtiles`), and the map reads it one tile at a time. The terrain then makes no request to the AWS Terrain Tiles, and the attribution names the ground. Without a DEM, the map uses the AWS tiles and says "Ground: AWS Terrain Tiles". The pin moves from `f3d1efc5`. Test: `ground_e2e.py`.
 - **A DEM in step 4 gives `main.elevation_grid`** (duckOSM `f8137f93` (PR 66); SimReady's glTF adapter needs the ground between the roads). A new folded field **Ground height (DEM)** takes a GeoTIFF (EPSG:4326). The build worker calls `set_dem(name, bytes)` and the build writes the same tables as `duckosm build --dem`: `elevation_nodes`, `elevation_edges`, `main.elevation_metadata` and `main.elevation_grid` (`col`, `row`, `lon`, `lat`, `z`). The vertical datum is `unknown`, as in the command line. Without a file, the build is unchanged. The pin moves from `6431ab6d` (the duckOSM commits after it are the two of this change). Test: `dem_e2e.py`.
 
 ### Changed
