@@ -81,6 +81,8 @@ with sync_playwright() as p:
         raise AssertionError(("the dock did not open", errors))
     names = page.evaluate("window.dataPart.schema().then((s) => s.tables.map((t) => t.name))")
     print("tables:", len(names), [n for n in names if "turn" in n or "lane" in n or "boundary" in n or "building" in n])
+    about = page.evaluate("window.askAbout")      # the text for the agent (schema() made it): it must tell that results of ids are drawn
+    assert "node_id" in about and "h3_cell" in about and "building_faces" in about and "highway" in about and "only show roads" in about, about[-600:]
     assert page.evaluate("window.RS_DOCK && !!window.RS_DOCK.result && !!window.RS_DOCK.roles.from"), "the options of the dashboard carry the look's dock section"
 
     # a turn: 3 parts on the map, and the card has the cost and the section "Row"
@@ -92,6 +94,10 @@ with sync_playwright() as p:
     assert "Shown as Turn" in page.inner_text("#rs-dock"), "the note names the kind"
     card = pick(page)
     assert "cost" in card.lower() and "row" in card.lower() and "from" in card.lower(), ("the card of a turn", card)
+    cols = page.evaluate("window.dataPart.result().columns.map((c) => c.name)")
+    row = page.evaluate("window.dataPart.result().rows[0]")
+    # the facts of the card are those of the clicked row (the same pair is in the driving, walking and cycling networks with other costs)
+    assert f"{row[cols.index('cost')]:.1f}" in card and str(row[cols.index("uses")]) in card and "walk" not in card, (row, card)
     page.screenshot(path=str(out / "1-turn.png"))
     print("turn:", len(ids), "turns,", len(feats), "parts; the card has", card.replace("\n", " | ")[:200])
 
@@ -118,6 +124,12 @@ with sync_playwright() as p:
         assert "node" in card.lower() and "row" in card.lower(), ("the card of a node", card)
         assert page.locator(".rs-dd-card button", has_text="Show H3 cell").count() == 0, "no h3_cell in the nodes of this build, so no button"
         print("node:", len(feats), "points; the card has", card.replace("\n", " | ")[:120])
+
+    # the nodes of the ways: a node of a way is mostly not a junction, so the point comes from raw.nodes when the build keeps it (it does not): no fault, whatever the objects
+    if "main.way_nodes" in names or any(n.endswith(".way_nodes") for n in names):
+        n = next(n for n in names if n.endswith(".way_nodes"))
+        run(page, f"SELECT * FROM {n} LIMIT 10", expect_kind=False)
+        print("way_nodes: ran with no kind fault")
 
     # H3 cells of a result, as a hex text and as a BIGINT (the page has no H3 table and DuckDB no H3 function, so the cells come from h3-js here): hexagons, and a card with
     # the resolution, the parent, the area (the count of nodes inside needs nodes.h3_cell, so it is not there in this build)
@@ -189,12 +201,6 @@ with sync_playwright() as p:
 
     browser.close()
 
-# KNOWN FAULT of duckOSM views.js (told to duckOSM, 2026-11-10): the node kind selects nodes.h3_cell, and the browser build has no such column. Until duckOSM fixes it, this
-# one fault is a warning; any other error or problem fails the test. Remove this filter with the pin that fixes it.
-known = lambda x: 'column named "h3_cell"' in str(x) or ("no object on the map" in str(x) and "node_id FROM driving.nodes" in str(x))
-for x in [*errors, *problems]:
-    if known(x):
-        print("WARNING (known, duckOSM views.js: nodes.h3_cell):", str(x)[:160])
-assert not [x for x in errors if not known(x)], errors
-assert not [x for x in problems if not known(x)], problems
+assert not errors, errors
+assert not problems, problems
 print("kinds: ok")
