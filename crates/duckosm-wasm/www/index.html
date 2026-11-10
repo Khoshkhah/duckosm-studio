@@ -1282,10 +1282,10 @@ function canBuild() {
   refreshSteps();
 }
 // step 4, Ground height: duckOSM's Ground step lists the DEM sources that cover the area and gives the build the DEM with its product, vertical datum and licence
-initGroundStep({
-  root: $("ground"), catalog: "duckosm/ground_step/dem_sources.json", bbox: () => (area ? bbox(area.polys) : null),
+fetch("duckosm/ground_step/dem_sources.json").then((r) => r.json()).then((d) => initGroundStep({      // the page fetches the catalog: a deploy gives its address a version
+  root: $("ground"), catalog: d.sources, bbox: () => (area ? bbox(area.polys) : null),
   status: (t, ms) => status(t, ms), onChange: () => canBuild(),
-}).then((g) => { ground = window.ground = g; }, (e) => { $("ground").textContent = `The DEM sources did not load: ${e.message}`; });      // no await: the module goes on (window.ground is for the tests)
+})).then((g) => { ground = window.ground = g; }, (e) => { $("ground").textContent = `The DEM sources did not load: ${e.message}`; });      // no await: the module goes on (window.ground is for the tests)
 for (const id of ["pbf", "fixes"]) $(id).onchange = () => {
   const f = $(id).files[0];
   if (f) $(`${id}-name`).textContent = `${f.name} (${mb(f.size)} MB)`;
