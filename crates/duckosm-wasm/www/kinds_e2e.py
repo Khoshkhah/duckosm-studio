@@ -5,6 +5,7 @@ a row of a table that is not a road is an object on the map with a card. The pag
   - a result without the column `uses` (a file of an older shape) does not break the dock;
   - `driving.turn_restrictions`, `driving.nodes` (a node), `driving.lane_profile` (the card "Row" has width_m), `features.buildings` (a building);
   - a result of H3 cells (a text and a 64-bit number) is hexagons, and the card of a cell has its resolution, its parent and its area;
+  - `refreshKinds()` after a build keeps the objects and the card of the same kind;
   - `SELECT use FROM driving.lane_profile` passes the guard of the dock (a column named `use`);
   - Ask turns layers off (a fake AI service answers), and the Reset of the dock shows them again.
 
@@ -98,6 +99,11 @@ with sync_playwright() as p:
     row = page.evaluate("window.dataPart.result().rows[0]")
     # the facts of the card are those of the clicked row (the same pair is in the driving, walking and cycling networks with other costs)
     assert f"{row[cols.index('cost')]:.1f}" in card and str(row[cols.index("uses")]) in card and "walk" not in card, (row, card)
+    # the kinds are a function (roadstyle PR 134): after a build the page calls refreshKinds(), and when the same kind still wins nothing is drawn again, so the objects and the card stay
+    before = page.evaluate(FEATURES)
+    assert page.evaluate("window.dataPart.refreshKinds().then(() => true)") is True
+    after, card_after = page.evaluate(FEATURES), page.evaluate(CARD)
+    assert after == before and card_after == card, ("refreshKinds with the same kinds redraws nothing", len(before), len(after), card[:200], card_after[:200])
     page.screenshot(path=str(out / "1-turn.png"))
     print("turn:", len(ids), "turns,", len(feats), "parts; the card has", card.replace("\n", " | ")[:200])
 
