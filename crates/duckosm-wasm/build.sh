@@ -9,7 +9,7 @@
 #                     of roadstyle's engine (roadstyle repository, rust/) at the commit ROADSTYLE_COMMIT, cloned into
 #                     target/roadstyle-<commit> (or ROADSTYLE_REPO, a local copy). duckosm-build takes the levels from an older commit
 #                     (aba5884, crates/duckosm-build/Cargo.toml): at this commit they are the crate roadstyle-levels.
-#   www/duckosm/      duckOSM's fixes editor (web/fixes_editor/, card 7) and the questions of Ask (web/ask/) at the rev of the engine: the rev of the duckOSM git
+#   www/duckosm/      duckOSM's fixes editor (web/fixes_editor/, card 7), the questions of Ask (web/ask/) and the Ground step (web/ground_step/ and the catalog src/duckosm/data/dem_sources.json) at the rev of the engine: the rev of the duckOSM git
 #                     dependency in crates/duckosm-wasm/Cargo.toml, cloned into target/duckosm-<rev> (or DUCKOSM_REPO, a local copy).
 #                     One rev gives the engine and the editor.
 set -e
@@ -69,4 +69,5 @@ if [ "$(git -C $D rev-parse -q --verify HEAD 2>/dev/null)" != $DUCKOSM_REV ] || 
 fi
 rm -rf crates/duckosm-wasm/www/duckosm
 mkdir -p crates/duckosm-wasm/www/duckosm
-cp -r $D/web/fixes_editor $D/web/ask crates/duckosm-wasm/www/duckosm/      # the fixes editor (card 7) and the questions of Ask (web/ask/questions.js)
+cp -r $D/web/fixes_editor $D/web/ask $D/web/ground_step crates/duckosm-wasm/www/duckosm/      # the fixes editor (card 7), the questions of Ask (web/ask/questions.js) and the Ground step (step 4)
+cp $D/src/duckosm/data/dem_sources.json crates/duckosm-wasm/www/duckosm/ground_step/      # the catalog of DEM sources that the Ground step reads
