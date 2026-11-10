@@ -2338,20 +2338,15 @@ const sqlQuery = async (sql) => {
   return { columns, rows: res.toArray().map((r) => fields.map((f) => sqlCell(r[f.name], f.type))) };
 };
 let askAbout = "";                                   // the text of askPanel's `about`: schema() makes it (the dock asks for the schema before the first question)
-// The kinds of the dock (duckOSM's web/ask/views.js): what a row of each table is on the map, with its card. The dock reads `kinds` once, when it starts, but each build has
-// its own tables. So the dock starts with the kinds of the build of its first use, and each call goes to the kinds of the build now (kindCtx: its tables, `tags` and h3-js).
-// ponytail: a build with other kinds (a layer that the first build did not have) shows no object for them until the page loads again; roadstyle's `kinds` as a function would remove this.
+// The kinds of the dock (duckOSM's web/ask/views.js): what a row of each table is on the map, with its card. Each build has its own tables, so `kinds` is a function (roadstyle's data dock
+// calls it at the start and before each result): it gives the kinds of the build now (kindCtx: its tables, `tags` and h3-js). After a build the page calls `dataPart.refreshKinds()`.
 let kindCtx = null;
 const kindsReady = () => (async () => {
   let h3 = null;
   try { h3 = await h3Lib(); } catch { h3Mod = null; }      // without the network the cells have no shape
   kindCtx = { names: pageTables().map((t) => t.name), tags: await hasTags(sqlQuery), h3 };
 })();
-const kindsNow = () => viewKinds({ names: kindCtx.names, hasTags: kindCtx.tags, h3: kindCtx.h3, query: sqlQuery });
-const pageKinds = () => Object.fromEntries(Object.entries(kindsNow()).map(([key, k]) => {
-  const now = () => kindsNow()[key] ?? { card: () => ({}), geometryBy: () => { throw new Error(`this build has no ${k.label} kind`); }, geometryOf: () => [] };
-  return [key, { ...k, ...(k.geometryBy ? { geometryBy: (...a) => now().geometryBy(...a) } : { geometryOf: (...a) => now().geometryOf(...a) }), card: (...a) => now().card(...a) }];
-}));
+const kindsNow = () => (kindCtx ? viewKinds({ names: kindCtx.names, hasTags: kindCtx.tags, h3: kindCtx.h3, query: sqlQuery }) : {});
 const data = () => dataPart ??= dataDock({
   query: sqlQuery,
   schema: async () => {
@@ -2362,10 +2357,10 @@ const data = () => dataPart ??= dataDock({
   ready: builtNow,
   roadsBy: (sql, column) => roadsBy(mainEdges(pageTables().map((t) => t.name)))(sql, column),
   sql: startSql(mainEdges(pageTables().map((t) => t.name))),
-  kinds: pageKinds(),
+  kinds: kindsNow,
   map,      // the MapLibre map: `window.map` is the element with the id `map`, and the dock draws its objects on the map
 });
-document.addEventListener("duckosm:built", () => { window.kindsReady = kindsReady(); });      // each build: its tables, and h3-js for the cells (the tests wait for kindsReady)
+document.addEventListener("duckosm:built", () => { window.kindsReady = kindsReady().then(() => dataPart?.refreshKinds()); });      // each build: its tables, and h3-js for the cells; the dock reads the kinds again (the tests wait for kindsReady)
 const withKinds = (open) => async () => { await (window.kindsReady ??= kindsReady()); open(); };
 $("query-tables").onclick = withKinds(() => data().open());
 const ask = () => askPart ??= askPanel({ data: data(), dialect: "DuckDB",
