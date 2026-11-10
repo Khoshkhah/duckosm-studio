@@ -297,7 +297,7 @@ The page keeps the selected file only in memory. After a reload, the user select
   (duckOSM `osm_overrides`), with one sentence that tells what it is (Kaveh found the first label unclear).
 - **Ground height (DEM)** (folded, optional): a GeoTIFF in EPSG:4326 that the person supplies. The page sends its bytes to the build
   worker (`msg.dem`, `msg.demName`; the buffer is transferred), the worker calls `set_dem(name, bytes)` before the build, and the build
-  sets `Params.dem_bytes` (duckOSM `14fb7270`). It writes the same tables as `duckosm build --dem`: `<mode>.elevation_nodes`,
+  sets `Params.dem_bytes` (duckOSM `f8137f93` (PR 66)). It writes the same tables as `duckosm build --dem`: `<mode>.elevation_nodes`,
   `<mode>.elevation_edges`, `main.elevation_metadata` (the file name is the `uri`; the vertical datum is `unknown`) and
   `main.elevation_grid` (`col`, `row`, `lon`, `lat`, `z`: the pixels of the DEM over the nodes and 3 pixels more on each side).
   Without a file, the build is the same as before. The tables are in the downloads and in the zip and `.duckdb` file as any other table.

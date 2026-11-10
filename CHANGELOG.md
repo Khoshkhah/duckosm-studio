@@ -7,7 +7,7 @@ All versions are on the GitHub Releases page of `Khoshkhah/duckosm-rust`. There 
 
 ### Added
 
-- **A DEM in step 4 gives `main.elevation_grid`** (duckOSM `14fb7270`; SimReady's glTF adapter needs the ground between the roads). A new folded field **Ground height (DEM)** takes a GeoTIFF (EPSG:4326). The build worker calls `set_dem(name, bytes)` and the build writes the same tables as `duckosm build --dem`: `elevation_nodes`, `elevation_edges`, `main.elevation_metadata` and `main.elevation_grid` (`col`, `row`, `lon`, `lat`, `z`). The vertical datum is `unknown`, as in the command line. Without a file, the build is unchanged. The pin moves from `6431ab6d` (the duckOSM commits after it are the two of this change). Test: `dem_e2e.py`.
+- **A DEM in step 4 gives `main.elevation_grid`** (duckOSM `f8137f93` (PR 66); SimReady's glTF adapter needs the ground between the roads). A new folded field **Ground height (DEM)** takes a GeoTIFF (EPSG:4326). The build worker calls `set_dem(name, bytes)` and the build writes the same tables as `duckosm build --dem`: `elevation_nodes`, `elevation_edges`, `main.elevation_metadata` and `main.elevation_grid` (`col`, `row`, `lon`, `lat`, `z`). The vertical datum is `unknown`, as in the command line. Without a file, the build is unchanged. The pin moves from `6431ab6d` (the duckOSM commits after it are the two of this change). Test: `dem_e2e.py`.
 
 ### Changed
 
