@@ -34,7 +34,7 @@ The page gets the data from the [Overpass API](https://wiki.openstreetmap.org/wi
 
 1. Select the **Networks**: driving, walking, cycling or more than one.
 2. To get a base map, select **Layers**. Step 7 also needs the layers for walls and doors.
-3. Optional: select a **Ground height (DEM)** file (`.tif`). It is a GeoTIFF in EPSG:4326 with one band, in metres. The build then also makes the height tables ([the tables](tables.md)). The page has no DEM of its own: you supply the file, and you know its vertical datum.
+3. Optional: select a **Ground height (DEM)** file (`.tif`). It is a GeoTIFF in EPSG:4326 with one band, in metres. The build then also makes the height tables ([the tables](tables.md)). The page has no DEM of its own: you supply the file, and you know its vertical datum. With a DEM, the **3D terrain** and the **hillshade** of the map come from it, not from the AWS Terrain Tiles: the map's attribution then names your DEM.
 4. Optional: select a **Fixes** file (`.yaml`). [The fixes file](fixes-file.md) gives its format.
 5. Press **Build**.
 

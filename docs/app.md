@@ -350,6 +350,10 @@ The page keeps the selected file only in memory. After a reload, the user select
   `main.elevation_grid` (`col`, `row`, `lon`, `lat`, `z`: the pixels of the DEM over the nodes and 3 pixels more on each side).
   Without a file, the build is the same as before. The tables are in the downloads and in the zip and `.duckdb` file as any other table.
   Test: `dem_e2e.py`.
+- **The map terrain from the DEM** (roadstyle `docs/design/ground_terrain.md`): on `duckosm:built` (a build or a restore), `setGround`
+  asks `duck.groundTerrain()`: with `main.elevation_grid`, roadstyle's `terrainPmtiles` makes the terrain file on the page's thread, the page
+  writes it to OPFS (`ground.pmtiles`) and calls roadstyle's `rsGround({...facts, terrain: File})`. The map reads the file one tile at a time
+  (roadstyle's `pmtiles.js`, copied by `build.sh`). Without a grid, `rsGround(null)`: the AWS Terrain Tiles. Test: `ground_e2e.py`.
 - **Drawing order**: the build always uses "Optimized" (roadstyle's solver; the page has no choice since 2026-11-04,
   [levels.md](levels.md)). Monaco: the build takes about 0.5 s more with the solver.
 - **Base map layers** (a check box, on): with a region file or the Overpass API, the build also makes duckOSM's base-map

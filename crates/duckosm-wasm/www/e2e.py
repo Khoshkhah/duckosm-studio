@@ -66,6 +66,7 @@ with sync_playwright() as p:
     for served, source in [("popup.css", "rust/roadstyle-assets/files/static/popup.css"), ("popup.js", "rust/roadstyle-assets/files/static/popup.js"),
                            ("roads_sql.js", "rust/roadstyle-wasm/js/roads_sql.js"), ("features_sql.js", "rust/roadstyle-wasm/js/features_sql.js"), ("levels_sql.js", "rust/roadstyle-wasm/js/levels_sql.js"),
                            ("level_editor.html", "rust/roadstyle-assets/files/static/level_editor.html"),
+                           ("pmtiles.js", "rust/roadstyle-assets/files/vendor/pmtiles.js"),
                            *[(f.removeprefix("rust/roadstyle-assets/files/static/"), f) for f in dashboard]]:
         want = subprocess.run(["git", "-C", str(clone), "show", f"{pin}:{source}"], capture_output=True, check=True).stdout
         got = page.request.get(url.split("index.html")[0] + "map/roadstyle/" + served).body()
