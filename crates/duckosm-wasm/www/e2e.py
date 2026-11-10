@@ -208,7 +208,7 @@ with sync_playwright() as p:
     # with the switch off, no layer of the area's own data is visible: only the base map (bg, basemap, vbm-*), the roads (rs-roads*) and the page's own
     # layers (the area, the extracts, the preview, the pin, the drawing tool, the H3 tool and the fixes editor)
     visible = page.evaluate("duckMap.getStyle().layers.filter((l) => l.layout?.visibility !== 'none').map((l) => l.id)")
-    own = ("bg", "basemap", "vbm-", "rs-roads", "area-", "extract-", "preview-", "pin", "td-", "h3-", "fix-")
+    own = ("bg", "basemap", "vbm-", "rs-roads", "rs-boundary", "area-", "extract-", "preview-", "pin", "td-", "h3-", "fix-")
     print("visible layers with Map layers off:", visible)
     assert all(i.startswith(own) for i in visible), [i for i in visible if not i.startswith(own)]
     assert not page.evaluate("[...document.querySelectorAll('.ov-ctrl, .flt-ctrl, .vw-ctrl, .tn-ctrl, .co-ctrl, .co-lg, .rs-find')].some((e) => getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().width > 0)"), "no floating box"

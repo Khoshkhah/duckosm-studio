@@ -415,6 +415,7 @@ import { rsDashboard } from "./map/roadstyle/dashboard/index.js";   // roadstyle
 import { dataDock } from "./map/roadstyle/dashboard/data/data_dock.js";   // roadstyle's data dock (the SQL line and the wide table under the map)
 import { QUESTIONS } from "./duckosm/ask/questions.js";   // duckOSM's example questions of Ask, in groups (copied by build.sh at the engine's rev)
 import { askTables, describeTables, mainEdges, roadsBy, startSql, aboutText, roadClasses, hasTags } from "./duckosm/ask/schema.js";   // duckOSM's knowledge of its tables for Ask and the dock
+import { viewKinds } from "./duckosm/ask/views.js";   // duckOSM's table views: what a row of each table is on the map (the dock's option `kinds`)
 import { askPanel } from "./map/roadstyle/dashboard/ask/ask_panel.js";   // roadstyle's Ask (an AI agent with the person's own key)
 import { rsFirstPaint } from "./map/roadstyle/dashboard/template.js";   // the classes of <html> before the first paint
 import { roadLayers } from "./map/roadstyle/dashboard/roadlayers.js";   // roadstyle's swap of the roads style on the map (images, sources, layers, rs.setStyle)
@@ -525,6 +526,7 @@ const localKeys = ["localhost", "127.0.0.1"].includes(location.hostname) ? await
 const rs = rsDashboard(map, { style: null, prefix: "rs-", tiles: true,
   basemaps, ontop: host.ontop, basemap_switcher: true,
   select_color: "#7c4dff",   // the look's theme.selection.select
+  dock: JSON.parse(await duck.pageLookText()).dock,      // the look's dock section: the colours of the objects that the data dock draws for a kind (window.RS_DOCK); without it the dock fails at a kind
   street_view: "window", street_view_key: localKeys.google ?? "", mapillary_token: localKeys.mapillary ?? "", google_3d: true, dashboard: host.dashboard });
 // roadstyle's parts in the cards (roadstyle docs/guides/dashboard-parts.md). Each input keeps the id that the page code and the tests use.
 const hereBtn = Object.assign(document.createElement("button"), { id: "here", type: "button", title: "What is here? Click the map", ariaLabel: "What is here? Click the map", innerHTML: icon("target") });
@@ -2336,6 +2338,20 @@ const sqlQuery = async (sql) => {
   return { columns, rows: res.toArray().map((r) => fields.map((f) => sqlCell(r[f.name], f.type))) };
 };
 let askAbout = "";                                   // the text of askPanel's `about`: schema() makes it (the dock asks for the schema before the first question)
+// The kinds of the dock (duckOSM's web/ask/views.js): what a row of each table is on the map, with its card. The dock reads `kinds` once, when it starts, but each build has
+// its own tables. So the dock starts with the kinds of the build of its first use, and each call goes to the kinds of the build now (kindCtx: its tables, `tags` and h3-js).
+// ponytail: a build with other kinds (a layer that the first build did not have) shows no object for them until the page loads again; roadstyle's `kinds` as a function would remove this.
+let kindCtx = null;
+const kindsReady = () => (async () => {
+  let h3 = null;
+  try { h3 = await h3Lib(); } catch { h3Mod = null; }      // without the network the cells have no shape
+  kindCtx = { names: pageTables().map((t) => t.name), tags: await hasTags(sqlQuery), h3 };
+})();
+const kindsNow = () => viewKinds({ names: kindCtx.names, hasTags: kindCtx.tags, h3: kindCtx.h3, query: sqlQuery });
+const pageKinds = () => Object.fromEntries(Object.entries(kindsNow()).map(([key, k]) => {
+  const now = () => kindsNow()[key] ?? { card: () => ({}), geometryBy: () => { throw new Error(`this build has no ${k.label} kind`); }, geometryOf: () => [] };
+  return [key, { ...k, ...(k.geometryBy ? { geometryBy: (...a) => now().geometryBy(...a) } : { geometryOf: (...a) => now().geometryOf(...a) }), card: (...a) => now().card(...a) }];
+}));
 const data = () => dataPart ??= dataDock({
   query: sqlQuery,
   schema: async () => {
@@ -2346,13 +2362,17 @@ const data = () => dataPart ??= dataDock({
   ready: builtNow,
   roadsBy: (sql, column) => roadsBy(mainEdges(pageTables().map((t) => t.name)))(sql, column),
   sql: startSql(mainEdges(pageTables().map((t) => t.name))),
+  kinds: pageKinds(),
+  map,      // the MapLibre map: `window.map` is the element with the id `map`, and the dock draws its objects on the map
 });
-$("query-tables").onclick = () => data().open();
+document.addEventListener("duckosm:built", () => { window.kindsReady = kindsReady(); });      // each build: its tables, and h3-js for the cells (the tests wait for kindsReady)
+const withKinds = (open) => async () => { await (window.kindsReady ??= kindsReady()); open(); };
+$("query-tables").onclick = withKinds(() => data().open());
 const ask = () => askPart ??= askPanel({ data: data(), dialect: "DuckDB",
   get about() { return askAbout; },                  // duckOSM's aboutText (schema() sets it)
   examples: QUESTIONS });      // roadstyle's general groups first, then duckOSM's groups (web/ask/questions.js)
 Object.defineProperties(window, { dataPart: { get: data }, askPart: { get: ask } });   // for the tests
-rs.sections.add({ id: "ask", label: "Ask the data", note: "A question about the roads, in words", open: () => ask().open(), icon: "ask", background: true, after: "step6" });
+rs.sections.add({ id: "ask", label: "Ask the data", note: "A question about the roads, in words", open: withKinds(() => ask().open()), icon: "ask", background: true, after: "step6" });
 
 // ---- card 9: the design (docs/app.md, "Step 9: design"). The panel is roadstyle's design panel (map/roadstyle/dashboard/design/, roadstyle
 // docs/guides/design-panel.md): it draws into the page's panel (#sb), owns the design and paints the ground, the layers and the opacity of the roads.

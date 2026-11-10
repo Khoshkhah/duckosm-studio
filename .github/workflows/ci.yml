@@ -60,3 +60,6 @@ jobs:
           pip install playwright==1.60.0
           python3 -m playwright install --with-deps chromium
           cd crates/duckosm-wasm/www && python3 parts_e2e.py "$RUNNER_TEMP/out-parts"
+      # The table views of duckOSM in the data dock, with the real DuckDB-wasm of the page (kinds_e2e.py): a turn, a node, an H3 cell, lane_profile, and the Reset of Ask
+      - name: Every table is on the map with a card (Playwright, Monaco)
+        run: cd crates/duckosm-wasm/www && python3 kinds_e2e.py "$RUNNER_TEMP/out-kinds"
