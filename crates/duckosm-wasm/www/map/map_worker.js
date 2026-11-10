@@ -6,6 +6,7 @@
 // makeRoads), format: "mvt" or "mlt", the format of the style}. Out: {style: JSON text, tableBytes: the road table as JSON bytes (each road's fields, middle, box and line), seconds, memoryMiB: the size of the WebAssembly memory, liveMiB: [held now, most held]} or
 // {error}. Then in: {tile: [source, z, x, y, format], id}. Out: {id, data: ArrayBuffer} (empty when nothing is in the tile).
 // {style: format, id}: the same style in another tile format. Out: {id, style: JSON text}.
+// {walls: the walls' GeoJSON text as bytes, id}: the 3D walls as tiles of the map (LiveMap.setWalls; then tile: ["walls", z, x, y]). Out: {id, source: JSON text}.
 // {setLook: the look's JSON text, format, id}: the look with no new tile, when the tiles are still right for it (roadstyle's LiveMap.setLook,
 // docs/design/restyle_without_retile.md). Out: {id, style: JSON text} or {id, style: null}: the look needs new tiles (a new worker).
 // The page starts a new worker for each style: WebAssembly memory only grows, and a worker that ends gives it back.
@@ -36,6 +37,15 @@ onmessage = async ({ data }) => {
     try {
       const style = tiler ? tiler.setLook(Look.fromJson(data.setLook).withArg("levels", JSON.stringify(levels)), data.format) : undefined;
       postMessage({ id: data.id, style: style ?? null });
+    } catch (e) {
+      postMessage({ id: data.id, error: String((e && e.message) || e) });
+    }
+    return;
+  }
+  if (data.walls) {
+    // {walls: the bytes of the walls' GeoJSON text, id}: the 3D walls as tiles of this map (LiveMap.setWalls). Out: {id, source: JSON text of their vector source} or {id, error}
+    try {
+      postMessage({ id: data.id, source: tiler.setWalls(data.walls) });
     } catch (e) {
       postMessage({ id: data.id, error: String((e && e.message) || e) });
     }
