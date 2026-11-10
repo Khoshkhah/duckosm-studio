@@ -5,6 +5,10 @@ All versions are on the GitHub Releases page of `Khoshkhah/duckosm-rust`. There 
 
 ## Not released
 
+### Added
+
+- **A DEM in step 4 gives `main.elevation_grid`** (duckOSM `f8137f93` (PR 66); SimReady's glTF adapter needs the ground between the roads). A new folded field **Ground height (DEM)** takes a GeoTIFF (EPSG:4326). The build worker calls `set_dem(name, bytes)` and the build writes the same tables as `duckosm build --dem`: `elevation_nodes`, `elevation_edges`, `main.elevation_metadata` and `main.elevation_grid` (`col`, `row`, `lon`, `lat`, `z`). The vertical datum is `unknown`, as in the command line. Without a file, the build is unchanged. The pin moves from `6431ab6d` (the duckOSM commits after it are the two of this change). Test: `dem_e2e.py`.
+
 ### Changed
 
 - **The dock takes the kinds of each build, with no proxy and no reload** (roadstyle `f3d1efc5`, PR 134 and 136: `kinds` as a function and `data.refreshKinds()`). The page gave the dock a proxy of the kinds of the first build, so a layer that only a later build had showed no object until the page loaded again. Now `kinds` is the function `kindsNow`, and each build calls `dataPart.refreshKinds()` after it reads its tables. `kinds_e2e.py` checks that `refreshKinds()` keeps the objects and the card of the same kind.

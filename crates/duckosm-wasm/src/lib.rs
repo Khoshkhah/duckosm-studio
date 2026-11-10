@@ -280,6 +280,20 @@ pub fn set_timezone_entry(entry: Option<String>) {
     TIMEZONE_ENTRY.with(|e| *e.borrow_mut() = entry);
 }
 
+thread_local! {
+    /// The DEM of the next build (`set_dem`): the file name and the bytes of a GeoTIFF.
+    static DEM: std::cell::RefCell<Option<(String, Vec<u8>)>> = const { std::cell::RefCell::new(None) };
+}
+
+/// The DEM (a GeoTIFF, EPSG:4326) for the next build: its file name and its bytes. The build then writes
+/// `elevation_*` and `main.elevation_grid`, as `duckosm build --dem` does; `main.elevation_metadata` has the file
+/// name as the source. Without a name or without bytes, the next build has no DEM. The build takes the DEM, so
+/// each build needs its own call.
+#[wasm_bindgen]
+pub fn set_dem(name: Option<String>, bytes: Option<Vec<u8>>) {
+    DEM.with(|d| *d.borrow_mut() = name.zip(bytes));
+}
+
 fn js_build(
     input: Input,
     modes: &str,
@@ -296,6 +310,7 @@ fn js_build(
         building_faces: raw, // with the layers: the walls of the buildings (main.building_faces)
         built_at: Some((js_sys::Date::now() * 1000.0) as i64),
         timezone_entry: TIMEZONE_ENTRY.with(|e| e.borrow().clone()),
+        dem_bytes: DEM.with(|d| d.borrow_mut().take()),
         ..Params::default()
     };
     if let Some(m) = levels.as_deref() {
