@@ -14,7 +14,7 @@
 #                     One rev gives the engine and the editor.
 set -e
 NIGHTLY=nightly-2026-10-15
-ROADSTYLE_COMMIT=f3d1efc542d9ff1c4723947e75d2497b0fd7ebac   # the full SHA: a fetch by SHA needs it
+ROADSTYLE_COMMIT=c76c9a174a1097f61b846db09f7a16f5083c99d5   # the full SHA: a fetch by SHA needs it
 ROADSTYLE_REPO=${ROADSTYLE_REPO:-https://github.com/Khoshkhah/roadstyle.git}
 DUCKOSM_REV=$(sed -n 's/.*duckOSM\.git", rev = "\([0-9a-f]*\)".*/\1/p' crates/duckosm-wasm/Cargo.toml | sort -u)
 DUCKOSM_REPO=${DUCKOSM_REPO:-https://github.com/Khoshkhah/duckOSM.git}
@@ -55,6 +55,7 @@ cp $R/rust/roadstyle-assets/files/static/popup.css $R/rust/roadstyle-assets/file
 cp $R/rust/roadstyle-wasm/js/roads_sql.js $R/rust/roadstyle-wasm/js/features_sql.js $R/rust/roadstyle-wasm/js/levels_sql.js crates/duckosm-wasm/www/map/roadstyle/
 # the options of a dashboard host page (the typed dashboard, its first paint, the base maps and the layers on top): the page fetches them
 cp $R/rust/roadstyle-assets/files/data/host_options.json crates/duckosm-wasm/www/map/roadstyle/
+cp $R/rust/roadstyle-assets/files/vendor/pmtiles.js crates/duckosm-wasm/www/map/roadstyle/   # the reader of the ground's terrain file (roadstyle's elevation.js)
 rm -rf crates/duckosm-wasm/www/map/roadstyle/dashboard crates/duckosm-wasm/www/map/roadstyle/windows.js
 cp -r $R/rust/roadstyle-assets/files/static/dashboard crates/duckosm-wasm/www/map/roadstyle/
 wasm-bindgen --target web --out-dir crates/duckosm-wasm/www/map/pkg \
