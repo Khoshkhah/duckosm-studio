@@ -5,6 +5,10 @@ All versions are on the GitHub Releases page of `Khoshkhah/duckosm-rust`. There 
 
 ## Not released
 
+### Added
+
+- **A DEM in step 4 gives `main.elevation_grid`** (duckOSM `14fb7270`; SimReady's glTF adapter needs the ground between the roads). A new folded field **Ground height (DEM)** takes a GeoTIFF (EPSG:4326). The build worker calls `set_dem(name, bytes)` and the build writes the same tables as `duckosm build --dem`: `elevation_nodes`, `elevation_edges`, `main.elevation_metadata` and `main.elevation_grid` (`col`, `row`, `lon`, `lat`, `z`). The vertical datum is `unknown`, as in the command line. Without a file, the build is unchanged. The pin moves from `68d41679` and brings the other duckOSM changes since then. Test: `dem_e2e.py`.
+
 ### Changed
 
 - **Mapillary coverage shows in Studio.** roadstyle draws the Street View coverage inside the area of the page and takes the area from the roads style's source `boundary`. Studio gave it none, so the coverage was empty. The page now adds the area as a hidden `boundary` source to each roads style and keeps it equal to the area (`syncBoundary`). The boundary look of the dashboard stays off.

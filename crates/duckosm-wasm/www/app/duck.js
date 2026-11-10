@@ -52,6 +52,10 @@ export const TABLES = {
   level_edits: "Your edits of the drawing order in the level editor (card 7): one rule for each row.",
   level_heads: "The head lengths that you set in the level editor, for each road.",
   level_caps: "The line ends that you set in the level editor, for each road.",
+  elevation_metadata: "One row for each height column: the DEM that gave it (file name, vertical datum, resolution) and when.",
+  elevation_nodes: "The ground height of each node (ele), from the DEM.",
+  elevation_edges: "The ground height at the ends and the vertices of each edge (z_from, z_to, z_vertices), from the DEM.",
+  elevation_grid: "The pixels of the DEM over the area and 3 pixels more on each side: col, row, lon, lat and z (the height in metres).",
   building_faces: "One row for each wall of a building: its type (front, back, side, party wall), length, direction and the street that it faces. Your rules for walls are in face_type; computed_type is what the method gave.",
   building_entrances: "One row for each door of the area: a node with an entrance or door tag (kind, access, address, level), and the building whose outline has it (NULL when none).",
   building_info: "One row for each building: floors, height, roof shape, roof and facade colors (as #rrggbb) and materials, read from its OSM tags.",
@@ -94,7 +98,7 @@ export function build(msg, onStep) {
       else resolve(data);
     };
     worker.onerror = (e) => { worker.terminate(); reject(new Error(e.message || "the build worker stopped")); };
-    worker.postMessage(msg, msg.pbf || msg.json ? [msg.pbf || msg.json] : []);
+    worker.postMessage(msg, [msg.pbf || msg.json, msg.dem].filter(Boolean));
   });
 }
 

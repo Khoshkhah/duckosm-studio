@@ -329,6 +329,10 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
     <div class="rs-cap">Base map</div>
     <div class="rs-opts"><label class="rs-opt"><input type="checkbox" id="features" checked><span><b>Layers</b><small>Water, land use, buildings, railways and more. Not with a cut file.</small></span></label></div>
   </div>
+  <details class="drow"><summary>Ground height (DEM)</summary>
+    <p class="small muted">A GeoTIFF in EPSG:4326 with one band: the heights of the ground, as metres. Add the height of each junction and road, and the table elevation_grid.</p>
+    <button class="pick" type="button" data-file="dem"><svg><use href="#i-upload"/></svg><span id="dem-name">Select a DEM file (.tif)</span></button><input id="dem" type="file" accept=".tif,.tiff" hidden>
+  </details>
   <details class="drow"><summary>Fixes</summary>
     <button class="pick" type="button" data-file="fixes"><svg><use href="#i-upload"/></svg><span id="fixes-name">Select a fixes file (.yaml)</span></button><input id="fixes" type="file" accept=".yaml,.yml" hidden>
   </details>
@@ -1270,7 +1274,7 @@ function canBuild() {
   $("buildhint").textContent = building ? "" : missing || "";
   refreshSteps();
 }
-for (const id of ["pbf", "fixes"]) $(id).onchange = () => {
+for (const id of ["pbf", "fixes", "dem"]) $(id).onchange = () => {
   const f = $(id).files[0];
   if (f) $(`${id}-name`).textContent = `${f.name} (${mb(f.size)} MB)`;
   if (id === "fixes" && f) f.text().then(loadFixesText);     // the file's rules go into card 7; a build reads them from there
@@ -1610,6 +1614,7 @@ $("run").onclick = async () => {
     const threads = Number(new URLSearchParams(location.search).get("threads")) || undefined;  // ?threads=N: the size of the pool
     const levels = "solve";   // visualization.edge_levels: always roadstyle's solver (docs/levels.md); the page has no choice (Kaveh, 2026-11-04)
     let msg, download = null;
+    const demFile = $("dem").files[0];
     const feats = $("features").checked && source !== "cut";   // the base-map layers need raw.*: of a region file or of Overpass
     // DuckDB loads its spatial extension during the build (the build worker does not use DuckDB); the tables wait for it
     const spatial = feats ? duck.loadSpatial() : null;
@@ -1627,6 +1632,7 @@ $("run").onclick = async () => {
     // table (www/timezones.json, loaded one time, then from the cache of the browser)
     const region = area?.props.geofabrik?.[0]?.id;
     if (region) msg.tz = JSON.stringify((await (timezones ??= fetch("timezones.json").then((r) => r.json()))).regions[region] ?? null);
+    if (demFile) { msg.dem = await demFile.arrayBuffer(); msg.demName = demFile.name; }     // the worker gets the bytes (transferred)
     const b0 = performance.now();
     const out = await duck.build(msg, (t) => progress(t + "…"));
     logSteps(download ? [{ step: "download from " + download.server, ms: download.seconds * 1000 }] : [], "page", true);

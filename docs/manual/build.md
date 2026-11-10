@@ -34,8 +34,9 @@ The page gets the data from the [Overpass API](https://wiki.openstreetmap.org/wi
 
 1. Select the **Networks**: driving, walking, cycling or more than one.
 2. To get a base map, select **Layers**. Step 7 also needs the layers for walls and doors.
-3. Optional: select a **Fixes** file (`.yaml`). [The fixes file](fixes-file.md) gives its format.
-4. Press **Build**.
+3. Optional: select a **Ground height (DEM)** file (`.tif`). It is a GeoTIFF in EPSG:4326 with one band, in metres. The build then also makes the height tables ([the tables](tables.md)). The page has no DEM of its own: you supply the file, and you know its vertical datum.
+4. Optional: select a **Fixes** file (`.yaml`). [The fixes file](fixes-file.md) gives its format.
+5. Press **Build**.
 
 When the build ends, the card shows the time and the memory:
 

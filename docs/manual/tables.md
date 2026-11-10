@@ -72,6 +72,16 @@ FROM driving.edges GROUP BY highway ORDER BY km DESC;
 | `visualization.level_edits` | Your rules from [step 8](edit-levels.md). Only when you have rules. |
 | `visualization.level_heads`, `visualization.level_caps` | The head lengths and the line ends from the level editor. |
 
+## The ground height
+
+These tables need a build with a **DEM** file in [step 4](build.md).
+
+| Table | What it is for |
+|---|---|
+| `main.elevation_grid` | The pixels of the DEM over the area, with 3 pixels more on each side: `col`, `row`, `lon`, `lat` and `z` (the height in metres). |
+| `main.elevation_metadata` | The DEM file, its resolution and the time of the build. The vertical datum is `unknown`: the file does not say it. |
+| `<mode>.elevation_nodes`, `<mode>.elevation_edges` | The height of each node, and at the ends and the vertices of each edge. |
+
 ## The buildings and the base map
 
 These tables need a build with **Layers** on. You can edit the building data in [step 7](edit-osm.md).
