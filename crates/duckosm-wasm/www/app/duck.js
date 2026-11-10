@@ -25,7 +25,7 @@ CREATE OR REPLACE MACRO edge_id_hash_v1(osm_id, source, target, is_reverse) AS
 
 let db = null, conn = null;
 export let cut = null;      // the bytes of cut.osm.pbf of the last build, or null (a region file was cut and the base-map layers were on)
-export let tables = [];   // {mode, table, name, bytes, rows} of the last build
+export let tables = [];   // {mode, table, name, file, rows, home} of the last build (file: a Blob of the Parquet file; home: "memory" or "disk")
 
 // the tables of a mode, in the order of the downloads, with what each one holds (duckOSM docs/reference/database.md, docs/edge_graph.md)
 export const TABLES = {
@@ -82,6 +82,12 @@ export const duckReady = (async () => {
   // Each build registers its files under the same names (edges_driving.parquet, ...). DuckDB's external file cache keeps parts of
   // a file by its name, so a second build read old parts with the new file ("Snappy decompression failure").
   await conn.query("SET enable_external_file_cache = false");
+  // The GeoParquet conversion is always off: this duckdb-wasm build fails on a GeoParquet file ("stoi: no conversion", see GEOM below) when spatial is
+  // loaded and the conversion is on, and a view on disk reads its file at each query. selectWkb makes the GEOMETRY from the WKB.
+  await conn.query("SET enable_geoparquet_conversion = false");
+  // A view on disk reads its file through the browser's File reader, and each read has a fixed cost. With this setting DuckDB reads the parts of a file that a
+  // query needs in fewer, larger reads (Tartu, one road by osm_id from walking.edges: 26.5 ms without, 10.2 ms with; 3.1 ms from memory).
+  await conn.query("SET prefetch_all_parquet_files = true");
   return (performance.now() - t0) / 1000;
 })();
 
@@ -134,58 +140,97 @@ const selectWkb = (table, cols) => {
   return sql;
 };
 
-// the files of a build into DuckDB, one schema for each mode; the old tables go away
-export async function loadTables(files) {
+// The home of each table (docs/app.md, "The memory of the page"). Each Parquet file of a build goes to the browser disk (OPFS), in the folder of
+// this tab, and the page keeps only its File (no bytes in memory): the downloads, the zip and the saved area read it. Then the table is either
+//   memory: a DuckDB table made from the file (the fastest queries), or
+//   disk:   a DuckDB view over the file: DuckDB reads only the parts that a query needs, and keeps nothing.
+// ?tables=memory, disk or auto (the default): auto puts a file larger than AUTO_DISK on disk. The schema visualization stays in memory, because
+// the level editor writes it. A browser with no OPFS (some private windows) keeps each file as a Blob, and each table in memory, as before.
+const HOME = new URLSearchParams(location.search).get("tables") || "auto";
+const AUTO_DISK = 256 << 10;
+const homeOf = (mode, file) => !(file instanceof File) || mode === "visualization" || HOME === "memory" ? "memory"
+  : HOME === "disk" || file.size > AUTO_DISK ? "disk" : "memory";
+// The folder of this tab: tables-<id>. A Web Lock with its name lives as long as the tab, so a build removes only the folders of closed tabs, and two tabs do not
+// remove the files of each other. Null: the browser has no OPFS that can write.
+const FOLDER = "tables-" + Math.random().toString(36).slice(2, 10);
+let folder;
+const tableFolder = () => (folder ??= (async () => {
+  if (!navigator.locks || !globalThis.FileSystemFileHandle?.prototype.createWritable) return null;
+  navigator.locks.request(FOLDER, () => new Promise(() => {}));
+  return (await navigator.storage.getDirectory()).getDirectoryHandle(FOLDER, { create: true });
+})().catch(() => null));
+// The files of the build before, and of closed tabs, go: the browser disk keeps the tables of one area for each open tab
+async function clearFolders() {
+  const dir = await tableFolder();
+  if (!dir) return;
+  const root = await navigator.storage.getDirectory(), held = new Set((await navigator.locks.query()).held.map((l) => l.name));
+  for await (const [name] of root.entries()) if (name.startsWith("tables-") && !held.has(name)) await root.removeEntry(name, { recursive: true }).catch(() => {});
+  for await (const [name] of dir.entries()) await dir.removeEntry(name).catch(() => {});
+}
+// The file of a table (data: a Uint8Array or a Blob): on the browser disk (a File), else a Blob in memory
+async function keepFile(name, data) {
+  const dir = await tableFolder();
+  if (!dir) return data instanceof Blob ? data : new Blob([data]);
+  const fh = await dir.getFileHandle(name, { create: true }), w = await fh.createWritable();
+  await w.write(data);
+  await w.close();
+  return fh.getFile();
+}
+
+// One table into DuckDB from its file (data: Uint8Array or Blob). DuckDB reads the file through a File handle (BROWSER_FILEREADER): it does not lock
+// the OPFS file, so a new build can write it again. A view has no rowid, and roadstyle's SQL of the base-map layers reads the rowid of features.*: the view
+// gives the row number of the file as rowid. A view makes its GEOMETRY from the WKB at each query (selectWkb), as a table does once.
+async function addTable(name, data, { mode, table, rows = null } = split(name)) {
+  const file = await keepFile(name, data), home = homeOf(mode, file);
+  await db.registerFileHandle(name, file, (await import(DUCKDB)).DuckDBDataProtocol.BROWSER_FILEREADER, true);
+  await conn.query(`CREATE SCHEMA IF NOT EXISTS ${mode}`);
+  const cols = (await conn.query(`DESCRIBE SELECT * FROM read_parquet('${name}')`)).toArray().map((r) => r.column_name);
+  const sql = selectWkb(table, cols);
+  if (home === "memory") await conn.query(`CREATE OR REPLACE TABLE ${mode}.${table} AS ${sql} FROM read_parquet('${name}')`);
+  else if (mode !== "features") await conn.query(`CREATE OR REPLACE VIEW ${mode}.${table} AS ${sql} FROM read_parquet('${name}')`);
+  else await conn.query(`CREATE OR REPLACE VIEW ${mode}.${table} AS SELECT file_row_number AS rowid, ${sql.replace(/^SELECT \*/, "* EXCLUDE (file_row_number)").replace(/^SELECT /, "")} ` +
+    `FROM read_parquet('${name}', file_row_number = true)`);
+  rows ??= Number((await conn.query(`SELECT count(*) AS n FROM ${mode}.${table}`)).toArray()[0].n);
+  if (home === "memory") await db.dropFile(name);      // the table has the rows; the page keeps the file
+  tables.push({ mode, table, name, file, rows, home });
+}
+
+// The tables of the last build go away, with their files. main cannot go, so its tables do. A table on disk is a view, and DuckDB keeps its file
+// registered: the file goes from DuckDB first.
+async function clearTables() {
   await duckReady;
-  // the schemas of the last build go away; main cannot, so its tables do
-  for (const t of tables) await conn.query(t.mode === "main" ? `DROP TABLE IF EXISTS main.${t.table}` : `DROP SCHEMA IF EXISTS ${t.mode} CASCADE`);
-  await conn.query("DROP SCHEMA IF EXISTS raw CASCADE; SET enable_geoparquet_conversion = false");
+  for (const t of tables) await conn.query(t.mode === "main" ? `DROP ${t.home === "disk" ? "VIEW" : "TABLE"} IF EXISTS main.${t.table}` : `DROP SCHEMA IF EXISTS ${t.mode} CASCADE`);
+  for (const t of tables) if (t.home === "disk") await db.dropFile(t.name).catch(() => {});
+  await conn.query("DROP SCHEMA IF EXISTS raw CASCADE; DROP SCHEMA IF EXISTS features CASCADE");
   tables = [];
-  cut = files["cut.osm.pbf"] ?? null;
   forgetRoads();
-  for (const [name, bytes] of Object.entries(files)) {
-    if (name.startsWith("raw_") || name === "cut.osm.pbf") continue;     // loadFeatures reads them
-    const { mode, table } = split(name);
-    // registerFileBuffer moves the buffer into DuckDB's worker, so DuckDB gets a copy and the page keeps the file for its download.
-    // DuckDB's copy goes away when the table is made (a phone has little memory).
-    // ponytail: the page still keeps each file for the downloads; read them back from DuckDB if memory matters more.
-    await db.registerFileBuffer(name, bytes.slice());
-    await conn.query(`CREATE SCHEMA IF NOT EXISTS ${mode}`);
-    const cols = (await conn.query(`DESCRIBE SELECT * FROM read_parquet('${name}')`)).toArray().map((r) => r.column_name);
-    await conn.query(`CREATE OR REPLACE TABLE ${mode}.${table} AS ${selectWkb(table, cols)} FROM read_parquet('${name}')`);
-    const rows = Number((await conn.query(`SELECT count(*) AS n FROM ${mode}.${table}`)).toArray()[0].n);
-    await db.dropFile(name);
-    tables.push({ mode, table, name, bytes, rows });
-  }
-  await conn.query("SET enable_geoparquet_conversion = true");
+  await clearFolders();
+  if (HOME !== "memory" && await tableFolder()) await loadSpatial();     // a view makes GEOMETRY at each query: spatial must be loaded, not autoloaded
+}
+async function endLoad() {
   const modes = MODES.filter((m) => tables.some((t) => t.mode === m && t.table === "edges"));
   if (tables.some((t) => t.mode === "mm")) await conn.query(mmEdges(modes));
   await conn.query(MACROS);
 }
 
-// Restore saved tables from OPFS persistent storage directly into DuckDB
-export async function restoreTables(savedTables) {
-  await duckReady;
-  await loadSpatial();
-  for (const t of tables) await conn.query(t.mode === "main" ? `DROP TABLE IF EXISTS main.${t.table}` : `DROP SCHEMA IF EXISTS ${t.mode} CASCADE`);
-  await conn.query("DROP SCHEMA IF EXISTS raw CASCADE; DROP SCHEMA IF EXISTS features CASCADE; SET enable_geoparquet_conversion = false");
-  tables = [];
-  forgetRoads();
-  for (const item of savedTables) {
-    const { mode, table, name, bytes, rows: savedRows } = item;
-    if (!name || !bytes) continue;
-    await db.registerFileBuffer(name, bytes.slice());
-    await conn.query(`CREATE SCHEMA IF NOT EXISTS ${mode}`);
-    const cols = (await conn.query(`DESCRIBE SELECT * FROM read_parquet('${name}')`)).toArray().map((r) => r.column_name);
-    await conn.query(`CREATE OR REPLACE TABLE ${mode}.${table} AS ${selectWkb(table, cols)} FROM read_parquet('${name}')`);
-    const rows = typeof savedRows === "number" ? savedRows : Number((await conn.query(`SELECT count(*) AS n FROM ${mode}.${table}`)).toArray()[0].n);
-    await db.dropFile(name);
-    tables.push({ mode, table, name, bytes, rows });
+// the files of a build into DuckDB, one schema for each mode; the old tables go away
+export async function loadTables(files) {
+  await clearTables();
+  cut = files["cut.osm.pbf"] ?? null;
+  for (const [name, bytes] of Object.entries(files)) {
+    if (name.startsWith("raw_") || name === "cut.osm.pbf") continue;     // loadFeatures reads them
+    await addTable(name, bytes);
   }
-  await conn.query("SET enable_geoparquet_conversion = true");
-  const modes = MODES.filter((m) => tables.some((t) => t.mode === m && t.table === "edges"));
-  if (tables.some((t) => t.mode === "mm")) await conn.query(mmEdges(modes));
-  await conn.query(MACROS);
+  await endLoad();
+}
+
+// the tables of a saved area (app/area_store.js: each with its File) into DuckDB
+export async function restoreTables(savedTables) {
+  await clearTables();
+  await loadSpatial();
+  cut = null;
+  for (const t of savedTables) if (t.name && t.file?.size) await addTable(t.name, t.file, { ...t, rows: typeof t.rows === "number" ? t.rows : null });
+  await endLoad();
 }
 
 export const query = (sql) => conn.query(sql);
@@ -209,18 +254,22 @@ export async function loadFeatures(files, sql) {
   for (const name of ["raw_nodes.parquet", "raw_ways.parquet", "raw_relations.parquet"]) await db.dropFile(name);
   const names = (await conn.query("SELECT table_name AS t FROM information_schema.tables WHERE table_catalog = 'memory' " +
     "AND table_schema = 'features' ORDER BY 1")).toArray().map((r) => r.t);
-  for (const table of names) {
-    const name = `features_${table}.parquet`;
-    await db.dropFile(name).catch(() => {});     // duckdb-wasm does not see a second COPY to a kept file name
-    await conn.query(`COPY (SELECT * FROM features.${table}) TO '${name}' (FORMAT parquet)`);
-    const bytes = await db.copyFileToBuffer(name);
-    await db.dropFile(name);
-    const rows = Number((await conn.query(`SELECT count(*) AS n FROM features.${table}`)).toArray()[0].n);
-    tables.push({ mode: "features", table, name, bytes, rows });
-  }
+  for (const table of names) await toFile("features", table, `features_${table}.parquet`);
   await buildingInfo();
   await buildingEntrances();                      // from raw.nodes and raw.ways: it must come before raw goes
   await conn.query("DROP SCHEMA IF EXISTS raw CASCADE");
+}
+
+// A table that DuckDB made (features.*, main.building_info, main.building_entrances) becomes a Parquet file, and the table is made again from the file
+// with its home (addTable), as the tables of the build. sql: the rows of the file.
+async function toFile(mode, table, name, sql = `SELECT * FROM ${mode}.${table}`) {
+  const tmp = "new_" + name;
+  await db.dropFile(tmp).catch(() => {});     // duckdb-wasm does not see a second COPY to a kept file name
+  await conn.query(`COPY (${sql}) TO '${tmp}' (FORMAT parquet)`);
+  const bytes = await db.copyFileToBuffer(tmp);
+  await db.dropFile(tmp);
+  await conn.query(`DROP TABLE ${mode}.${table}`);
+  await addTable(name, bytes, { mode, table });
 }
 
 // main.building_info (docs/osm-editing.md, M3): the floors, the height, the roof and the colors of each building, from its tags. It is not in duckOSM's
@@ -254,13 +303,7 @@ FROM t;`;
 async function buildingInfo() {
   try {
     await conn.query(BUILDING_INFO_SQL);
-    const name = "building_info_main.parquet";
-    await db.dropFile(name).catch(() => {});
-    await conn.query(`COPY (SELECT * FROM main.building_info) TO '${name}' (FORMAT parquet)`);
-    const bytes = await db.copyFileToBuffer(name);
-    await db.dropFile(name);
-    const rows = Number((await conn.query("SELECT count(*) AS n FROM main.building_info")).toArray()[0].n);
-    tables.push({ mode: "main", table: "building_info", name, bytes, rows });
+    await toFile("main", "building_info", "building_info_main.parquet");
   } catch (e) {
     console.warn("building_info was not made:", e.message);       // the build goes on without it
   }
@@ -284,13 +327,7 @@ FROM e LEFT JOIN j ON j.node_id = e.osm_id;`;
 async function buildingEntrances() {
   try {
     await conn.query(BUILDING_ENTRANCES_SQL);
-    const name = "building_entrances_main.parquet";
-    await db.dropFile(name).catch(() => {});
-    await conn.query(`COPY (SELECT * EXCLUDE (tags) FROM main.building_entrances) TO '${name}' (FORMAT parquet)`);
-    const bytes = await db.copyFileToBuffer(name);
-    await db.dropFile(name);
-    const rows = Number((await conn.query("SELECT count(*) AS n FROM main.building_entrances")).toArray()[0].n);
-    tables.push({ mode: "main", table: "building_entrances", name, bytes, rows });
+    await toFile("main", "building_entrances", "building_entrances_main.parquet", "SELECT * EXCLUDE (tags) FROM main.building_entrances");
   } catch (e) {
     console.warn("building_entrances was not made:", e.message);       // the build goes on without it
   }
@@ -306,7 +343,7 @@ export async function duckdbFile(areaName) {
   try {
     await c.query(`ATTACH '${name}' AS out; USE out`);
     for (const m of new Set(tables.map((t) => t.mode))) await c.query(`CREATE SCHEMA IF NOT EXISTS ${m}`);
-    for (const t of tables) await c.query(`CREATE TABLE ${t.mode}.${t.table} AS FROM memory.${t.mode}.${t.table}`);
+    for (const t of tables) await c.query(`CREATE TABLE ${t.mode}.${t.table} AS ${t.home === "disk" && t.mode === "features" ? "SELECT * EXCLUDE (rowid) " : ""}FROM memory.${t.mode}.${t.table}`);
     if (tables.some((t) => t.mode === "mm")) await c.query(mmEdges(MODES.filter((m) => tables.some((t) => t.mode === m))));
     await c.query(MACROS);
     await c.query("USE memory; DETACH out");
@@ -350,7 +387,7 @@ export async function zipAll(areaName, boundary) {
   const files = { [dir + "README.txt"]: strToU8(readme), [dir + "make_duckdb.sql"]: strToU8(loadSql(areaName)),
                   [dir + "layers.json"]: strToU8(JSON.stringify({ layers }, null, 1)) };
   if (boundary) files[dir + "boundary.geojson"] = strToU8(boundary);
-  for (const t of tables) files[dir + t.name] = [t.mode === "features" ? await featuresPlain(t.table) : t.bytes, { level: 0 }];      // a features file has no tags column in a download
+  for (const t of tables) files[dir + t.name] = [t.mode === "features" ? await featuresPlain(t.table) : new Uint8Array(await t.file.arrayBuffer()), { level: 0 }];      // a features file has no tags column in a download
   return { blob: new Blob([zipSync(files)], { type: "application/zip" }), name: slug(areaName) + ".zip" };
 }
 
@@ -360,7 +397,8 @@ export async function featuresPlain(table) {
   const cols = (await conn.query(`DESCRIBE features.${table}`)).toArray().map((r) => r.column_name);
   const name = `download_features_${table}.parquet`;
   await db.dropFile(name).catch(() => {});
-  await conn.query(`COPY (SELECT * ${cols.includes("tags") ? "EXCLUDE (tags) " : ""}FROM features.${table}) TO '${name}' (FORMAT parquet)`);
+  const no = cols.filter((c) => c === "tags" || c === "rowid");      // rowid: a view on disk
+  await conn.query(`COPY (SELECT * ${no.length ? `EXCLUDE (${no.join(", ")}) ` : ""}FROM features.${table}) TO '${name}' (FORMAT parquet)`);
   const bytes = await db.copyFileToBuffer(name);
   await db.dropFile(name);
   return bytes;
@@ -652,15 +690,15 @@ export async function relevel(rows) {
 // The level editor's data (card 8, docs/app.md): roadstyle's adapter for duckOSM's tables (levels_sql.js): the edges of the build's level area (roadstyle's query level_edges),
 // the stored levels (the edge hash of visualization.edge_levels_meta and visualization.edge_levels as CSV text; null when the build has no levels) and the write of the
 // editor's result into the tables (visualization.edge_levels, edge_levels_meta, level_edits, level_heads and level_caps). The page keeps its downloads: `before` drops what it
-// drew from the old levels, `after` puts the Parquet bytes of the written tables into `tables` (the .duckdb download reads the tables).
+// drew from the old levels, `after` keeps the Parquet files of the written tables in `tables` (the .duckdb download reads the tables).
 // The page asks for it at start, before the database exists: each call reads db and conn when it runs (a new build has a new connection).
 export async function levelsData() {
   const pkg = await roadstyle();
   const adapter = () => duckosmLevelsData({ db, conn, pkg, catalog: "memory", before: forgetRoads,
     after: async ({ tables: written, toParquet }) => {
       for (const table of written) {
-        const name = `${table}_visualization.parquet`, bytes = await toParquet(table), [{ n }] = await rows(`SELECT count(*) AS n FROM visualization.${table}`);
-        const t = { mode: "visualization", table, name, bytes, rows: Number(n) }, i = tables.findIndex((x) => x.name === name);
+        const name = `${table}_visualization.parquet`, file = await keepFile(name, await toParquet(table)), [{ n }] = await rows(`SELECT count(*) AS n FROM visualization.${table}`);
+        const t = { mode: "visualization", table, name, file, rows: Number(n), home: "memory" }, i = tables.findIndex((x) => x.name === name);
         if (i >= 0) tables[i] = t;
         else tables.push(t);
       }

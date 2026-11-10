@@ -107,6 +107,13 @@ with sync_playwright() as p:
     # the build details of card 4 (folded): one table row each
     print("build details:", " | ".join(page.eval_on_selector_all("#builddetails tr", "rs => rs.map((r) => [...r.cells].map((c) => c.textContent).join(' ').trim())")))
     print("query:", page.evaluate("window.duckApi.query('SELECT count(*) AS n FROM driving.edges').then((r) => String(r.toArray()[0].n))"), "driving edges")
+    # the home of each table (docs/app.md, "The memory of the page"): Chromium has OPFS, so the large files are views on the browser disk, and
+    # the page keeps no bytes of a file
+    homes = page.evaluate("duckApi.tables.map((t) => [t.mode + '.' + t.table, t.home, t.file instanceof File])")
+    disk = [n for n, h, _ in homes if h == "disk"]
+    print(f"homes: {len(disk)} tables on disk, {len(homes) - len(disk)} in memory;", disk[:6])
+    assert disk and len(disk) < len(homes) and all(f for _, _, f in homes), homes
+    assert "visualization.edge_levels" not in disk, "the level editor writes visualization.*: it stays in memory"
     # the zip: a folder with the Parquet files, layers.json, make_duckdb.sql, the boundary and a README
     with page.expect_download(timeout=120_000) as d:
         page.click("#zip")

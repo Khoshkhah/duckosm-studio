@@ -53,7 +53,7 @@ with sync_playwright() as p:
 
     # no DEM: none of the elevation tables
     build(page)
-    tables = page.evaluate("window.duckApi.query(\"SELECT table_name FROM duckdb_tables() WHERE table_name LIKE 'elevation%'\").then((r) => r.toArray().map((x) => x.table_name))")
+    tables = page.evaluate("window.duckApi.query(\"SELECT table_name FROM information_schema.tables WHERE table_name LIKE 'elevation%'\").then((r) => r.toArray().map((x) => x.table_name))")
     assert tables == [], tables
     assert "elevation_grid" not in page.inner_text("#files")
     print("no DEM: no elevation tables")
