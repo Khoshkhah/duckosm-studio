@@ -81,6 +81,8 @@ with sync_playwright() as p:
         raise AssertionError(("the dock did not open", errors))
     names = page.evaluate("window.dataPart.schema().then((s) => s.tables.map((t) => t.name))")
     print("tables:", len(names), [n for n in names if "turn" in n or "lane" in n or "boundary" in n or "building" in n])
+    about = page.evaluate("window.askAbout")      # the text for the agent (schema() made it): it must tell that results of ids are drawn
+    assert "node_id" in about and "h3_cell" in about and "building_faces" in about and "highway" in about and "only show roads" in about, about[-600:]
     assert page.evaluate("window.RS_DOCK && !!window.RS_DOCK.result && !!window.RS_DOCK.roles.from"), "the options of the dashboard carry the look's dock section"
 
     # a turn: 3 parts on the map, and the card has the cost and the section "Row"

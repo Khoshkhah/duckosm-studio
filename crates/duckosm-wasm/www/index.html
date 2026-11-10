@@ -2356,7 +2356,7 @@ const data = () => dataPart ??= dataDock({
   query: sqlQuery,
   schema: async () => {
     const tables = pageTables(), names = tables.map((t) => t.name);
-    askAbout = aboutText({ tables: names, classes: await roadClasses(sqlQuery, names), hasTags: await hasTags(sqlQuery) });
+    askAbout = aboutText({ tables: names, classes: await roadClasses(sqlQuery, names), hasTags: await hasTags(sqlQuery), kinds: true });      // kinds: the dock draws a result of ids and gives each row a card
     return describeTables(tables, mainEdges(names), sqlQuery);
   },
   ready: builtNow,
@@ -2371,7 +2371,7 @@ $("query-tables").onclick = withKinds(() => data().open());
 const ask = () => askPart ??= askPanel({ data: data(), dialect: "DuckDB",
   get about() { return askAbout; },                  // duckOSM's aboutText (schema() sets it)
   examples: QUESTIONS });      // roadstyle's general groups first, then duckOSM's groups (web/ask/questions.js)
-Object.defineProperties(window, { dataPart: { get: data }, askPart: { get: ask } });   // for the tests
+Object.defineProperties(window, { dataPart: { get: data }, askPart: { get: ask }, askAbout: { get: () => askAbout } });   // for the tests
 rs.sections.add({ id: "ask", label: "Ask the data", note: "A question about the roads, in words", open: withKinds(() => ask().open()), icon: "ask", background: true, after: "step6" });
 
 // ---- card 9: the design (docs/app.md, "Step 9: design"). The panel is roadstyle's design panel (map/roadstyle/dashboard/design/, roadstyle
