@@ -30,6 +30,7 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
 <link rel="stylesheet" href="duckosm/ground_step/ground_step.css">   <!-- duckOSM's Ground step, step 4 (copied by build.sh at the engine's rev) -->
 <link rel="preload" href="map/roadstyle/host_options.json" as="fetch" crossorigin>
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.js" crossorigin></script>
+<script src="map/roadstyle/pmtiles.js"></script>   <!-- roadstyle's pmtiles.js (copied by build.sh): the ground's terrain file -->
 <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js" crossorigin></script>   <!-- the OSM fixes of card 7 (duckOSM's fixes editor) -->
 <script src="coi-serviceworker.js"></script>   <!-- the COOP and COEP headers on GitHub Pages, for threads -->
 <script type="importmap">
@@ -416,7 +417,8 @@ import * as designLib from "./map/roadstyle/dashboard/design/design.js";      //
 import { designEditPart } from "./map/roadstyle/dashboard/design/design_part.js";   // roadstyle's design editor as one card (card 9): the card, the layout, the restore, the save, the redraw
 import { levelEditPart } from "./map/roadstyle/dashboard/editor/level_part.js";   // roadstyle's level editor as one card (card 8): the store, the area, the open, the close, the redraw, the write-back
 import * as tileProfile from "./app/profile.js";
-import { rsDashboard } from "./map/roadstyle/dashboard/index.js";   // roadstyle's map dashboard (copied by build.sh at ROADSTYLE_COMMIT)
+import { rsDashboard } from "./map/roadstyle/dashboard/index.js";
+import { rsGround } from "./map/roadstyle/dashboard/elevation.js";   // roadstyle's ground: the hillshade and the 3D terrain from the area's own DEM   // roadstyle's map dashboard (copied by build.sh at ROADSTYLE_COMMIT)
 import { dataDock } from "./map/roadstyle/dashboard/data/data_dock.js";   // roadstyle's data dock (the SQL line and the wide table under the map)
 import { QUESTIONS } from "./duckosm/ask/questions.js";   // duckOSM's example questions of Ask, in groups (copied by build.sh at the engine's rev)
 import { askTables, describeTables, mainEdges, roadsBy, startSql, aboutText, roadClasses, hasTags } from "./duckosm/ask/schema.js";   // duckOSM's knowledge of its tables for Ask and the dock
@@ -2382,6 +2384,24 @@ const ask = () => askPart ??= askPanel({ data: data(), dialect: "DuckDB",
   examples: QUESTIONS });      // roadstyle's general groups first, then duckOSM's groups (web/ask/questions.js)
 Object.defineProperties(window, { dataPart: { get: data }, askPart: { get: ask }, askAbout: { get: () => askAbout } });   // for the tests
 rs.sections.add({ id: "ask", label: "Ask the data", note: "A question about the roads, in words", open: withKinds(() => ask().open()), icon: "ask", background: true, after: "step6" });
+
+// The area's ground (roadstyle's rsGround, docs/design/ground_terrain.md there): after each build or restore, the terrain file that roadstyle's
+// engine makes from main.elevation_grid goes to the browser disk (OPFS, ground.pmtiles), and the map reads it one tile at a time; the hillshade
+// and the 3D terrain then come from the area's DEM, with no request to the AWS Terrain Tiles. With no DEM, the AWS tiles, and the map says so.
+async function setGround() {
+  try {
+    const t = await duck.groundTerrain();
+    if (!t) { rsGround(null); return; }
+    const fh = await (await navigator.storage.getDirectory()).getFileHandle("ground.pmtiles", { create: true });
+    const w = await fh.createWritable();
+    await w.write(t.archive);
+    await w.close();
+    rsGround({ ...t.facts, terrain: await fh.getFile() });
+  } catch (e) {
+    console.warn("the ground's terrain file:", e);
+  }
+}
+document.addEventListener("duckosm:built", setGround);
 
 // ---- card 9: the design (docs/app.md, "Step 9: design"). The panel is roadstyle's design panel (map/roadstyle/dashboard/design/, roadstyle
 // docs/guides/design-panel.md): it draws into the page's panel (#sb), owns the design and paints the ground, the layers and the opacity of the roads.

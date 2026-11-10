@@ -189,6 +189,23 @@ export async function restoreTables(savedTables) {
 }
 
 export const query = (sql) => conn.query(sql);
+/** The area's ground for roadstyle's map terrain (roadstyle docs/design/ground_terrain.md): {facts, archive}, the ground's facts from
+ * main.elevation_metadata (the row of ele) and its terrain file (Terrarium PNG tiles in one PMTiles archive) that roadstyle's engine makes
+ * from main.elevation_grid. null: the build had no DEM. ponytail: made on the page's thread, some ms for a city; move it to a worker when a
+ * large area makes the page stop. */
+export async function groundTerrain() {
+  const has = async (t) => Number((await conn.query(`SELECT count(*) AS n FROM duckdb_tables() WHERE schema_name = 'main' AND table_name = '${t}'`)).toArray()[0].n) > 0;
+  if (!(await has("elevation_grid"))) return null;
+  const g = await conn.query("SELECT col, row, lon, lat, coalesce(z, 'NaN'::DOUBLE) AS z FROM main.elevation_grid");
+  const c = (n, T) => T.from(g.getChild(n).toArray(), Number);
+  const m = (await has("elevation_metadata"))
+    ? (await rows("SELECT * FROM main.elevation_metadata WHERE coalesce(ele_column, 'ele') = 'ele' LIMIT 1"))[0] || {} : {};
+  const facts = { id: m.sha256 ?? null, source: m.source ?? null, product: m.product ?? null, vertical_datum: m.vertical_datum ?? null,
+    resolution_m: m.resolution_m == null ? null : Number(m.resolution_m), license: m.license ?? null };
+  const rs = await roadstyle();
+  return { facts, archive: rs.terrainPmtiles(c("col", Int32Array), c("row", Int32Array), c("lon", Float64Array), c("lat", Float64Array),
+    c("z", Float64Array), JSON.stringify(facts)) };
+}
 const rows = async (sql) => (await conn.query(sql)).toArray().map((r) => r.toJSON());
 // the memory of DuckDB in MiB (its buffers: the tables, the caches), for the log of the steps
 export const memoryMiB = async () =>

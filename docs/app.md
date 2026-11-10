@@ -310,6 +310,10 @@ The page keeps the selected file only in memory. After a reload, the user select
       this DEM as the ground of the area.
   A source without a file gives no DEM, so the build is the same as before. The Copernicus COG files on AWS send no CORS header (checked on 2026-11-10), so the page cannot read them:
   the person downloads the file. The tables are in the downloads and in the zip and `.duckdb` file as any other table. Test: `dem_e2e.py` (also a phone width).
+- **The map terrain from the DEM** (roadstyle `docs/design/ground_terrain.md`): on `duckosm:built` (a build or a restore), `setGround`
+  asks `duck.groundTerrain()`: with `main.elevation_grid`, roadstyle's `terrainPmtiles` makes the terrain file on the page's thread, the page
+  writes it to OPFS (`ground.pmtiles`) and calls roadstyle's `rsGround({...facts, terrain: File})`. The map reads the file one tile at a time
+  (roadstyle's `pmtiles.js`, copied by `build.sh`). Without a grid, `rsGround(null)`: the AWS Terrain Tiles. Test: `ground_e2e.py`.
 - **Drawing order**: the build always uses "Optimized" (roadstyle's solver; the page has no choice since 2026-11-04,
   [levels.md](levels.md)). Monaco: the build takes about 0.5 s more with the solver.
 - **Base map layers** (a check box, on): with a region file or the Overpass API, the build also makes duckOSM's base-map
