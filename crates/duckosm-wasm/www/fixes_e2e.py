@@ -47,6 +47,15 @@ def amber(page):
     return page.evaluate("(window.fixesPanel.drawn().edits + (window.fixesPanel.drawn().lit['fix-edits'] ?? 0))")
 
 
+# the colour of roadstyle's highlight sets on each map row of a way (the feature state rs_hl of the road source), null where no set lights it
+LIT = """((id) => { const m = window.duckMap, l = m.getStyle().layers.find((x) => x.source === 'rs-roads' && x['source-layer'] === 'simple');
+    return window.rsQuery((p) => Number(p.osm_id) === id).map((r) => m.getFeatureState({source: l.source, sourceLayer: l['source-layer'], id: r}).rs_hl ?? null); })"""
+
+
+def lit_on_map(page, osm_id):
+    return page.evaluate(f"{LIT}({osm_id})")
+
+
 def at(page, lon, lat):
     """Move the map to the point and give the pixel of the point on the page."""
     page.evaluate(f"window.duckMap.jumpTo({{center: [{lon}, {lat}], zoom: 18}})")
@@ -546,6 +555,12 @@ with sync_playwright() as p:
 
     # build again with the rules: the one Build button is in the Changes tab; it closes the panel; the tables have the changes, and the amber layer is drawn again
     page.click("#fix-tab-changes")
+    # "Changes on the map: Hide" takes the amber road off the map (roadstyle's set fix-edits, not only the editor's layers); Show brings it back (duckOSM PR 60)
+    page.wait_for_function(f"{LIT}({ROAD}).every((c) => c === '#f59e0b')", timeout=20_000)      # restore() above lights the roads again (async)
+    page.click("#fix-show [data-v=hide]")
+    assert set(lit_on_map(page, ROAD)) == {None}, ("Hide takes the amber off", lit_on_map(page, ROAD))
+    page.click("#fix-show [data-v=show]")
+    assert set(lit_on_map(page, ROAD)) == {"#f59e0b"}, ("Show brings it back", lit_on_map(page, ROAD))
     page.click("#fix-apply")
     page.wait_for_function("document.getElementById('run').hasAttribute('aria-busy')", timeout=30_000)
     built(page)
@@ -577,6 +592,12 @@ with sync_playwright() as p:
     assert (nt["d"], nt["s"], nt["n"]) == ("backward", None, "hello"), nt
     page.wait_for_function("(window.fixesPanel.drawn().edits + (window.fixesPanel.drawn().lit['fix-edits'] ?? 0)) > 0", timeout=30_000)
     assert not popups(page)
+    # a query of the data dock after the build lights its own result: it does not bring back highlight rows of the old roads (roadstyle PR 130: the road was amber again)
+    page.wait_for_function("/drawn|failed/.test(document.getElementById('mapnote').textContent) && !window.mapDrawing", timeout=60_000)   # the new roads are on the map
+    before = lit_on_map(page, ROAD)
+    page.evaluate("window.dataPart.run(\"SELECT highway, count(*) AS n FROM driving.edges GROUP BY highway\")")
+    page.wait_for_function("window.dataPart.result() && window.dataPart.result().rows.length > 1", timeout=60_000)
+    assert lit_on_map(page, ROAD) == before, ("the data dock does not light old rows", before, lit_on_map(page, ROAD))
     # out and back: the changes and the picked road are still there after the build
     if "folded" in (page.get_attribute("#step7-card", "class") or ""):
         page.click("#step7")
