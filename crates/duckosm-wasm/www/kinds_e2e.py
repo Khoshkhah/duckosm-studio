@@ -36,6 +36,8 @@ CARD = "(document.querySelector('.rs-dd-card') || {innerText: ''}).innerText"
 
 def run(page, sql, expect_kind=True):
     """Run a query in the dock and wait for its table. With expect_kind, wait for the objects on the map."""
+    # clear the objects of the last result first: else the wait below is true at once for a result whose kind has not drawn yet (a CI run failed on this: nodes after turn_restrictions)
+    page.evaluate("(() => { const s = window.duckMap.getSource('rs-dock-kinds'); if (s) s.setData({type: 'FeatureCollection', features: []}); })()")
     page.evaluate("(sql) => window.dataPart.run(sql)", sql)
     page.wait_for_function("(sql) => window.dataPart.result() && window.dataPart.result().sql.trim() === sql.trim()", arg=sql, timeout=120_000)
     if expect_kind:
