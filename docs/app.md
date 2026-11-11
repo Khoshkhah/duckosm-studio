@@ -244,6 +244,13 @@ two queries that the fixes panel does on a road: one road by `osm_id` from `walk
 | SQL of the draw (roads.parquet and the layers) | not measured | 0.67 s | 0.82 s | 0.86 s |
 | A click (median, of 40) | 2.2 ms (one query by `edge_id`) | 1.5 ms | 8.2 ms | 8.7 ms |
 
+Monaco (the region file `monaco.osm.pbf` with `monaco.geojson`, the same method; three runs each, after the merge of
+the 3D walls as tiles): DuckDB 63 MiB before and 30 MiB after (7 tables on disk). The tab after the build was 941 to
+985 MiB before and 907 to 934 MiB after; after the draw, 1,044 to 1,058 MiB before and 1,027 to 1,097 MiB after. The
+table load took 1.3 to 1.6 s before and 1.7 to 2.2 s after, and the base-map layers 0.6 to 0.8 s before and 1.2 to
+1.4 s after (each layer becomes a file, and the table is made again from it). A click took 4.7 to 6 ms before and 16 to
+27 ms after.
+
 The tab after the draw changes by about 100 MiB between two runs of the same page, so the draw numbers do not show a
 difference. The map worker (roadstyle's engine) has most of that memory. On Burnaby the prototype measured DuckDB at 388 MiB
 with all tables in memory and 50 MiB with the tables on disk.
