@@ -187,7 +187,8 @@ with sync_playwright() as p:
     page.wait_for_timeout(300)
     page.wait_for_function("window.duckMap.loaded()", timeout=120_000)
     print(f"head slider and Apply: {time.time() - t:.2f} s until the map is drawn again")
-    assert page.is_hidden("#lv-apply"), "after Apply the list is empty: the apply bar goes"
+    # after Apply the list is empty: the apply bar goes. With tables on the browser disk the save can wait for the SQL of the new draw (0.3 s on Monaco)
+    page.wait_for_selector("#lv-apply", state="hidden", timeout=10_000)
     # roadstyle's fault (level_editor.js tap(), since before b976864): a tap near a road's edge sends a second rs:select from the wide
     # tap line, with no road; the panel then asks for the road "undefined" and says "unknown road"
     if "unknown road" in page.evaluate("document.getElementById('lv-toast').textContent"):

@@ -717,14 +717,14 @@ export async function relevel(rows) {
 // The level editor's data (card 8, docs/app.md): roadstyle's adapter for duckOSM's tables (levels_sql.js): the edges of the build's level area (roadstyle's query level_edges),
 // the stored levels (the edge hash of visualization.edge_levels_meta and visualization.edge_levels as CSV text; null when the build has no levels) and the write of the
 // editor's result into the tables (visualization.edge_levels, edge_levels_meta, level_edits, level_heads and level_caps). The page keeps its downloads: `before` drops what it
-// drew from the old levels, `after` keeps the Parquet files of the written tables in `tables` (the .duckdb download reads the tables).
+// drew from the old levels, `after` keeps the Parquet files of the written tables in `tables`, as Blobs in memory (small files; the level editor waits for `after`, and a write to OPFS made its Apply 0.3 s slower) (the .duckdb download reads the tables).
 // The page asks for it at start, before the database exists: each call reads db and conn when it runs (a new build has a new connection).
 export async function levelsData() {
   const pkg = await roadstyle();
   const adapter = () => duckosmLevelsData({ db, conn, pkg, catalog: "memory", before: forgetRoads,
     after: async ({ tables: written, toParquet }) => {
       for (const table of written) {
-        const name = `${table}_visualization.parquet`, file = await keepFile(name, await toParquet(table)), [{ n }] = await rows(`SELECT count(*) AS n FROM visualization.${table}`);
+        const name = `${table}_visualization.parquet`, file = new Blob([await toParquet(table)]), [{ n }] = await rows(`SELECT count(*) AS n FROM visualization.${table}`);
         const t = { mode: "visualization", table, name, file, rows: Number(n), home: "memory" }, i = tables.findIndex((x) => x.name === name);
         if (i >= 0) tables[i] = t;
         else tables.push(t);
