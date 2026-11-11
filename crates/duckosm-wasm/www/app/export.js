@@ -35,7 +35,7 @@ const zipOf = async (files) => {         // files: name to text or bytes
  */
 const PAIR = (m) => `(SELECT 1 FROM ${m}.edges f WHERE NOT f.is_reverse AND f.osm_id = e.osm_id AND f.source = e.target AND f.target = e.source AND left(f.edge_ref, length(f.edge_ref) - 1) = left(e.edge_ref, length(e.edge_ref) - 1))`;
 export const roadCountSql = (m, merge) => (merge ? `SELECT count(*) AS n FROM ${m}.edges e WHERE NOT e.is_reverse OR NOT EXISTS ${PAIR(m)}` : `SELECT count(*) AS n FROM ${m}.edges`);
-const hasTable = async (query, schema, name) => (await query(`SELECT 1 FROM duckdb_tables() WHERE schema_name = '${schema}' AND table_name = '${name}'`)).length > 0;
+const hasTable = async (query, schema, name) => (await query(`SELECT 1 FROM information_schema.tables WHERE table_schema = '${schema}' AND table_name = '${name}'`)).length > 0;      // a table on the browser disk is a view
 /**
  * The roads of the files. Default: one feature for each directed edge, as the page's map has them: a two-way road is two features, each with its own `edge_id` and its own geometry
  * (the line in its direction of travel), and the properties `twoway` (true), `direction` (`forward` or `reverse`) and `edge_id_pair` (the id of the other direction). A one-way road is one
@@ -58,8 +58,8 @@ async function roadRows(query, m, geometry, extra = "", merge = false) {
  */
 async function otherLayers(query, mode, geometry) {
   const out = [], g = (col) => `${geometry}(${col})`;
-  for (const { table_name: t } of await query("SELECT table_name FROM duckdb_tables() WHERE schema_name = 'features' ORDER BY table_name")) {
-    const rows = await query(`SELECT COLUMNS(c -> c NOT IN ('geom', 'tags')), ${g("geom")} AS g FROM features.${t}`);
+  for (const { table_name: t } of await query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'features' ORDER BY table_name")) {
+    const rows = await query(`SELECT COLUMNS(c -> c NOT IN ('geom', 'tags', 'rowid')), ${g("geom")} AS g FROM features.${t}`);      // rowid: a view on disk
     if (rows.length) out.push({ name: `features_${t}`, rows });
   }
   const names = await query(`SELECT e.osm_id::VARCHAR AS osm_id, any_value(e.name) AS name, any_value(e.highway) AS highway, ${g("any_value(ST_LineInterpolatePoint(e.geometry, 0.5))")} AS g

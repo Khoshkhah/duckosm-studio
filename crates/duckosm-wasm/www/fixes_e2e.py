@@ -242,7 +242,10 @@ with sync_playwright() as p:
     print(f"a building: way {b['osm_id']}, floors 7 (3D preview 22.4 m), roof gabled, roof color #cc3300")
 
     # a table of an older build (a saved area) has no column `door`: the walls still show
-    page.evaluate("window.duckApi.query('ALTER TABLE main.building_faces DROP COLUMN door')")
+    # (a table on the browser disk is a view (docs/app.md, "The memory of the page"): the view then reads a table with no `door`)
+    page.evaluate("""async () => duckApi.tables.find((t) => t.table === 'building_faces').home === 'disk'
+      ? duckApi.query('CREATE TABLE main.faces_old AS SELECT * EXCLUDE (door) FROM main.building_faces; CREATE OR REPLACE VIEW main.building_faces AS FROM main.faces_old')
+      : duckApi.query('ALTER TABLE main.building_faces DROP COLUMN door')""")
     page.evaluate(f"window.fixesPanel.select('building', 'way', {b['osm_id']})")
     # the walls of the building: a list with a type for each wall (from main.building_faces), colored on the map; a change of type is a rule at once
     page.wait_for_function("document.querySelectorAll('#fix-form .wallrow').length >= 3", timeout=20_000)
@@ -385,7 +388,7 @@ with sync_playwright() as p:
 
     # a turn rule: the road that the road click gave has a junction; the rule goes into the list of changes (and into the file)
     frm = rows(page, "SELECT a.osm_id FROM driving.edges a JOIN driving.edges b ON b.source = a.target AND b.osm_id != a.osm_id "
-                     "JOIN driving.edges c ON c.target = a.target AND c.osm_id NOT IN (a.osm_id, b.osm_id) LIMIT 1")[0]["osm_id"]
+                     "JOIN driving.edges c ON c.target = a.target AND c.osm_id NOT IN (a.osm_id, b.osm_id) ORDER BY a.osm_id LIMIT 1")[0]["osm_id"]      # ORDER BY: a view (a table on disk) gives the rows in another order
     page.click("#fix-tab-turns")
     page.fill("#fix-from", str(frm))
     page.click("#fix-turn-find")

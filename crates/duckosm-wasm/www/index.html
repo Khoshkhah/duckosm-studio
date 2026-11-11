@@ -2516,10 +2516,10 @@ function files() {
   urls = [];
   const modes = [...new Set(duck.tables.map((t) => t.mode))].filter((m) => m !== "features");
   const link = (t) => {
-    const u = URL.createObjectURL(new Blob([t.bytes], { type: "application/vnd.apache.parquet" }));
+    const u = URL.createObjectURL(new Blob([t.file], { type: "application/vnd.apache.parquet" }));      // a Blob of a File of the browser disk: no copy in memory
     urls.push(u);
     const label = t.mode === "features" ? t.table : t.mode;
-    return `<span class="i"><a href="${u}" download="${esc(t.name)}" title="${esc(t.name)}, ${size(t.bytes.length)}">${label}</a> <span>${num(t.rows)} rows</span></span>`;
+    return `<span class="i"><a href="${u}" download="${esc(t.name)}" title="${esc(t.name)}, ${size(t.file.size)}">${label}</a> <span>${num(t.rows)} rows</span></span>`;
   };
   const feats = duck.tables.filter((t) => t.mode === "features");
   $("files").innerHTML = Object.entries(duck.TABLES).filter(([name]) => duck.tables.some((t) => t.table === name)).map(([name, what]) =>

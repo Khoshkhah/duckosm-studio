@@ -78,16 +78,15 @@ export async function saveArea(slug, meta, tablesData, vizData = null, cut = nul
   let totalBytes = 0;
   const savedTableDescriptors = [];
 
-  // If tablesData is an Array of table objects (e.g. duck.tables)
+  // tablesData: duck.tables, each with the Blob of its file (a File of the browser disk: it is not read into memory)
   if (Array.isArray(tablesData)) {
     for (const t of tablesData) {
-      if (!t.name || !t.bytes) continue;
+      if (!t.name || !t.file) continue;
       const fileHandle = await dir.getFileHandle(t.name, { create: true });
       const writer = await fileHandle.createWritable();
-      const bytes = t.bytes instanceof Uint8Array ? t.bytes : new Uint8Array(t.bytes);
-      await writer.write(bytes);
+      await writer.write(t.file);
       await writer.close();
-      totalBytes += bytes.byteLength;
+      totalBytes += t.file.size;
       savedTableDescriptors.push({
         mode: t.mode,
         table: t.table,
@@ -201,7 +200,7 @@ export async function saveVizCache(slug, vizData) {
   }
 }
 
-// Load a saved area from OPFS into memory
+// A saved area: its meta.json, its tables (each with its File: the page does not read it into memory) and the drawing cache (bytes)
 export async function loadArea(slug) {
   const areasDir = await getAreasDir();
   if (!areasDir) return null;
@@ -230,29 +229,25 @@ export async function loadArea(slug) {
   // version, or with no list, is not an area of this page.
   if (meta.storeVersion !== STORE_VERSION || !Array.isArray(meta.tables)) return null;
   const listed = new Set(meta.tables.map((t) => t.name));
-  const files = {};
   const tables = [];
   const viz = {};
   for await (const [name, handle] of dir.entries()) {
     if (name.endsWith(".parquet") && handle.kind === "file" && (listed.has(name) || name.startsWith("viz_"))) {
       const file = await handle.getFile();
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      files[name] = bytes;
-
-      if (bytes.byteLength === 0) continue;
+      if (file.size === 0) continue;
 
       // Extract visualization cache files separately
       if (name === "viz_roads.parquet") {
-        viz.roads = bytes;
+        viz.roads = new Uint8Array(await file.arrayBuffer());
         continue;
       }
       if (name === "viz_features.parquet") {
-        viz.features = bytes;
+        viz.features = new Uint8Array(await file.arrayBuffer());
         continue;
       }
       if (name.startsWith("viz_")) continue;
 
-      tables.push({ ...meta.tables.find((t) => t.name === name), bytes });
+      tables.push({ ...meta.tables.find((t) => t.name === name), file });
     }
   }
 
@@ -261,7 +256,7 @@ export async function loadArea(slug) {
     viz.levels = meta.levels || "tags";
   }
 
-  return { meta, tables, files, viz: viz.roads ? viz : null };
+  return { meta, tables, viz: viz.roads ? viz : null };
 }
 
 // The cut file of a saved area as a File (it stays on the disk: the page reads it only when it is downloaded), or null
