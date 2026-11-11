@@ -117,6 +117,10 @@ with sync_playwright() as p:
     print(f"homes: {len(disk)} tables on disk, {len(homes) - len(disk)} in memory;", disk[:6])
     assert disk and len(disk) < len(homes) and all(f for _, _, f in homes), homes
     assert "visualization.edge_levels" not in disk, "the level editor writes visualization.*: it stays in memory"
+    # the draw after the build opens the next step and folds card 5 (the cards follow the steps, panel_e2e.py): open card 5 for its downloads
+    page.wait_for_function("/drawn|failed/.test(document.getElementById('mapnote').textContent) && !window.mapDrawing", timeout=600_000)
+    if "folded" in (page.get_attribute("#step5-card", "class") or ""):
+        page.click("#step5")
     # the zip: a folder with the Parquet files, layers.json, make_duckdb.sql, the boundary and a README
     with page.expect_download(timeout=120_000) as d:
         page.click("#zip")

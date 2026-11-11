@@ -82,8 +82,9 @@ with sync_playwright() as p:
     assert "drawn" in page.inner_text("#mapnote"), page.inner_text("#mapnote")
     assert state() == 1, state()
     page.wait_for_timeout(400)
-    card5, pn = page.evaluate(BOX, "step5-card"), page.evaluate(BOX, "sb")
-    assert pn[1] < card5[1] < H - 100, ("card 5 (the result) in view in the sheet", card5, pn)
+    # the map opens the next step, card 8, and folds card 5 (the cards follow the steps, panel_e2e.py)
+    card8, pn = page.evaluate(BOX, "step8-card"), page.evaluate(BOX, "sb")
+    assert pn[1] < card8[1] and card8[3] <= H, ("card 8 (the next step) in view in the sheet", card8, pn)
     # the draw after the build: the blank base map and the area in view above the sheet and under the bar (the map's padding)
     page.wait_for_function("!window.duckMap.isMoving()", timeout=30_000)
     assert page.evaluate("document.querySelector('input[name=rs-bm]:checked')?.value") == "blank"
@@ -111,7 +112,7 @@ with sync_playwright() as p:
     # so and nothing is drawn; one network that is smaller (driving: 3,454 roads) draws
     assert page.evaluate("window.mapMaxRoads") == 40000, page.evaluate("window.mapMaxRoads")
     page.evaluate("window.mapMaxRoads = 10000; document.getElementById('show').click()")
-    page.wait_for_function("/on this device the map can show up to 10,000/.test(document.getElementById('mapnote').textContent)", timeout=30_000)
+    page.wait_for_function("/This device draws at most 10,000 roads/.test(document.getElementById('mapnote').textContent)", timeout=30_000)
     print("limit:", page.inner_text("#mapnote"))
     page.evaluate("(v) => { const s = document.getElementById('mapmode'); s.value = v; s.dispatchEvent(new Event('change', {bubbles: true})); }", "driving")   # the select is roadstyle's list (selectbox.js)
     page.wait_for_function("/drawn|failed|on this device/.test(document.getElementById('mapnote').textContent) && !window.mapDrawing "
@@ -123,7 +124,7 @@ with sync_playwright() as p:
                            timeout=300_000)
     assert "drawn" in page.inner_text("#mapnote"), page.inner_text("#mapnote")
 
-    # the level editor: one panel at a time. It draws into the page's own sheet (#sb): the page's steps and footer are hidden, "← Steps" is at
+    # the level editor: one panel at a time. It draws into the page's own sheet (#sb): the page's steps are hidden, "← Steps" is at
     # the top of the sheet, and the editor's apply bar is fixed at its bottom. The map stays full width under the bar and above the sheet.
     def open_editor():
         page.tap("#step8")
@@ -133,17 +134,17 @@ with sync_playwright() as p:
         page.wait_for_timeout(400)                  # the sheet's height and the map's padding (0.2 s)
         same("opened")
         assert page.evaluate("document.getElementById('sb').contains(document.getElementById('lv'))"), "the editor is in the page's panel"
-        assert not page.is_visible("#step1-card") and not page.is_visible("footer"), "the page's steps and footer are away"
+        assert not page.is_visible("#step1-card"), "the page's steps are away"
 
     def back_at(before):
         page.wait_for_function("!window.levelEditorOpen && !window.mapDrawing && window.duckMap.loaded()", timeout=300_000)
         page.wait_for_timeout(400)
         same("closed")
-        assert page.is_visible("#step8-card") and page.is_visible("footer") and not page.is_visible("#lv")
+        assert page.is_visible("#step8-card") and not page.is_visible("#lv")
         # the page's sheet again, in the state it had, with the map's padding for it, and card 8 in view in it
         assert state() == before and abs(page.evaluate(BOX, "sb")[3] - H) < 1 and abs(padding() - under_grip()) < 2, (state(), padding(), under_grip())
         top, card = page.evaluate(BOX, "sb")[1], page.evaluate(BOX, "step8-card")
-        assert min(card[3], H) - max(card[1], top) >= 100, ("card 8 in view again (100 px of it in the sheet)", top, card)
+        assert top <= card[1] and card[3] <= H, ("card 8 in view again (all of it in the sheet)", top, card)
         assert page.evaluate("scrollY") == 0
 
     ref = page.evaluate("(() => { const c = window.duckMap.getCenter(); return [c.lng + 0.001, c.lat + 0.001]; })()")
@@ -174,16 +175,19 @@ with sync_playwright() as p:
     page.touchscreen.tap(*point)
     page.wait_for_selector("#lv-cards [data-hroad]", timeout=30_000)
     shot("6-road")
-    # its end head one metre shorter (the slider, as a finger moves it): since roadstyle 6be68c2 a head is saved and drawn at once, with
-    # no solve and no "Apply and solve"
+    # its end head one metre shorter (the slider, as a finger moves it). The change waits in the editor's list (roadstyle's level editor
+    # since its redesign, roadstyle PR 71): the apply bar shows it, and Apply draws a head with no solve
     t = time.time()
     page.evaluate("""() => { const b = document.querySelectorAll('#lv-cards [data-hroad] input')[1];
         b.value = String(Math.max(+b.min || 0.5, +b.value - 1)); b.dispatchEvent(new Event('input')); b.dispatchEvent(new Event('change')); }""")
+    page.wait_for_selector("#lv-apply", state="visible", timeout=30_000)
+    assert "2 waiting" in page.inner_text("#lv-wait"), page.inner_text("#lv-wait")      # the two heads of the road go into the list together
+    page.tap("#lv-apply")
     page.wait_for_function("/Changed/.test(document.getElementById('editnote').textContent)", timeout=120_000)   # host mode (LiveMap.relevel): the map redraws in place, RS_SIDE stays
     page.wait_for_timeout(300)
     page.wait_for_function("window.duckMap.loaded()", timeout=120_000)
-    print(f"head slider: {time.time() - t:.2f} s until the map is drawn again")
-    assert page.is_hidden("#lv-apply"), "no Apply and solve for a head"
+    print(f"head slider and Apply: {time.time() - t:.2f} s until the map is drawn again")
+    assert page.is_hidden("#lv-apply"), "after Apply the list is empty: the apply bar goes"
     # roadstyle's fault (level_editor.js tap(), since before b976864): a tap near a road's edge sends a second rs:select from the wide
     # tap line, with no road; the panel then asks for the road "undefined" and says "unknown road"
     if "unknown road" in page.evaluate("document.getElementById('lv-toast').textContent"):
