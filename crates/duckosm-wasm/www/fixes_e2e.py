@@ -388,7 +388,7 @@ with sync_playwright() as p:
 
     # a turn rule: the road that the road click gave has a junction; the rule goes into the list of changes (and into the file)
     frm = rows(page, "SELECT a.osm_id FROM driving.edges a JOIN driving.edges b ON b.source = a.target AND b.osm_id != a.osm_id "
-                     "JOIN driving.edges c ON c.target = a.target AND c.osm_id NOT IN (a.osm_id, b.osm_id) LIMIT 1")[0]["osm_id"]
+                     "JOIN driving.edges c ON c.target = a.target AND c.osm_id NOT IN (a.osm_id, b.osm_id) ORDER BY a.osm_id LIMIT 1")[0]["osm_id"]      # ORDER BY: a view (a table on disk) gives the rows in another order
     page.click("#fix-tab-turns")
     page.fill("#fix-from", str(frm))
     page.click("#fix-turn-find")
