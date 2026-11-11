@@ -110,6 +110,10 @@ with sync_playwright() as p:
     # the build details of card 4 (folded): one table row each
     print("build details:", " | ".join(page.eval_on_selector_all("#builddetails tr", "rs => rs.map((r) => [...r.cells].map((c) => c.textContent).join(' ').trim())")))
     print("query:", page.evaluate("window.duckApi.query('SELECT count(*) AS n FROM driving.edges').then((r) => String(r.toArray()[0].n))"), "driving edges")
+    # the draw after the build opens the next step and folds card 5 (the cards follow the steps, panel_e2e.py): open card 5 for its downloads
+    page.wait_for_function("/drawn|failed/.test(document.getElementById('mapnote').textContent) && !window.mapDrawing", timeout=600_000)
+    if "folded" in (page.get_attribute("#step5-card", "class") or ""):
+        page.click("#step5")
     # the zip: a folder with the Parquet files, layers.json, make_duckdb.sql, the boundary and a README
     with page.expect_download(timeout=120_000) as d:
         page.click("#zip")
