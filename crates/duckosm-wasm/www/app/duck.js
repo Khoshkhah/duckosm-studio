@@ -629,6 +629,16 @@ export async function wallsData(mode) {
   return { type: "FeatureCollection", features };
 }
 
+// The walls of wallsData as tiles of the map worker (roadstyle's LiveMap.setWalls, docs/design/memory_budget.md "The 3D walls"): the worker cuts them
+// into the tile layer `walls`, and MapLibre loads only the tiles in view. The answer is their vector source for rsSetWalls; null: no walls or no map.
+export async function wallTiles(fc) {
+  if (!fc) return null;
+  const r = await ask({ walls: new TextEncoder().encode(JSON.stringify(fc)) }, null);
+  if (!r) return null;                               // no map, or the worker ended (a new draw)
+  if (r.error) throw new Error(r.error);
+  return JSON.parse(r.source);
+}
+
 // A new look over the map that the worker holds (roadstyle's LiveMap.setLook, docs/design/restyle_without_retile.md): the new style when the map keeps
 // its tiles; null when the look needs new tiles (draw again), or when no map is drawn. The look is the one of setLookText (none: pageLookText).
 export async function setLook() {
