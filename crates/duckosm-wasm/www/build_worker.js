@@ -33,6 +33,7 @@ onmessage = async ({ data }) => {
     const levels = data.levels || undefined;   // "tags" (the default) or "solve"
     pkg.set_dem(data.demName, data.dem ? new Uint8Array(data.dem) : undefined, data.demProduct, data.demDatum, data.demLicense, !!data.demNotReference);   // the DEM (a GeoTIFF) of the area, or none
     pkg.set_timezone_entry(data.tz);           // the entry of the page's time zone table, or undefined: no time zone
+    pkg.set_building_faces(data.walls !== false);   // "Wall labels": main.building_faces with the layers (on when the page says nothing)
     const res = data.region
       ? build_area(data.region, data.boundary, data.modes, fixes, !!data.raw, levels)
       : data.json

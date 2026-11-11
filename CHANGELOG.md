@@ -5,6 +5,17 @@ All versions are on the GitHub Releases page of `Khoshkhah/duckosm-rust`. There 
 
 ## Not released
 
+### Added
+
+- **Wall labels, a checkbox of the build step (card 4)** (Kaveh, 2026-11-11). Under **Layers**: on by default, the build makes `main.building_faces`,
+  each wall of a building with its type, for the 3D walls by type. Before, the walls came with the layers and the page had no choice. The checkbox
+  needs **Layers** (`set_building_faces` of the WebAssembly module; the build worker gives it). `e2e.py --no-walls` checks it.
+
+### Changed
+
+- **The roadstyle pin moves to `9df3ceda`** (roadstyle PR 171; before `426f5914`). It brings the adapters of the four ways (`dashboard/ways.js`), the
+  pan with the 3D terrain on with no lag (PR 167), the blank base map on a phone after a late base map (PR 169) and the way D parts.
+
 ### Fixed
 
 - **A theme in card 9 keeps the tiles again.** Since the area became the hidden `boundary` source of each roads style (the Mapillary change below), the style on the map has the layer `boundary-area`, but the style of a new look on the same tiles (`setDesignLook`) did not have it. roadstyle's `rs.restyle` then saw other layers and refused, and each theme change drew a new map. A new map after a theme left the area's fill in another state until the next change of the design, so `design_e2e.py` (Show these layers) found the water in place of the buildings. Now `setDesignLook` adds the boundary (`withBoundary`) as `showStyle` does. `restyle_e2e.py` and `design_e2e.py` pass again.

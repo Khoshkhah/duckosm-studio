@@ -268,6 +268,18 @@ pub fn build_osm_json(
 }
 
 thread_local! {
+    /// Whether the next build with the layers makes the walls of the buildings (`set_building_faces`; on when the page says nothing).
+    static BUILDING_FACES: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+}
+
+/// Whether the builds after this call make `main.building_faces`, the walls of the buildings, each with a type (the page's checkbox
+/// "Wall labels"). The walls are made only with the base-map layers (`raw`): they need the buildings. On by default.
+#[wasm_bindgen]
+pub fn set_building_faces(on: bool) {
+    BUILDING_FACES.with(|b| b.set(on));
+}
+
+thread_local! {
     /// The time zone table entry of the next build (`set_timezone_entry`).
     static TIMEZONE_ENTRY: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
 }
@@ -319,7 +331,7 @@ fn js_build(
         modes: Mode::parse_all(&modes.split(',').collect::<Vec<_>>()).map_err(e)?,
         raw,
         cut_pbf: raw && matches!(input, Input::Area(..)), // the cut file: only of a region file
-        building_faces: raw, // with the layers: the walls of the buildings (main.building_faces)
+        building_faces: raw && BUILDING_FACES.with(|b| b.get()), // with the layers, and "Wall labels" on: the walls of the buildings (main.building_faces)
         built_at: Some((js_sys::Date::now() * 1000.0) as i64),
         timezone_entry: TIMEZONE_ENTRY.with(|e| e.borrow().clone()),
         dem_bytes: DEM.with(|d| d.borrow_mut().take()),
