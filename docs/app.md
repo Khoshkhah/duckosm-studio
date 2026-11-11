@@ -252,7 +252,8 @@ The traps that this work found:
 
 - This duckdb-wasm build (1.33.1-dev57) fails on a GeoParquet file ("stoi: no conversion") when the spatial extension is
   loaded and `enable_geoparquet_conversion` is on. A view reads its file at each query, so the page sets the conversion off
-  when DuckDB starts, and each table and view makes its GEOMETRY from the WKB (`selectWkb`).
+  when DuckDB starts, and each table and view makes its GEOMETRY from the WKB (`selectWkb`). The setting is `SET GLOBAL`:
+  a plain `SET` is for one connection, and the `.duckdb` download (`duckdbFile`) has a connection of its own.
 - A view has no `rowid`, and roadstyle's SQL of the base-map layers reads the `rowid` of `features.*`. A view of a layer reads
   its file with `file_row_number = true` and gives that number as `rowid`. The downloads, the zip and the `.duckdb` file
   remove this column, so they stay equal to duckOSM's output.

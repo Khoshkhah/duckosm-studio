@@ -84,10 +84,10 @@ export const duckReady = (async () => {
   await conn.query("SET enable_external_file_cache = false");
   // The GeoParquet conversion is always off: this duckdb-wasm build fails on a GeoParquet file ("stoi: no conversion", see GEOM below) when spatial is
   // loaded and the conversion is on, and a view on disk reads its file at each query. selectWkb makes the GEOMETRY from the WKB.
-  await conn.query("SET enable_geoparquet_conversion = false");
+  await conn.query("SET GLOBAL enable_geoparquet_conversion = false");      // GLOBAL: duckdbFile has a connection of its own
   // A view on disk reads its file through the browser's File reader, and each read has a fixed cost. With this setting DuckDB reads the parts of a file that a
   // query needs in fewer, larger reads (Tartu, one road by osm_id from walking.edges: 26.5 ms without, 10.2 ms with; 3.1 ms from memory).
-  await conn.query("SET prefetch_all_parquet_files = true");
+  await conn.query("SET GLOBAL prefetch_all_parquet_files = true");
   return (performance.now() - t0) / 1000;
 })();
 

@@ -242,7 +242,10 @@ with sync_playwright() as p:
     print(f"a building: way {b['osm_id']}, floors 7 (3D preview 22.4 m), roof gabled, roof color #cc3300")
 
     # a table of an older build (a saved area) has no column `door`: the walls still show
-    page.evaluate("window.duckApi.query('ALTER TABLE main.building_faces DROP COLUMN door')")
+    # (a table on the browser disk is a view (docs/app.md, "The memory of the page"): the view then reads a table with no `door`)
+    page.evaluate("""async () => duckApi.tables.find((t) => t.table === 'building_faces').home === 'disk'
+      ? duckApi.query('CREATE TABLE main.faces_old AS SELECT * EXCLUDE (door) FROM main.building_faces; CREATE OR REPLACE VIEW main.building_faces AS FROM main.faces_old')
+      : duckApi.query('ALTER TABLE main.building_faces DROP COLUMN door')""")
     page.evaluate(f"window.fixesPanel.select('building', 'way', {b['osm_id']})")
     # the walls of the building: a list with a type for each wall (from main.building_faces), colored on the map; a change of type is a rule at once
     page.wait_for_function("document.querySelectorAll('#fix-form .wallrow').length >= 3", timeout=20_000)
