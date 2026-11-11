@@ -81,11 +81,11 @@ with sync_playwright() as p:
     assert "elevation_grid" not in page.inner_text("#files")
     print("no DEM: no elevation tables")
 
-    # Monaco: the sources in order, the best one chosen; with no file there is no DEM (so the build above had none)
+    # Monaco: the sources in order, none chosen (a file would get the label of a guess); with no choice and no file there is no DEM (so the build above had none)
     open_ground(page)
     names = page.eval_on_selector_all("#ground [data-gs=list] input", "els => els.map((e) => e.value)")
     assert names == ["eudtm", "fabdem", "copernicus-glo30", "eu-dem"], names
-    assert page.eval_on_selector("#ground input[name=gs-src]:checked", "e => e.value") == "eudtm"
+    assert page.query_selector("#ground input[name=gs-src]:checked") is None
     assert "Ground: AWS Terrain Tiles" in page.text_content("#ground"), page.inner_html("#ground")[:600]
     print("the sources of Monaco:", ", ".join(names))
 
@@ -94,7 +94,8 @@ with sync_playwright() as p:
     # a Copernicus GLO-30 file: the product, the datum and the licence are the catalog's
     page.click("#ground label:has(input[value=copernicus-glo30])")
     page.set_input_files("#ground [data-gs=file]", str(DATA / "monaco-copernicus-glo30.tif"))
-    page.wait_for_selector("#ground [data-gs=pick] span:text('monaco-copernicus-glo30.tif')")
+    page.wait_for_selector("#ground [data-gs=remove]")      # the drop zone is a line with the name of the file and Remove
+    assert "monaco-copernicus-glo30.tif" in page.inner_text("#ground")
     assert page.query_selector("#ground .gs-bad") is None, page.inner_text("#ground")
     build(page)
     n = count(page, "main.elevation_grid")
@@ -118,7 +119,8 @@ with sync_playwright() as p:
     open_ground(page)
     page.click("#ground label:has(input[value=fabdem])")
     page.set_input_files("#ground [data-gs=file]", str(DATA / "monaco-copernicus-glo30.tif"))
-    page.wait_for_selector("#ground [data-gs=pick] span:text('monaco-copernicus-glo30.tif')")
+    page.wait_for_selector("#ground [data-gs=remove]")      # the drop zone is a line with the name of the file and Remove
+    assert "monaco-copernicus-glo30.tif" in page.inner_text("#ground")
     build(page)
     meta = page.evaluate("window.duckApi.query('SELECT * FROM main.elevation_metadata').then((r) => r.toArray()[0].toJSON())")
     assert (meta["product"], meta["vertical_datum"], meta["license"]) == ("DTM", "EGM2008", "CC-BY-NC-SA-4.0"), meta

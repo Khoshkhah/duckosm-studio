@@ -409,7 +409,8 @@ import * as duck from "./app/duck.js";
 window.duckApi = duck;   // for the tests (drawLaps, tileStats)
 import * as regions from "./app/regions.js";
 import * as areaStore from "./app/area_store.js";
-import { initGroundStep } from "./duckosm/ground_step/ground_step.js";   // duckOSM's Ground step: the DEM of the area (copied by build.sh at the engine's rev)
+import { initGroundStep } from "./duckosm/ground_step/ground_step.js";
+import { polygons, geometry, areaKm2, inside, bbox, covering as coverIn } from "./duckosm/build_steps/core.js";   // duckOSM's logic of the area (copied by build.sh at the engine's rev)   // duckOSM's Ground step: the DEM of the area (copied by build.sh at the engine's rev)
 import { initFixesPanel } from "./duckosm/fixes_editor/fixes_panel.js";   // duckOSM's fixes editor (copied by build.sh at the engine's rev)
 import { rsKpi } from "./map/roadstyle/dashboard/kpi.js";   // roadstyle's number tile (the area of card 2)
 import * as exporter from "./app/export.js";
@@ -444,46 +445,8 @@ function status(text, ms = 4000) {
 // the list of Geofabrik's extracts (tools/make_geofabrik_index.py), loaded once
 const geofabrik = () => (extracts ??= fetch("geofabrik.json").then((r) => r.json()).then((d) => d.extracts));
 
-// the polygons of a geometry, as a list of polygons (each a list of rings)
-const polygons = (g) => (g?.type === "Polygon" ? [g.coordinates] : g?.type === "MultiPolygon" ? g.coordinates : []);
-const geometry = (polys) => (polys.length === 1 ? { type: "Polygon", coordinates: polys[0] } : { type: "MultiPolygon", coordinates: polys });
-
-// the area on the sphere (radius 6378137 m) of a ring in degrees
-const rad = (d) => (d * Math.PI) / 180;
-function ringArea(r) {
-  let a = 0;
-  for (let i = 0; i + 1 < r.length; i++) a += rad(r[i + 1][0] - r[i][0]) * (2 + Math.sin(rad(r[i][1])) + Math.sin(rad(r[i + 1][1])));
-  return Math.abs((a * 6378137 * 6378137) / 2);
-}
-const areaKm2 = (polys) => polys.reduce((s, p) => s + ringArea(p[0]) - p.slice(1).reduce((h, r) => h + ringArea(r), 0), 0) / 1e6;
-
-// the even-odd rule over all rings of all polygons
-function inside(polys, x, y) {
-  let c = false;
-  for (const p of polys) for (const r of p)
-    for (let i = 0, j = r.length - 1; i < r.length; j = i++)
-      if (r[i][1] > y !== r[j][1] > y && x < ((r[j][0] - r[i][0]) * (y - r[i][1])) / (r[j][1] - r[i][1]) + r[i][0]) c = !c;
-  return c;
-}
-
-function bbox(polys) {
-  const pts = polys.flatMap((p) => p[0]);
-  return [Math.min(...pts.map((p) => p[0])), Math.min(...pts.map((p) => p[1])), Math.max(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[1]))];
-}
-
-// the extracts that contain all points of the outer rings (at most 2000 of them), the smallest first. The
-// polygons of the list are about 1 km larger than the extracts, so an area at most 1 km outside can be shown.
-async function covering(polys) {
-  const pts = polys.flatMap((p) => p[0]);
-  const step = Math.ceil(pts.length / 2000);
-  const some = pts.filter((_, i) => i % step === 0);
-  const [w, s, e, n] = bbox([[some]]);
-  return (await geofabrik())
-    .filter((x) => x.bbox[0] <= w && x.bbox[1] <= s && x.bbox[2] >= e && x.bbox[3] >= n)
-    .filter((x) => some.every((p) => inside(x.polygon, p[0], p[1])))
-    .map((x) => ({ ...x, km2: areaKm2(x.polygon) }))
-    .sort((a, b) => a.km2 - b.km2);
-}
+// the logic of the area (polygons, box, area in km², the extracts that cover it) is duckOSM's, shared with `duckosm studio` (web/build_steps/core.js, copied by build.sh at the engine's rev)
+const covering = async (polys) => coverIn(await geofabrik(), polys);
 
 // ---- the map ----
 const empty = { type: "FeatureCollection", features: [] };
@@ -1283,7 +1246,7 @@ function canBuild() {
 }
 // step 4, Ground height: duckOSM's Ground step lists the DEM sources that cover the area and gives the build the DEM with its product, vertical datum and licence
 fetch("duckosm/ground_step/dem_sources.json").then((r) => r.json()).then((d) => initGroundStep({      // the page fetches the catalog: a deploy gives its address a version
-  root: $("ground"), catalog: d.sources, bbox: () => (area ? bbox(area.polys) : null),
+  root: $("ground"), catalog: d.sources, bbox: () => (area ? bbox(area.polys) : null), drop: rs.drop,
   status: (t, ms) => status(t, ms), onChange: () => canBuild(),
 })).then((g) => { ground = window.ground = g; }, (e) => { $("ground").textContent = `The DEM sources did not load: ${e.message}`; });      // no await: the module goes on (window.ground is for the tests)
 for (const id of ["pbf", "fixes"]) $(id).onchange = () => {

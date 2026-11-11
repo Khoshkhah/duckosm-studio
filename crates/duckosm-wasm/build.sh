@@ -70,5 +70,5 @@ if [ "$(git -C $D rev-parse -q --verify HEAD 2>/dev/null)" != $DUCKOSM_REV ] || 
 fi
 rm -rf crates/duckosm-wasm/www/duckosm
 mkdir -p crates/duckosm-wasm/www/duckosm
-cp -r $D/web/fixes_editor $D/web/ask $D/web/ground_step crates/duckosm-wasm/www/duckosm/      # the fixes editor (card 7), the questions of Ask (web/ask/questions.js) and the Ground step (step 4)
+cp -r $D/web/fixes_editor $D/web/ask $D/web/ground_step $D/web/build_steps crates/duckosm-wasm/www/duckosm/      # the fixes editor (card 7), the questions of Ask (web/ask/questions.js), the Ground step (step 4) and the logic of the build steps (build_steps/core.js)
 cp $D/src/duckosm/data/dem_sources.json crates/duckosm-wasm/www/duckosm/ground_step/      # the catalog of DEM sources that the Ground step reads

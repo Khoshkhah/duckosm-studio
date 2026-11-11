@@ -295,7 +295,7 @@ The page keeps the selected file only in memory. After a reload, the user select
 
 - The modes (three check boxes) and, under **Advanced: corrections to the map data**, the OSM fixes file
   (duckOSM `osm_overrides`), with one sentence that tells what it is (Kaveh found the first label unclear).
-- **Ground height (DEM)** (folded, optional): duckOSM's step "Ground" (`web/ground_step/` of duckOSM; `build.sh` copies it with the catalog
+- **Ground height (DEM)** (folded, optional): duckOSM's step "Ground" (`web/ground_step/` of duckOSM, with a drop zone for the file and the ground id of the file; `build.sh` copies it with the catalog
   `src/duckosm/data/dem_sources.json` at the engine's pin). It lists the DEM sources that cover the area of step 1, best first (a national 1 m DTM, EU-DTM, FABDEM,
   Copernicus GLO-30, then the others), with resolution, product (`DTM` or `DSM`) and licence. For example, Monaco gives EU-DTM, FABDEM, Copernicus GLO-30 and EU-DEM.
   The best source is the choice. The page has two ways to give a DEM:
