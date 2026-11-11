@@ -239,7 +239,7 @@ export const query = (sql) => conn.query(sql);
  * from main.elevation_grid. null: the build had no DEM. ponytail: made on the page's thread, some ms for a city; move it to a worker when a
  * large area makes the page stop. */
 export async function groundTerrain() {
-  const has = async (t) => Number((await conn.query(`SELECT count(*) AS n FROM duckdb_tables() WHERE schema_name = 'main' AND table_name = '${t}'`)).toArray()[0].n) > 0;
+  const has = async (t) => Number((await conn.query(`SELECT count(*) AS n FROM information_schema.tables WHERE table_schema = 'main' AND table_name = '${t}'`)).toArray()[0].n) > 0;
   if (!(await has("elevation_grid"))) return null;
   const g = await conn.query("SELECT col, row, lon, lat, coalesce(z, 'NaN'::DOUBLE) AS z FROM main.elevation_grid");
   const c = (n, T) => T.from(g.getChild(n).toArray(), Number);
