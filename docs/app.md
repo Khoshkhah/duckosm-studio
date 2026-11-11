@@ -217,9 +217,66 @@ roadstyle's allocator grows it ahead in steps of a quarter (16 to 64 MiB), so it
 tile index: tile contract 1 had a size of 210 MiB and 154 MiB held; tile contract 2 has 232 MiB and 143 MiB held (peak 161 and 150 MiB).
 After 28 tiles at zoom 14 with pitch 60, the size is 263 MiB with contract 1 and 232 MiB with contract 2.
 
-Not done: the map worker's memory (roadstyle's engine: about 5 KB for each road, with the base map), and the page's own
-copy of each Parquet file for the downloads (75 MiB for Burnaby; DuckDB can write them again, but the files of the
-downloads must stay equal to the native build's).
+**The tables on the browser disk (2026-11-10).** Before this change, each table was in memory two times: DuckDB made a full
+table from the Parquet file, and the page kept the Parquet bytes for the downloads, the zip and the saved area. Now each
+Parquet file of a build goes to the browser disk (OPFS) and the page keeps only its `File`, which has no bytes in memory.
+Each table has a home (`app/duck.js`, `addTable`):
+
+- `memory`: a DuckDB table made from the file. The queries are the fastest.
+- `disk`: a DuckDB view over the file. DuckDB reads only the parts that a query needs and keeps nothing.
+
+The address can set the rule: `?tables=memory`, `?tables=disk` or `?tables=auto` (the default). With `auto`, a file larger
+than 256 KiB goes to disk, and a smaller file stays in memory. The schema `visualization` always stays in memory, because the
+level editor writes it (`DELETE`, `INSERT`, `UPDATE`). The base-map tables (`features.*`) and the two tables that the page makes
+(`main.building_info`, `main.building_entrances`) become Parquet files too and follow the same rule. No other edit writes a
+table: the fixes editor writes a YAML file, and the build runs again.
+
+The measurements are of Tartu (the region file `tartu.smart.b433d09b44.osm.pbf` with its boundary, all networks and the
+base-map layers; headless Chromium; the tab is the private memory of the renderer process, which has the page and its workers). A click is the
+two queries that the fixes panel does on a road: one road by `osm_id` from `walking.edges`, and one building by `osm_id`.
+
+| Tartu | Before | `?tables=memory` | `auto` (the default) | `?tables=disk` |
+|---|---|---|---|---|
+| DuckDB after the build and after the draw | 207 MiB | 206 MiB | 36 MiB | 8 MiB |
+| The tab after the build | 1,128 MiB | 1,134 MiB | 984 MiB | 947 MiB |
+| The tab after the draw | 2,767 MiB | 2,912 MiB | 2,768 MiB | 2,680 MiB |
+| Load the tables (the build's step) | not measured | 1.2 s | 0.8 s | 0.8 s |
+| SQL of the draw (roads.parquet and the layers) | not measured | 0.67 s | 0.82 s | 0.86 s |
+| A click (median, of 40) | 2.2 ms (one query by `edge_id`) | 1.5 ms | 8.2 ms | 8.7 ms |
+
+Monaco (the region file `monaco.osm.pbf` with `monaco.geojson`, the same method; three runs each, after the merge of
+the 3D walls as tiles): DuckDB 63 MiB before and 30 MiB after (7 tables on disk). The tab after the build was 941 to
+985 MiB before and 907 to 934 MiB after; after the draw, 1,044 to 1,058 MiB before and 1,027 to 1,097 MiB after. The
+table load took 1.3 to 1.6 s before and 1.7 to 2.2 s after, and the base-map layers 0.6 to 0.8 s before and 1.2 to
+1.4 s after (each layer becomes a file, and the table is made again from it). A click took 4.7 to 6 ms before and 16 to
+27 ms after. After **Apply** in the level editor (a phone, `phone_e2e.py`), the apply bar goes about 0.3 s later than
+before: the editor's save waits for the SQL of the new draw, which reads the views.
+
+The tab after the draw changes by about 100 MiB between two runs of the same page, so the draw numbers do not show a
+difference. The map worker (roadstyle's engine) has most of that memory. On Burnaby the prototype measured DuckDB at 388 MiB
+with all tables in memory and 50 MiB with the tables on disk.
+
+The traps that this work found:
+
+- This duckdb-wasm build (1.33.1-dev57) fails on a GeoParquet file ("stoi: no conversion") when the spatial extension is
+  loaded and `enable_geoparquet_conversion` is on. A view reads its file at each query, so the page sets the conversion off
+  when DuckDB starts, and each table and view makes its GEOMETRY from the WKB (`selectWkb`). The setting is `SET GLOBAL`:
+  a plain `SET` is for one connection, and the `.duckdb` download (`duckdbFile`) has a connection of its own.
+- A view has no `rowid`, and roadstyle's SQL of the base-map layers reads the `rowid` of `features.*`. A view of a layer reads
+  its file with `file_row_number = true` and gives that number as `rowid`. The downloads, the zip and the `.duckdb` file
+  remove this column, so they stay equal to duckOSM's output.
+- `duckdb_tables()` does not list a view. The page and its exports read `information_schema.tables`, which lists both.
+- DuckDB reads a view's file through the browser's `File` reader (`BROWSER_FILEREADER`), which does not lock the file.
+  Each read has a fixed cost. `SET prefetch_all_parquet_files = true` makes fewer, larger reads: one road by `osm_id` from
+  `walking.edges` took 26.5 ms without it and 10.2 ms with it (3.1 ms from memory). An OPFS sync access handle
+  (`BROWSER_FSACCESS`) gave 7.6 ms, but it locks the file.
+
+**The browser disk.** Each tab has its own folder `tables-<id>` in OPFS. A Web Lock with the same name lives as long as the
+tab. A new build removes the files of the build before it and the folders of closed tabs, so the disk keeps the tables of
+one area for each open tab. A browser with no OPFS that can write (some Safari and private windows) keeps each file as a
+`Blob`, and each table in memory, as before. The saved area (below) is a second copy on the disk.
+
+Not done: the map worker's memory (roadstyle's engine: about 5 KB for each road, with the base map).
 
 ### The cards follow the steps
 
@@ -456,6 +513,8 @@ name, the boundary, the fixes text, the summary and the table list) and a cache 
 - The drawing cache is valid only for the page that wrote it: it holds the page's `?v=<sha>` (a deployed page; empty on a
   local server). Another page version loads the tables and draws the roads again.
 - A failed save (for example, full storage) shows a message, and the page keeps working.
+- The save and the restore do not read the tables into memory: the save writes each `File` of the tables (see "The memory of
+  the page"), and the restore gives each saved `File` to the same load as a build, which copies it to the tab's folder.
 - The files of the base-map layers keep the `tags` column (`features.*`), so a restored area has the same tables as a build and card 7 reads the tags of a
   building after **Open**. A download has no `tags` column: the page makes the files of the zip and of each layer link when you download (`featuresPlain()`), so
   they stay equal to duckOSM's GeoParquet export. An area that an older page saved has no `tags` column in its layer files, and card 7 shows its objects with no tags.
