@@ -89,14 +89,18 @@ with sync_playwright() as p:
     assert page.evaluate(f"(b => b.contains([{w}, {s_}]) && b.contains([{e}, {n}]))(window.duckMap.getBounds())"), "the area in view"
     page.screenshot(path=str(out / "draw-after.png"))
     # a real hover and a real click on a road (roadstyle's pick layer, rs-roads-simple): the road's hover state, then rs:select
-    point = page.evaluate("""() => { const m = window.duckMap, c = m.getCanvas().getBoundingClientRect();
-        for (const f of m.queryRenderedFeatures({layers: window.duckMap.getStyle().layers.filter((l) => l.id.startsWith('rs-roads-simple')).map((l) => l.id)})) {
+    # Only the fill pieces count (__rs_k 1, roadstyle's _FILL_PIECE): select.js picks on them, and where a wider casing of a road lies over the fill
+    # of another one the hover goes to the fill. A point on the topmost piece of any kind chose a casing at 2 % of the points (153 of 6,432 on Monaco),
+    # and which one came first depended on the order of the tiles: a run under load waited 10 s for a road that the pointer was not on.
+    point = page.evaluate("""() => { const m = window.duckMap, c = m.getCanvas().getBoundingClientRect(),
+          q = {layers: m.getStyle().layers.filter((l) => l.id.startsWith('rs-roads-simple')).map((l) => l.id), filter: ['==', ['get', '__rs_k'], 1]};
+        for (const f of m.queryRenderedFeatures(q)) {
           const g = f.geometry.type === 'LineString' ? f.geometry.coordinates : f.geometry.coordinates[0];
           const p = m.project(g[Math.floor(g.length / 2)]);
-          const hit = m.queryRenderedFeatures(p, {layers: window.duckMap.getStyle().layers.filter((l) => l.id.startsWith('rs-roads-simple')).map((l) => l.id)})[0];
+          const hit = m.queryRenderedFeatures(p, q)[0];
           if (hit && p.x > 420 && p.x < c.width - 80 && p.y > 40 && p.y < c.height - 60) {
             // a two-way road is two halves (one feature for each direction, the same `r`): the hover lights the half that is nearest to the pointer
-            const halves = [...new Set(m.queryRenderedFeatures(p, {layers: window.duckMap.getStyle().layers.filter((l) => l.id.startsWith('rs-roads-simple')).map((l) => l.id)}).filter((h) => h.properties.r === hit.properties.r).map((h) => h.id))];
+            const halves = [...new Set(m.queryRenderedFeatures(p, q).filter((h) => h.properties.r === hit.properties.r).map((h) => h.id))];
             return [p.x + c.left, p.y + c.top, halves]; } }
         return null; }""")
     assert point, "a road on the map"
