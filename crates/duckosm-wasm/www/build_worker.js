@@ -1,7 +1,7 @@
 // The build of duckOSM Studio in a Web Worker, so the page stays responsive during a long build.
 // In: {pbf: ArrayBuffer} (a file cut to the area), {region: File, boundary: GeoJSON text, raw: true or false} (a
 // region file, cut while it is read, piece by piece; raw: also duckOSM's raw.* files, docs/features.md) or {json:
-// ArrayBuffer, boundary, raw} (OSM JSON from the Overpass API; raw: also raw.*, from the objects of the layers), with {dem: ArrayBuffer and demName: a GeoTIFF DEM, or none; modes: "driving,walking", fixes: text or null}.
+// ArrayBuffer, boundary, raw} (OSM JSON from the Overpass API; raw: also raw.*, from the objects of the layers), with {dem: ArrayBuffer and demName: a GeoTIFF DEM, or none; demProduct, demDatum, demLicense: what the person knows of it, demNotReference: true for a DEM that is not the reference; modes: "driving,walking", fixes: text or null}.
 // Out: {step}, then {files: {name: Uint8Array}, summary, seconds: {load, build}, memoryMiB, threads, featuresSql, log}
 // (the buffers are transferred, not copied; featuresSql: the SQL of the base-map layers, with raw; log: [{step, ms,
 // mib}], the time of each step and the WebAssembly memory after it), or {error}. After {error}, the page makes a new
@@ -31,7 +31,7 @@ onmessage = async ({ data }) => {
     postMessage({ step: "building the networks" });
     const fixes = data.fixes || undefined;
     const levels = data.levels || undefined;   // "tags" (the default) or "solve"
-    pkg.set_dem(data.demName, data.dem ? new Uint8Array(data.dem) : undefined);   // the DEM (a GeoTIFF) of the area, or none
+    pkg.set_dem(data.demName, data.dem ? new Uint8Array(data.dem) : undefined, data.demProduct, data.demDatum, data.demLicense, !!data.demNotReference);   // the DEM (a GeoTIFF) of the area, or none
     pkg.set_timezone_entry(data.tz);           // the entry of the page's time zone table, or undefined: no time zone
     const res = data.region
       ? build_area(data.region, data.boundary, data.modes, fixes, !!data.raw, levels)

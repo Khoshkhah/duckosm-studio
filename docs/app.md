@@ -344,13 +344,21 @@ The page keeps the selected file only in memory. After a reload, the user select
 
 - The modes (three check boxes) and, under **Advanced: corrections to the map data**, the OSM fixes file
   (duckOSM `osm_overrides`), with one sentence that tells what it is (Kaveh found the first label unclear).
-- **Ground height (DEM)** (folded, optional): a GeoTIFF in EPSG:4326 that the person supplies. The page sends its bytes to the build
-  worker (`msg.dem`, `msg.demName`; the buffer is transferred), the worker calls `set_dem(name, bytes)` before the build, and the build
-  sets `Params.dem_bytes` (duckOSM `f8137f93` (PR 66)). It writes the same tables as `duckosm build --dem`: `<mode>.elevation_nodes`,
-  `<mode>.elevation_edges`, `main.elevation_metadata` (the file name is the `uri`; the vertical datum is `unknown`) and
-  `main.elevation_grid` (`col`, `row`, `lon`, `lat`, `z`: the pixels of the DEM over the nodes and 3 pixels more on each side).
-  Without a file, the build is the same as before. The tables are in the downloads and in the zip and `.duckdb` file as any other table.
-  Test: `dem_e2e.py`.
+- **Ground height (DEM)** (folded, optional): duckOSM's step "Ground" (`web/ground_step/` of duckOSM; `build.sh` copies it with the catalog
+  `src/duckosm/data/dem_sources.json` at the engine's pin). It lists the DEM sources that cover the area of step 1, best first (a national 1 m DTM, EU-DTM, FABDEM,
+  Copernicus GLO-30, then the others), with resolution, product (`DTM` or `DSM`) and licence. For example, Monaco gives EU-DTM, FABDEM, Copernicus GLO-30 and EU-DEM.
+  The best source is the choice. The page has two ways to give a DEM:
+    - **A file.** Open the download page of the source and select the file (GeoTIFF). The step fills in the product, the vertical datum and the licence from the catalog.
+      The build needs EPSG:4326 and 32-bit floats. If the file has another CRS, the step says so and shows `gdalwarp -t_srs EPSG:4326 -ot Float32 "file.tif" "ground_4326.tif"`;
+      the browser does not reproject. The build worker calls `set_dem(name, bytes, product, vertical_datum, license, not_reference)` before the build, and the build sets
+      `Params.dem_bytes`, `dem_product`, `dem_vertical_datum`, `dem_license` and `dem_not_reference` (duckOSM PR 68). It writes the same tables as `duckosm build --dem`:
+      `<mode>.elevation_nodes`, `<mode>.elevation_edges`, `main.elevation_metadata` (the file name is the `uri`; it has the product, the datum, the licence and the `sha256`)
+      and `main.elevation_grid` (`col`, `row`, `lon`, `lat`, `z`: the pixels of the DEM over the nodes and 3 pixels more on each side).
+    - **No file: "Ground: AWS Terrain Tiles".** The page reads the AWS Terrain Tiles (Terrarium PNG, which allow browser requests) for the area and writes a GeoTIFF in EPSG:4326: at most
+      64 tiles, the highest zoom up to 14. The product is `DSM`, the datum is `mixed`, and `dem_not_reference` is true. The label is in `main.elevation_metadata.source`, so no other project takes
+      this DEM as the ground of the area.
+  A source without a file gives no DEM, so the build is the same as before. The Copernicus COG files on AWS send no CORS header (checked on 2026-11-10), so the page cannot read them:
+  the person downloads the file. The tables are in the downloads and in the zip and `.duckdb` file as any other table. Test: `dem_e2e.py` (also a phone width).
 - **The map terrain from the DEM** (roadstyle `docs/design/ground_terrain.md`): on `duckosm:built` (a build or a restore), `setGround`
   asks `duck.groundTerrain()`: with `main.elevation_grid`, roadstyle's `terrainPmtiles` makes the terrain file on the page's thread, the page
   writes it to OPFS (`ground.pmtiles`) and calls roadstyle's `rsGround({...facts, terrain: File})`. The map reads the file one tile at a time

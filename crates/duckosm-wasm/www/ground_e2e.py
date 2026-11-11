@@ -69,7 +69,9 @@ with sync_playwright() as p:
     print(f"no DEM: the AWS Terrain Tiles ({len(aws)} requests)")
 
     # with a DEM: the area's ground, from the browser disk, and no request to AWS
-    page.set_input_files("#dem", str(DATA / "monaco-copernicus-glo30.tif"))
+    page.evaluate("rs.sections.fold(document.getElementById('step4-card').dataset.rsSection, false); document.getElementById('ground-row').open = true")
+    page.click("#ground label:has(input[value=copernicus-glo30])")      # the Ground step: the model of the file gives the product and the datum
+    page.set_input_files("#ground [data-gs=file]", str(DATA / "monaco-copernicus-glo30.tif"))
     build(page)
     page.wait_for_function("window.rsGround() && window.rsGround().terrain instanceof File", timeout=60_000)      # the page gave the map its ground
     aws.clear()
@@ -78,7 +80,7 @@ with sync_playwright() as p:
     page.wait_for_function("window.duckMap.areTilesLoaded()", timeout=60_000)
     page.wait_for_timeout(1000)
     assert not aws, f"{len(aws)} requests to AWS with the area's ground: {aws[:3]}"
-    assert src["attr"] == "Ground: monaco-copernicus-glo30.tif (product unknown, datum unknown)", src      # the page knows no datum of a DEM file
+    assert src["attr"] == "Ground: surface model (monaco-copernicus-glo30.tif)", src      # the Ground step gives the product DSM
     assert src["maxzoom"] == 13, src                    # 1 arc-second: the last zoom 13
     size = page.evaluate("navigator.storage.getDirectory().then(d => d.getFileHandle('ground.pmtiles')).then(h => h.getFile()).then(f => f.size)")
     print(f"with a DEM: the terrain from ground.pmtiles in OPFS ({size} bytes), {src['attr']!r}, no request to AWS")

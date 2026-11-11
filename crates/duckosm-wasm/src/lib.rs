@@ -283,15 +283,26 @@ pub fn set_timezone_entry(entry: Option<String>) {
 thread_local! {
     /// The DEM of the next build (`set_dem`): the file name and the bytes of a GeoTIFF.
     static DEM: std::cell::RefCell<Option<(String, Vec<u8>)>> = const { std::cell::RefCell::new(None) };
+    /// What the page says of that DEM (`set_dem`): product, vertical datum, license, and whether it is not the reference.
+    static DEM_INFO: std::cell::RefCell<(Option<String>, Option<String>, Option<String>, bool)> = const { std::cell::RefCell::new((None, None, None, false)) };
 }
 
 /// The DEM (a GeoTIFF, EPSG:4326) for the next build: its file name and its bytes. The build then writes
 /// `elevation_*` and `main.elevation_grid`, as `duckosm build --dem` does; `main.elevation_metadata` has the file
 /// name as the source. Without a name or without bytes, the next build has no DEM. The build takes the DEM, so
-/// each build needs its own call.
+/// each build needs its own call. The area's reference ground needs its `product` (`DTM` or `DSM`), its `vertical_datum`
+/// and its `license`; a DEM that is not the reference (`not_reference`) can leave them out (they are then `unknown`).
 #[wasm_bindgen]
-pub fn set_dem(name: Option<String>, bytes: Option<Vec<u8>>) {
+pub fn set_dem(
+    name: Option<String>,
+    bytes: Option<Vec<u8>>,
+    product: Option<String>,
+    vertical_datum: Option<String>,
+    license: Option<String>,
+    not_reference: Option<bool>,
+) {
     DEM.with(|d| *d.borrow_mut() = name.zip(bytes));
+    DEM_INFO.with(|d| *d.borrow_mut() = (product, vertical_datum, license, not_reference.unwrap_or(false)));
 }
 
 fn js_build(
@@ -303,6 +314,7 @@ fn js_build(
     levels: Option<String>,
 ) -> Result<Output, JsError> {
     let e = |e: String| JsError::new(&e);
+    let (dem_product, dem_vertical_datum, dem_license, dem_not_reference) = DEM_INFO.with(|d| d.borrow_mut().clone());
     let mut p = Params {
         modes: Mode::parse_all(&modes.split(',').collect::<Vec<_>>()).map_err(e)?,
         raw,
@@ -311,6 +323,10 @@ fn js_build(
         built_at: Some((js_sys::Date::now() * 1000.0) as i64),
         timezone_entry: TIMEZONE_ENTRY.with(|e| e.borrow().clone()),
         dem_bytes: DEM.with(|d| d.borrow_mut().take()),
+        dem_product,
+        dem_vertical_datum,
+        dem_license,
+        dem_not_reference,
         ..Params::default()
     };
     if let Some(m) = levels.as_deref() {
