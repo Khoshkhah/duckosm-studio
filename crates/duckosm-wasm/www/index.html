@@ -2417,7 +2417,7 @@ async function setDesignLook(text) {
   try {
     const style = await duck.setLook();
     window.lastRestyle = style ? "same tiles" : "the look needs new tiles";      // for the tests: why the map is drawn again
-    return style ?? undefined;
+    return style ? withBoundary(style) : undefined;   // the layers of the style on the map (showStyle): else rs.restyle sees other layers and the map is drawn again
   } catch (e) { window.lastRestyle = "failed: " + e.message; throw e; }
 }
 document.addEventListener("rs:stylechange", () => {

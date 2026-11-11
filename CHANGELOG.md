@@ -5,6 +5,10 @@ All versions are on the GitHub Releases page of `Khoshkhah/duckosm-rust`. There 
 
 ## Not released
 
+### Fixed
+
+- **A theme in card 9 keeps the tiles again.** Since the area became the hidden `boundary` source of each roads style (the Mapillary change below), the style on the map has the layer `boundary-area`, but the style of a new look on the same tiles (`setDesignLook`) did not have it. roadstyle's `rs.restyle` then saw other layers and refused, and each theme change drew a new map. A new map after a theme left the area's fill in another state until the next change of the design, so `design_e2e.py` (Show these layers) found the water in place of the buildings. Now `setDesignLook` adds the boundary (`withBoundary`) as `showStyle` does. `restyle_e2e.py` and `design_e2e.py` pass again.
+
 ### Added
 
 - **The step "Ground" in step 4: the right DEM for the area** (duckOSM PR 69, `4ef3c7e1`; Kaveh: the DEM decides the terrain of the map). The folded field "Ground height (DEM)" is now duckOSM's Ground step. It lists the DEM sources that cover the area, best first, and fills in the product, the vertical datum and the licence of the chosen source for the file that the person selects (`set_dem` has the new arguments `product`, `vertical_datum`, `license` and `not_reference`; the build needs them since duckOSM PR 68). With no file, it makes a DEM from the AWS Terrain Tiles with the label "Ground: AWS Terrain Tiles" (product `DSM`, not a reference). A file that is not EPSG:4326 with 32-bit floats is refused with the `gdalwarp` command. `build.sh` copies `web/ground_step/` and the catalog. Tests: `dem_e2e.py` (also at a phone width). The pin moves to duckOSM main.
