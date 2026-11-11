@@ -4,7 +4,7 @@ out folder gets make_duckdb.sql from the zip, page.duckdb (the button "Download 
 the page as JSON (docs/browser.md, steps B3 and B4).
 
     python crates/duckosm-wasm/www/e2e.py <file.osm.pbf> <out folder> [--boundary area.geojson] [--modes driving,walking,cycling] [--fixes file.yaml]
-        [--no-features] [--www folder]
+        [--no-features] [--no-walls] [--www folder]
 
 With --boundary, the PBF file is a region file and the page cuts it to the boundary; without, the file is
 already cut. With --boundary and the PBF file "overpass", the data comes from the Overpass API. With --boundary
@@ -38,6 +38,7 @@ a.add_argument("out")
 a.add_argument("--modes", default="driving,walking,cycling")
 a.add_argument("--fixes")
 a.add_argument("--no-features", action="store_true", help="the box 'Base map layers' off")
+a.add_argument("--no-walls", action="store_true", help="the box 'Wall labels' off (main.building_faces; it needs the layers)")
 a.add_argument("--one-thread", action="store_true", help="serve the page without the COOP and COEP headers")
 a.add_argument("--threads", type=int, help="the size of the thread pool (default: the cores, at most 8)")
 a.add_argument("--view", help="lng,lat,zoom: move the map there before the picture (map.png)")
@@ -100,6 +101,9 @@ with sync_playwright() as p:
     for box in page.query_selector_all("input[name=mode]"):
         box.set_checked(box.get_attribute("value") in args.modes.split(","))
     page.set_checked("#features", not args.no_features)
+    assert page.is_disabled("#walls") == args.no_features, "'Wall labels' needs the layers"
+    if not args.no_features:
+        page.set_checked("#walls", not args.no_walls)
     page.click("#run")
     page.wait_for_function("!document.getElementById('step5-card').classList.contains('off') || document.getElementById('buildstatus').textContent.startsWith('Error')",
                            timeout=1_800_000)
@@ -116,6 +120,11 @@ with sync_playwright() as p:
     disk = [n for n, h, _ in homes if h == "disk"]
     print(f"homes: {len(disk)} tables on disk, {len(homes) - len(disk)} in memory;", disk[:6])
     assert disk and len(disk) < len(homes) and all(f for _, _, f in homes), homes
+    # the walls of the buildings (main.building_faces): only with the layers of a region file and "Wall labels" on
+    walls = any(n == "main.building_faces" for n, _, _ in homes)
+    print("walls of the buildings:", walls)
+    if source == "region":
+        assert walls == (not args.no_features and not args.no_walls), ("main.building_faces follows 'Wall labels'", walls)
     assert "visualization.edge_levels" not in disk, "the level editor writes visualization.*: it stays in memory"
     # the draw after the build opens the next step and folds card 5 (the cards follow the steps, panel_e2e.py): open card 5 for its downloads
     page.wait_for_function("/drawn|failed/.test(document.getElementById('mapnote').textContent) && !window.mapDrawing", timeout=600_000)

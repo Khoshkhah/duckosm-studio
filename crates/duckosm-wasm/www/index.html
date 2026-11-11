@@ -329,7 +329,7 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
   </div>
   <div class="bgroup">
     <div class="rs-cap">Base map</div>
-    <div class="rs-opts"><label class="rs-opt"><input type="checkbox" id="features" checked><span><b>Layers</b><small>Water, land use, buildings, railways and more. Not with a cut file.</small></span></label></div>
+    <div class="rs-opts"><label class="rs-opt"><input type="checkbox" id="features" checked><span><b>Layers</b><small>Water, land use, buildings, railways and more. Not with a cut file.</small></span></label><label class="rs-opt"><input type="checkbox" id="walls" checked><span><b>Wall labels</b><small>main.building_faces: each wall of a building with its type (front, back, side, party, court), for the 3D walls by type. With the layers only.</small></span></label></div>
   </div>
   <details class="drow" id="ground-row"><summary>Ground height (DEM)</summary>
     <div id="ground"></div>
@@ -1560,6 +1560,8 @@ function logSteps(rows, group, fresh) {
 }
 duck.duckReady.then((s) => (window.timings = { duckdbStart: s })).catch((e) => progress("DuckDB did not start: " + e.message));
 let areaName = "area", timezones = null;
+// "Wall labels" needs the layers (the walls need the buildings): with Layers off it is not available
+$("features").addEventListener("change", () => { $("walls").disabled = !$("features").checked; });
 $("run").onclick = async () => {
   const modes = [...document.querySelectorAll("input[name=mode]:checked")].map((c) => c.value).join(",");
   if (!modes) return status("Select at least one mode.");
@@ -1591,17 +1593,18 @@ $("run").onclick = async () => {
     let msg, download = null;
     const dem = ground ? await ground.dem() : null;      // null, or the DEM of step 4 with its product, vertical datum and licence (an Error says why a file cannot be used)
     const feats = $("features").checked && source !== "cut";   // the base-map layers need raw.*: of a region file or of Overpass
+    const walls = feats && $("walls").checked;                  // "Wall labels": the walls of the buildings need the layers
     // DuckDB loads its spatial extension during the build (the build worker does not use DuckDB); the tables wait for it
     const spatial = feats ? duck.loadSpatial() : null;
     if (source === "region") {
-      msg = { region: regionFile, boundary: text(), modes, fixes, levels, threads, raw: feats };   // the worker reads the File piece by piece
+      msg = { region: regionFile, boundary: text(), modes, fixes, levels, threads, raw: feats, walls };   // the worker reads the File piece by piece
     } else if (source === "cut") {
       msg = { pbf: await $("pbf").files[0].arrayBuffer(), boundary: area ? text() : null, modes, fixes, levels, threads };
     } else {
       const d0 = performance.now();
       const got = await duck.overpass(area.polys, (t) => progress(t + "…"), feats);
       download = { seconds: (performance.now() - d0) / 1000, bytes: got.bytes.byteLength, server: got.server };
-      msg = { json: got.bytes, boundary: text(), modes, fixes, levels, threads, raw: feats };
+      msg = { json: got.bytes, boundary: text(), modes, fixes, levels, threads, raw: feats, walls };
     }
     // the time zone of main.visualization_metadata: the entry of the area's smallest Geofabrik region in the time zone
     // table (www/timezones.json, loaded one time, then from the cache of the browser)
