@@ -27,6 +27,7 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
 <link rel="stylesheet" href="map/roadstyle/dashboard/dashboard.css">
 <link rel="stylesheet" href="map/roadstyle/popup.css">
 <link rel="stylesheet" href="duckosm/fixes_editor/fixes_panel.css">   <!-- duckOSM's fixes editor, card 7 (copied by build.sh at the engine's rev) -->
+<link rel="stylesheet" href="duckosm/ground_step/ground_step.css">   <!-- duckOSM's Ground step, step 4 (copied by build.sh at the engine's rev) -->
 <link rel="preload" href="map/roadstyle/host_options.json" as="fetch" crossorigin>
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.js" crossorigin></script>
 <script src="map/roadstyle/pmtiles.js"></script>   <!-- roadstyle's pmtiles.js (copied by build.sh): the ground's terrain file -->
@@ -330,9 +331,8 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
     <div class="rs-cap">Base map</div>
     <div class="rs-opts"><label class="rs-opt"><input type="checkbox" id="features" checked><span><b>Layers</b><small>Water, land use, buildings, railways and more. Not with a cut file.</small></span></label></div>
   </div>
-  <details class="drow"><summary>Ground height (DEM)</summary>
-    <p class="small muted">A GeoTIFF in EPSG:4326 with one band: the heights of the ground, as metres. Add the height of each junction and road, and the table elevation_grid.</p>
-    <button class="pick" type="button" data-file="dem"><svg><use href="#i-upload"/></svg><span id="dem-name">Select a DEM file (.tif)</span></button><input id="dem" type="file" accept=".tif,.tiff" hidden>
+  <details class="drow" id="ground-row"><summary>Ground height (DEM)</summary>
+    <div id="ground"></div>
   </details>
   <details class="drow"><summary>Fixes</summary>
     <button class="pick" type="button" data-file="fixes"><svg><use href="#i-upload"/></svg><span id="fixes-name">Select a fixes file (.yaml)</span></button><input id="fixes" type="file" accept=".yaml,.yml" hidden>
@@ -409,6 +409,7 @@ import * as duck from "./app/duck.js";
 window.duckApi = duck;   // for the tests (drawLaps, tileStats)
 import * as regions from "./app/regions.js";
 import * as areaStore from "./app/area_store.js";
+import { initGroundStep } from "./duckosm/ground_step/ground_step.js";   // duckOSM's Ground step: the DEM of the area (copied by build.sh at the engine's rev)
 import { initFixesPanel } from "./duckosm/fixes_editor/fixes_panel.js";   // duckOSM's fixes editor (copied by build.sh at the engine's rev)
 import { rsKpi } from "./map/roadstyle/dashboard/kpi.js";   // roadstyle's number tile (the area of card 2)
 import * as exporter from "./app/export.js";
@@ -1269,6 +1270,7 @@ function missingInput() {
     : area.props.area_km2 == null ? "Finding the extracts…"
     : source === "region" && !regionFile && (regions.relay ? "Get a file in step 3, or select a region file." : "Select a region file in step 3.");
 }
+let ground = null;       // duckOSM's Ground step (below), after the page has its first state
 function canBuild() {
   const missing = building ? "" : missingInput();
   rs.busy($("run"), building);
@@ -1276,9 +1278,15 @@ function canBuild() {
   $("save").disabled = !area;
   // the reason is the text under the buttons (not a tooltip); GeoJSON needs only the area. While it builds, the button has a spinner and the progress is in the map's busy box (progress())
   $("buildhint").textContent = building ? "" : missing || "";
+  ground?.refresh();       // a new area gives a new list of DEM sources (it does nothing when the area is the same)
   refreshSteps();
 }
-for (const id of ["pbf", "fixes", "dem"]) $(id).onchange = () => {
+// step 4, Ground height: duckOSM's Ground step lists the DEM sources that cover the area and gives the build the DEM with its product, vertical datum and licence
+fetch("duckosm/ground_step/dem_sources.json").then((r) => r.json()).then((d) => initGroundStep({      // the page fetches the catalog: a deploy gives its address a version
+  root: $("ground"), catalog: d.sources, bbox: () => (area ? bbox(area.polys) : null),
+  status: (t, ms) => status(t, ms), onChange: () => canBuild(),
+})).then((g) => { ground = window.ground = g; }, (e) => { $("ground").textContent = `The DEM sources did not load: ${e.message}`; });      // no await: the module goes on (window.ground is for the tests)
+for (const id of ["pbf", "fixes"]) $(id).onchange = () => {
   const f = $(id).files[0];
   if (f) $(`${id}-name`).textContent = `${f.name} (${mb(f.size)} MB)`;
   if (id === "fixes" && f) f.text().then(loadFixesText);     // the file's rules go into card 7; a build reads them from there
@@ -1618,7 +1626,7 @@ $("run").onclick = async () => {
     const threads = Number(new URLSearchParams(location.search).get("threads")) || undefined;  // ?threads=N: the size of the pool
     const levels = "solve";   // visualization.edge_levels: always roadstyle's solver (docs/levels.md); the page has no choice (Kaveh, 2026-11-04)
     let msg, download = null;
-    const demFile = $("dem").files[0];
+    const dem = ground ? await ground.dem() : null;      // null, or the DEM of step 4 with its product, vertical datum and licence (an Error says why a file cannot be used)
     const feats = $("features").checked && source !== "cut";   // the base-map layers need raw.*: of a region file or of Overpass
     // DuckDB loads its spatial extension during the build (the build worker does not use DuckDB); the tables wait for it
     const spatial = feats ? duck.loadSpatial() : null;
@@ -1636,7 +1644,7 @@ $("run").onclick = async () => {
     // table (www/timezones.json, loaded one time, then from the cache of the browser)
     const region = area?.props.geofabrik?.[0]?.id;
     if (region) msg.tz = JSON.stringify((await (timezones ??= fetch("timezones.json").then((r) => r.json()))).regions[region] ?? null);
-    if (demFile) { msg.dem = await demFile.arrayBuffer(); msg.demName = demFile.name; }     // the worker gets the bytes (transferred)
+    if (dem) Object.assign(msg, { dem: dem.bytes, demName: dem.name, demProduct: dem.product, demDatum: dem.vertical_datum, demLicense: dem.license, demNotReference: dem.not_reference });     // the worker gets the bytes (transferred)
     const b0 = performance.now();
     const out = await duck.build(msg, (t) => progress(t + "…"));
     logSteps(download ? [{ step: "download from " + download.server, ms: download.seconds * 1000 }] : [], "page", true);
