@@ -122,13 +122,14 @@ export async function saveArea(slug, meta, tablesData, vizData = null, cut = nul
   }
 
   let hasCut = false;
-  if (cut && cut.byteLength) {
+  const cutBytes = cut ? cut.size ?? cut.byteLength : 0;     // a File in OPFS (a region file) or bytes
+  if (cutBytes) {
     try {
       const cutHandle = await dir.getFileHandle("cut.osm.pbf", { create: true });
       const cutWriter = await cutHandle.createWritable();
-      await cutWriter.write(cut instanceof Uint8Array ? cut : new Uint8Array(cut));
+      await cutWriter.write(cut instanceof Uint8Array || cut instanceof Blob ? cut : new Uint8Array(cut));
       await cutWriter.close();
-      totalBytes += cut.byteLength;
+      totalBytes += cutBytes;
       hasCut = true;
     } catch (e) {
       console.warn("Could not write cut.osm.pbf:", e);

@@ -211,7 +211,11 @@ pub fn cut_area(region: Blob, boundary: &str, out: web_sys::FileSystemSyncAccess
 
 /// Build duckOSM's tables of an area from its area file (`area`: the file of [`cut_area`], as a `File`). `spill` is a
 /// pool of open files in OPFS (`FileSystemSyncAccessHandle`) for the temporary files of the network step, so they are
-/// not in the WebAssembly memory (Kentucky: at most 11 at once). The other arguments are those of [`build_area`].
+/// not in the WebAssembly memory (Kentucky: at most 11 at once). `outs` are open files in OPFS for the files of the
+/// result: each file of the result goes to the next one, so the result is not in the memory of the tab (Kentucky with
+/// the layers: 2.6 GB). `Output::files` then maps each file name to its number in `outs`. The other arguments are
+/// those of [`build_area`].
+#[allow(clippy::too_many_arguments)]
 #[wasm_bindgen]
 pub fn build_area_file(
     area: Blob,
@@ -221,6 +225,7 @@ pub fn build_area_file(
     raw: Option<bool>,
     levels: Option<String>,
     spill: Array,
+    outs: Array,
 ) -> Result<Output, JsError> {
     let text = boundary;
     let boundary = Boundary::parse(boundary).map_err(|e| JsError::new(&e))?;
@@ -235,9 +240,47 @@ pub fn build_area_file(
             Box::new(OpfsStore(pool.clone())) as Box<dyn duckosm_core::spill::Store>
         })));
     }
-    let res = js_build(Input::Area(&open, &boundary), modes, fixes_yaml, Some(text), raw.unwrap_or(false), levels);
+    let outs: Vec<web_sys::FileSystemSyncAccessHandle> = outs.iter().map(|h| h.unchecked_into()).collect();
+    let (files, failed) = (Object::new(), std::sync::Arc::new(std::sync::Mutex::new(None)));
+    let mut next = 0;
+    let res = js_build_to(Input::Area(&open, &boundary), modes, fixes_yaml, Some(text), raw.unwrap_or(false), levels, files.clone(), |name| {
+        let h = outs.get(next).cloned().ok_or_else(|| format!("the result has more than {} files", outs.len()))?;
+        Reflect::set(&files, &name.into(), &(next as u32).into()).map_err(|_| format!("cannot keep {name}"))?;
+        next += 1;
+        Ok(BufWriter::with_capacity(1 << 20, OpfsOut { f: OpfsFile { h, at: 0.0 }, failed: failed.clone() }))
+    });
     duckosm_core::spill::set_temp_store(None);
+    // a writer that is dropped does not give its error: the first one is kept here
+    if let Some(e) = failed.lock().expect("one thread").take() {
+        return Err(JsError::new(&e));
+    }
     res
+}
+
+/// A file of the result in OPFS. It keeps its first error, because a writer that is dropped (`BufWriter`) loses it.
+struct OpfsOut {
+    f: OpfsFile,
+    failed: std::sync::Arc<std::sync::Mutex<Option<String>>>,
+}
+
+impl OpfsOut {
+    fn note<T>(&self, r: io::Result<T>) -> io::Result<T> {
+        if let Err(e) = &r {
+            self.failed.lock().expect("one thread").get_or_insert_with(|| e.to_string());
+        }
+        r
+    }
+}
+
+impl Write for OpfsOut {
+    fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+        let r = self.f.write(b);
+        self.note(r)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        let r = self.f.flush();
+        self.note(r)
+    }
 }
 
 fn opfs_err(e: JsValue) -> io::Error {
@@ -488,6 +531,7 @@ pub fn set_dem(
     DEM_INFO.with(|d| *d.borrow_mut() = (product, vertical_datum, license, not_reference.unwrap_or(false)));
 }
 
+/// The build with each file of the result as parts in JavaScript memory (`Output::files`: name to an array of parts).
 fn js_build(
     input: Input,
     modes: &str,
@@ -495,6 +539,27 @@ fn js_build(
     boundary: Option<&str>,
     raw: bool,
     levels: Option<String>,
+) -> Result<Output, JsError> {
+    let files = Object::new();
+    js_build_to(input, modes, fixes_yaml, boundary, raw, levels, files.clone(), |name| {
+        let parts = Array::new();
+        Reflect::set(&files, &name.into(), &parts).map_err(|_| format!("cannot keep {name}"))?;
+        // the array is a JavaScript object: the writer and `files` share it
+        Ok(BufWriter::with_capacity(1 << 20, JsParts(parts)))
+    })
+}
+
+/// The build, with `file` giving the writer of each file of the result; `files` is `Output::files`.
+#[allow(clippy::too_many_arguments)]
+fn js_build_to<W: Write + Send>(
+    input: Input,
+    modes: &str,
+    fixes_yaml: Option<String>,
+    boundary: Option<&str>,
+    raw: bool,
+    levels: Option<String>,
+    files: Object,
+    file: impl FnMut(&str) -> Result<W, String>,
 ) -> Result<Output, JsError> {
     let e = |e: String| JsError::new(&e);
     let (dem_product, dem_vertical_datum, dem_license, dem_not_reference) = DEM_INFO.with(|d| d.borrow_mut().clone());
@@ -519,15 +584,8 @@ fn js_build(
         Some(text) => parse_osm_fixes(&text, "the OSM fixes file").map_err(e)?,
         None => Default::default(),
     };
-    let files = Object::new();
     let mut log = StepLog::new(now_ms, memory_mib);
-    let sum = run(input, &fixes, boundary, &p, &mut log, |name| {
-        let parts = Array::new();
-        Reflect::set(&files, &name.into(), &parts).map_err(|_| format!("cannot keep {name}"))?;
-        // the array is a JavaScript object: the writer and `files` share it
-        Ok(BufWriter::with_capacity(1 << 20, JsParts(parts)))
-    })
-    .map_err(e)?;
+    let sum = run(input, &fixes, boundary, &p, &mut log, file).map_err(e)?;
     Ok(Output {
         files,
         summary: sum.lines().join("\n"),

@@ -94,8 +94,10 @@ export const duckReady = (async () => {
 // the build in a Web Worker; onStep(text) gets its steps. Each build has a new worker, which ends when the build ends: its WebAssembly
 // memory (it only grows: about 400 MiB after a city of 150,000 roads) goes back to the browser, which a phone needs for the map. The
 // files are then in DuckDB and in the page. A panic or an out-of-memory error of one build cannot stop the next one.
-export function build(msg, onStep) {
+// A region file: the worker writes the files of the result in a folder inside the folder of this tab (msg.folder), and the page uses them there.
+export async function build(msg, onStep) {
   const worker = new Worker(new URL("../build_worker.js", import.meta.url), { type: "module" });
+  if (await tableFolder()) msg = { ...msg, folder: FOLDER };
   return new Promise((resolve, reject) => {
     worker.onmessage = ({ data }) => {
       if (data.step) return onStep(data.step);
@@ -160,15 +162,19 @@ const tableFolder = () => (folder ??= (async () => {
   return (await navigator.storage.getDirectory()).getDirectoryHandle(FOLDER, { create: true });
 })().catch(() => null));
 // The files of the build before, and of closed tabs, go: the browser disk keeps the tables of one area for each open tab
-async function clearFolders() {
+// (keep: the folder of the build that is loaded now)
+async function clearFolders(keep) {
   const dir = await tableFolder();
   if (!dir) return;
   const root = await navigator.storage.getDirectory(), held = new Set((await navigator.locks.query()).held.map((l) => l.name));
   for await (const [name] of root.entries()) if (name.startsWith("tables-") && !held.has(name)) await root.removeEntry(name, { recursive: true }).catch(() => {});
-  for await (const [name] of dir.entries()) await dir.removeEntry(name).catch(() => {});
+  for await (const [name] of dir.entries()) if (name !== keep) await dir.removeEntry(name, { recursive: true }).catch(() => {});
 }
+// The files of a build that are already on the browser disk, in the folder of this tab: they are used where they are
+const onDisk = new WeakSet();
 // The file of a table (data: a Uint8Array or a Blob): on the browser disk (a File), else a Blob in memory
 async function keepFile(name, data) {
+  if (onDisk.has(data)) return data;
   const dir = await tableFolder();
   if (!dir) return data instanceof Blob ? data : new Blob([data]);
   const fh = await dir.getFileHandle(name, { create: true }), w = await fh.createWritable();
@@ -197,14 +203,14 @@ async function addTable(name, data, { mode, table, rows = null } = split(name)) 
 
 // The tables of the last build go away, with their files. main cannot go, so its tables do. A table on disk is a view, and DuckDB keeps its file
 // registered: the file goes from DuckDB first.
-async function clearTables() {
+async function clearTables(keep) {
   await duckReady;
   for (const t of tables) await conn.query(t.mode === "main" ? `DROP ${t.home === "disk" ? "VIEW" : "TABLE"} IF EXISTS main.${t.table}` : `DROP SCHEMA IF EXISTS ${t.mode} CASCADE`);
   for (const t of tables) if (t.home === "disk") await db.dropFile(t.name).catch(() => {});
   await conn.query("DROP SCHEMA IF EXISTS raw CASCADE; DROP SCHEMA IF EXISTS features CASCADE");
   tables = [];
   forgetRoads();
-  await clearFolders();
+  await clearFolders(keep);
   if (HOME !== "memory" && await tableFolder()) await loadSpatial();     // a view makes GEOMETRY at each query: spatial must be loaded, not autoloaded
 }
 async function endLoad() {
@@ -213,9 +219,11 @@ async function endLoad() {
   await conn.query(MACROS);
 }
 
-// the files of a build into DuckDB, one schema for each mode; the old tables go away
-export async function loadTables(files) {
-  await clearTables();
+// the files of a build into DuckDB, one schema for each mode; the old tables go away. folder: the folder of the build in the folder of this
+// tab, when the files of the build are there (Files in OPFS, a region file); it stays until the next build.
+export async function loadTables(files, folder) {
+  for (const f of Object.values(files)) if (folder && f instanceof File) onDisk.add(f);
+  await clearTables(folder);
   cut = files["cut.osm.pbf"] ?? null;
   for (const [name, bytes] of Object.entries(files)) {
     if (name.startsWith("raw_") || name === "cut.osm.pbf") continue;     // loadFeatures reads them
@@ -266,7 +274,11 @@ export const loadSpatial = () => (spatial ??= duckReady.then(() => conn.query("I
 // a download has none (duckOSM's GeoParquet export has no tags column): featuresPlain() makes that file when the person downloads.
 export async function loadFeatures(files, sql) {
   await loadSpatial();
-  for (const name of ["raw_nodes.parquet", "raw_ways.parquet", "raw_relations.parquet"]) await db.registerFileBuffer(name, files[name]);
+  const { DuckDBDataProtocol } = await import(DUCKDB);
+  for (const name of ["raw_nodes.parquet", "raw_ways.parquet", "raw_relations.parquet"]) {
+    if (files[name] instanceof Blob) await db.registerFileHandle(name, files[name], DuckDBDataProtocol.BROWSER_FILEREADER, true);
+    else await db.registerFileBuffer(name, files[name]);
+  }
   await conn.query(sql);
   for (const name of ["raw_nodes.parquet", "raw_ways.parquet", "raw_relations.parquet"]) await db.dropFile(name);
   const names = (await conn.query("SELECT table_name AS t FROM information_schema.tables WHERE table_catalog = 'memory' " +

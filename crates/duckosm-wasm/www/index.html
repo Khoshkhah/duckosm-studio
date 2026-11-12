@@ -1625,7 +1625,7 @@ $("run").onclick = async () => {
     }
     const built = performance.now();
     progress("loading the tables into DuckDB…");
-    await duck.loadTables(out.files);
+    await duck.loadTables(out.files, out.folder);
     const loaded = performance.now();
     logSteps([{ step: "load the tables", ms: loaded - built, mib: await duckMib() }], "duckdb");
     let featuresSeconds = null;
