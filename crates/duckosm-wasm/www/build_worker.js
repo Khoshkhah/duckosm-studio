@@ -2,8 +2,9 @@
 // In: {pbf: ArrayBuffer} (a file cut to the area), {region: File, boundary: GeoJSON text, raw: true or false} (a
 // region file: step 0 cuts it to an area file in OPFS, read piece by piece; raw: also duckOSM's raw.* files, docs/features.md) or {json:
 // ArrayBuffer, boundary, raw} (OSM JSON from the Overpass API; raw: also raw.*, from the objects of the layers), with {dem: ArrayBuffer and demName: a GeoTIFF DEM, or none; demProduct, demDatum, demLicense: what the person knows of it, demNotReference: true for a DEM that is not the reference; modes: "driving,walking", fixes: text or null}.
-// Out: {step}, then {files: {name: Uint8Array}, summary, seconds: {load, build}, memoryMiB, threads, featuresSql, log}
-// (the buffers are transferred, not copied; featuresSql: the SQL of the base-map layers, with raw; log: [{step, ms,
+// Out: {step}, then {files: {name: Uint8Array, or File in OPFS for a region file}, summary, seconds: {load, build},
+// memoryMiB, threads, featuresSql, log, folder} (the buffers are transferred, not copied; a region file: each file of the
+// result is a File in OPFS, in `folder` inside data.folder (the folder of the page's tab), and the page removes it; featuresSql: the SQL of the base-map layers, with raw; log: [{step, ms,
 // mib}], the time of each step and the WebAssembly memory after it), or {error}. After {error}, the page makes a new
 // worker.
 // A cross-origin isolated page (the COOP and COEP headers, www/serve.py) gets the module with threads
@@ -43,9 +44,9 @@ onmessage = async ({ data }) => {
         : build(new Uint8Array(data.pbf), data.modes, fixes, data.boundary || undefined, levels);
     const t2 = performance.now();
     const log = [{ step: "load the WebAssembly module", ms: t1 - t0, mib: loadMib }, ...pre, ...JSON.parse(res.log)];
-    // one buffer for each file: duckdb-wasm registers a file as one buffer
-    const files = {};
-    for (const name of Object.keys(res.files)) {
+    // one buffer for each file: duckdb-wasm registers a file as one buffer (a region file: Files in OPFS, no join)
+    const files = res.opfs ? res.files : {};
+    for (const name of res.opfs ? [] : Object.keys(res.files)) {
       const parts = res.files[name];
       const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
       let at = 0;
@@ -66,8 +67,9 @@ onmessage = async ({ data }) => {
         threads,
         featuresSql: data.raw && (data.region || data.json) ? features_sql() : undefined,
         log,
+        folder: res.folder,
       },
-      Object.values(files).map((f) => f.buffer),
+      Object.values(files).flatMap((f) => (f.buffer ? [f.buffer] : [])),
     );
   } catch (e) {
     // after a panic, the module's panic hook has kept the message (e is only "RuntimeError: unreachable")
@@ -76,13 +78,18 @@ onmessage = async ({ data }) => {
 };
 
 // A region file: step 0 cuts it to the area file in OPFS (only lists of ids in memory), then the build reads the area file. The
-// temporary files of the network step go to a pool of OPFS files. A file of OPFS opens only asynchronously, so the worker opens them
-// here, before the synchronous build, in a folder of its own (two pages can build at the same time), and removes the folder after.
+// temporary files of the network step go to a pool of OPFS files, and each file of the result to an OPFS file of its own, so that
+// the result is not in the memory of the tab (Kentucky with the layers: 2.6 GB). A file of OPFS opens only asynchronously, so the
+// worker opens them here, before the synchronous build, in a folder of its own (two pages can build at the same time). The folder
+// is in data.folder (the folder of the page's tab) when the page gives one. After the build, only the files of the result stay in
+// it: the page removes the folder with its next build, or the page removes the folders of closed tabs.
 async function buildArea(data, fixes, levels, pre, mib) {
   const root = await navigator.storage.getDirectory();
+  const parent = data.folder ? await root.getDirectoryHandle(data.folder, { create: true }) : root;
   const name = `build-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const dir = await root.getDirectoryHandle(name, { create: true });
-  const spill = [];
+  const dir = await parent.getDirectoryHandle(name, { create: true });
+  const spill = [], outs = [];
+  let res = null;
   try {
     const t = performance.now();
     postMessage({ step: "cutting the region file to the area" });
@@ -97,9 +104,18 @@ async function buildArea(data, fixes, levels, pre, mib) {
     postMessage({ step: "building the networks" });
     // ponytail: 32 files; Kentucky needs at most 11 at once
     for (let i = 0; i < 32; i++) spill.push(await (await dir.getFileHandle(`t${i}`, { create: true })).createSyncAccessHandle());
-    return pkg.build_area_file(await fh.getFile(), data.boundary, data.modes, fixes, !!data.raw, levels, spill);
+    // ponytail: 64 files of the result; all modes with the layers and a DEM make about 45
+    for (let i = 0; i < 64; i++) outs.push(await (await dir.getFileHandle(`o${i}`, { create: true })).createSyncAccessHandle());
+    res = pkg.build_area_file(await fh.getFile(), data.boundary, data.modes, fixes, !!data.raw, levels, spill, outs);
   } finally {
-    for (const h of spill) h.close();
-    await root.removeEntry(name, { recursive: true }).catch(() => {});
+    for (const h of [...spill, ...outs]) h.close();
+    if (!res) await parent.removeEntry(name, { recursive: true }).catch(() => {});
   }
+  const files = {}, used = new Set();
+  for (const [file, i] of Object.entries(res.files)) {
+    files[file] = await (await dir.getFileHandle(`o${i}`)).getFile();
+    used.add(`o${i}`);
+  }
+  for await (const [entry] of dir.entries()) if (!used.has(entry)) await dir.removeEntry(entry).catch(() => {});
+  return { files, summary: res.summary, log: res.log, opfs: true, folder: data.folder ? name : undefined };
 }

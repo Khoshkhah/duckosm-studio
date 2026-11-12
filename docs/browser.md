@@ -110,7 +110,11 @@ Not tested: Safari (Playwright's WebKit needs system libraries that this compute
 **B1: everything that duckOSM builds for the network, in the browser.**
 - The wasm module builds all chosen modes in one run, with the edge graph, the turn restrictions (the relations
   from the PBF bytes) and the fixes (the YAML text). The fixes reader gets a variant that reads text.
-- The build runs in a Web Worker, so the page stays responsive. The files go to the page as `Uint8Array` parts.
+- The build runs in a Web Worker, so the page stays responsive. The files go to the page as `Uint8Array` parts. A
+  build from a region file (`build_area_file`) writes each file of the result to an OPFS file of its own, in a folder
+  inside the folder of the page's tab, and the page uses these files where they are: the result is not in the memory
+  of the tab. Kentucky from US South with the layers and the faces: the Chromium processes peaked at 4.7 GB, before at
+  7.9 to 8.5 GB.
 - The page loads the files into duckdb-wasm (one schema for each mode, the same table names as duckOSM, the macros
   `edge_id_hash` and `edge_id_hash_v1`), and has a SQL box with a result table.
 - Downloads: a `.duckdb` file made by duckdb-wasm, and the GeoParquet files.
