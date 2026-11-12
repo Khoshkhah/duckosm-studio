@@ -24,7 +24,9 @@ onmessage = async ({ data }) => {
         // up to 12 threads: Kentucky from the US South file with the layers and the faces took 46.7 s with 12 threads
         // and 50.4 s with 8, for 45 MiB more memory (Mac mini M6, 12 cores)
         threads = data.threads || Math.min(navigator.hardwareConcurrency || 4, 12);
-        await pkg.initThreadPool(threads);
+        // a thread worker that cannot load its module (a network fault) never reports, and initThreadPool then waits for ever
+        await Promise.race([pkg.initThreadPool(threads), new Promise((_, no) => setTimeout(() =>
+          no(new Error(`the ${threads} threads of the build did not start in 60 s: a file of the page did not load (the network)`)), 60_000))]);
       }
     }
     const { build, build_osm_json, features_sql } = pkg;
