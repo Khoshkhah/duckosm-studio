@@ -20,8 +20,9 @@ onmessage = async ({ data }) => {
       pkg = await import(isolated ? "./pkg-threads/duckosm_wasm.js" : "./pkg/duckosm_wasm.js");
       wasm = await pkg.default();
       if (isolated) {
-        // more than 8 threads gave no more speed on Tartu from the Estonia file, only more memory
-        threads = data.threads || Math.min(navigator.hardwareConcurrency || 4, 8);
+        // up to 12 threads: Kentucky from the US South file with the layers and the faces took 46.7 s with 12 threads
+        // and 50.4 s with 8, for 45 MiB more memory (Mac mini M6, 12 cores)
+        threads = data.threads || Math.min(navigator.hardwareConcurrency || 4, 12);
         await pkg.initThreadPool(threads);
       }
     }
