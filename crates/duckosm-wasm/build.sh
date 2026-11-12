@@ -18,7 +18,7 @@ ROADSTYLE_COMMIT=9df3ceda9d038a5c3a8be4702aaa6ed4422de9aa   # the full SHA: a fe
 ROADSTYLE_REPO=${ROADSTYLE_REPO:-https://github.com/Khoshkhah/roadstyle.git}
 DUCKOSM_REV=$(sed -n 's/.*duckOSM\.git", rev = "\([0-9a-f]*\)".*/\1/p' crates/duckosm-wasm/Cargo.toml | sort -u)
 DUCKOSM_REPO=${DUCKOSM_REPO:-https://github.com/Khoshkhah/duckOSM.git}
-if [ "$(echo "$DUCKOSM_REV" | wc -w)" != 1 ] || [ ${#DUCKOSM_REV} != 40 ]; then
+if [ "$(echo "$DUCKOSM_REV" | wc -w)" -ne 1 ] || [ ${#DUCKOSM_REV} != 40 ]; then
   echo "build.sh: crates/duckosm-wasm/Cargo.toml must give one full duckOSM rev, not: $DUCKOSM_REV" >&2
   exit 1
 fi
