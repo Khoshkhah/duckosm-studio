@@ -320,10 +320,11 @@ dependencies = [
 [[package]]
 name = "duckosm-build"
 version = "0.7.0"
-source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=e058ecd66783441a9b6a0344bb1987a15ec68e43#e058ecd66783441a9b6a0344bb1987a15ec68e43"
+source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=451d9a60214dd6b8c8d82f85481f6edf3bcbc761#451d9a60214dd6b8c8d82f85481f6edf3bcbc761"
 dependencies = [
  "duckosm-core",
  "duckosm-parquet",
+ "h3o",
  "roadstyle-levels",
  "serde_json",
  "sha2",
@@ -335,8 +336,9 @@ dependencies = [
 [[package]]
 name = "duckosm-core"
 version = "0.7.0"
-source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=e058ecd66783441a9b6a0344bb1987a15ec68e43#e058ecd66783441a9b6a0344bb1987a15ec68e43"
+source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=451d9a60214dd6b8c8d82f85481f6edf3bcbc761#451d9a60214dd6b8c8d82f85481f6edf3bcbc761"
 dependencies = [
+ "flate2",
  "miniz_oxide 0.8.9",
  "osmpbf",
  "rayon",
@@ -348,12 +350,13 @@ dependencies = [
 [[package]]
 name = "duckosm-parquet"
 version = "0.7.0"
-source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=e058ecd66783441a9b6a0344bb1987a15ec68e43#e058ecd66783441a9b6a0344bb1987a15ec68e43"
+source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=451d9a60214dd6b8c8d82f85481f6edf3bcbc761#451d9a60214dd6b8c8d82f85481f6edf3bcbc761"
 dependencies = [
  "arrow-array",
  "arrow-schema",
  "duckosm-core",
  "parquet",
+ "rayon",
  "roadstyle-levels",
 ]
 
@@ -433,6 +436,12 @@ dependencies = [
  "miniz_oxide 0.9.1",
  "zlib-rs",
 ]
+
+[[package]]
+name = "float_eq"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "28a80e3145d8ad11ba0995949bbcf48b9df2be62772b3d351ef017dff6ecb853"
 
 [[package]]
 name = "foldhash"
@@ -516,6 +525,26 @@ dependencies = [
  "libc",
  "r-efi 6.0.0",
 ]
+
+[[package]]
+name = "h3o"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e09e90732a210d62fb37ce0452cac2b999aeff4ebd1998b53cf45290175b39b5"
+dependencies = [
+ "ahash",
+ "either",
+ "float_eq",
+ "h3o-bit",
+ "libm",
+ "ordered-float",
+]
+
+[[package]]
+name = "h3o-bit"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b42eb4efef1f96510ae1a33b2682562a677d504641e9903a77bf5c666b9013e"
 
 [[package]]
 name = "half"
@@ -733,6 +762,15 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "ordered-float"
+version = "5.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f59006ce1e204c30956638535b74d317bca99477b9356dfaec54c37f6f600ab"
+dependencies = [
+ "num-traits",
+]
 
 [[package]]
 name = "osmpbf"
@@ -1162,6 +1200,7 @@ dependencies = [
  "flate2",
  "half",
  "quick-error",
+ "weezl",
 ]
 
 [[package]]
@@ -1305,6 +1344,12 @@ dependencies = [
  "js-sys",
  "wasm-bindgen",
 ]
+
+[[package]]
+name = "weezl"
+version = "0.1.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 
 [[package]]
 name = "which"
