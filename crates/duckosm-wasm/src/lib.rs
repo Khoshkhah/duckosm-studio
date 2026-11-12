@@ -195,6 +195,174 @@ fn cut<R: Read + Seek + Send>(open: impl Fn() -> Result<R, String>, boundary: &B
     Ok(area)
 }
 
+/// Step 0 in OPFS: cut the region file `region` (a `File` or `Blob`) to the `boundary` and write the area file through
+/// `out`, a `FileSystemSyncAccessHandle` that the worker opened. Then [`build_area_file`] reads the area file. Gives the
+/// size of the area file in bytes.
+#[wasm_bindgen]
+pub fn cut_area(region: Blob, boundary: &str, out: web_sys::FileSystemSyncAccessHandle) -> Result<f64, JsError> {
+    let boundary = Boundary::parse(boundary).map_err(|e| JsError::new(&e))?;
+    let file = BufWriter::with_capacity(1 << 20, OpfsFile { h: out, at: 0.0 });
+    let (w, _) = duckosm_core::cutstream::cut_to_pbf(|| BlobRead::new(region.clone()), &boundary, file)
+        .map_err(|e| JsError::new(&e))?;
+    let f = w.into_inner().map_err(|e| JsError::new(&e.to_string()))?;
+    f.h.flush().map_err(|e| JsError::new(&format!("OPFS: {e:?}")))?;
+    Ok(f.at)
+}
+
+/// Build duckOSM's tables of an area from its area file (`area`: the file of [`cut_area`], as a `File`). `spill` is a
+/// pool of open files in OPFS (`FileSystemSyncAccessHandle`) for the temporary files of the network step, so they are
+/// not in the WebAssembly memory (Kentucky: at most 11 at once). The other arguments are those of [`build_area`].
+#[wasm_bindgen]
+pub fn build_area_file(
+    area: Blob,
+    boundary: &str,
+    modes: &str,
+    fixes_yaml: Option<String>,
+    raw: Option<bool>,
+    levels: Option<String>,
+    spill: Array,
+) -> Result<Output, JsError> {
+    let text = boundary;
+    let boundary = Boundary::parse(boundary).map_err(|e| JsError::new(&e))?;
+    let open = || -> Result<Box<dyn Read + Send>, String> {
+        Ok(Box::new(io::BufReader::with_capacity(1 << 20, BlobRead::new(area.clone())?)))
+    };
+    let pool = std::rc::Rc::new(OpfsPool {
+        free: std::cell::RefCell::new(spill.iter().map(|h| h.unchecked_into()).collect()),
+    });
+    if spill.length() > 0 {
+        duckosm_core::spill::set_temp_store(Some(std::rc::Rc::new(move || {
+            Box::new(OpfsStore(pool.clone())) as Box<dyn duckosm_core::spill::Store>
+        })));
+    }
+    let res = js_build(Input::Area(&open, &boundary), modes, fixes_yaml, Some(text), raw.unwrap_or(false), levels);
+    duckosm_core::spill::set_temp_store(None);
+    res
+}
+
+fn opfs_err(e: JsValue) -> io::Error {
+    io::Error::other(format!("OPFS: {e:?}"))
+}
+
+/// The options of a read or a write at `at` bytes.
+fn opfs_at(at: f64) -> web_sys::FileSystemReadWriteOptions {
+    let o = web_sys::FileSystemReadWriteOptions::new();
+    o.set_at(at);
+    o
+}
+
+/// Write `b` at `at`. The bytes are copied out of the WebAssembly memory first: the browser does not write from a view
+/// of the shared memory of the build with threads. A full storage quota gives a short count (Chromium: -8).
+fn opfs_write(h: &web_sys::FileSystemSyncAccessHandle, at: f64, b: &[u8]) -> io::Result<usize> {
+    let a = Uint8Array::new_with_length(b.len() as u32);
+    a.copy_from(b);
+    let n = h.write_with_buffer_source_and_options(&a, &opfs_at(at)).map_err(opfs_err)?;
+    if n != b.len() as f64 {
+        return Err(io::Error::other(format!(
+            "OPFS: wrote {n} of {} bytes: the storage of the browser is full, or the site may not use more of it",
+            b.len()
+        )));
+    }
+    Ok(b.len())
+}
+
+/// A file in OPFS, written from the start through its `FileSystemSyncAccessHandle`.
+struct OpfsFile {
+    h: web_sys::FileSystemSyncAccessHandle,
+    at: f64,
+}
+
+// SAFETY: the handle is used only on the thread that opened it (the build worker): the cut writes on the calling
+// thread, and only the encoding of the blocks runs on the other threads.
+unsafe impl Send for OpfsFile {}
+
+impl Write for OpfsFile {
+    fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+        let n = opfs_write(&self.h, self.at, b)?;
+        self.at += n as f64;
+        Ok(n)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.h.flush().map_err(opfs_err)
+    }
+}
+
+/// The temporary files of the network step in OPFS. A file of OPFS opens only asynchronously, and the network opens
+/// its temporary files in synchronous code: so the worker opens a pool of files before the build, and the store gives
+/// them out and takes them back, empty, when a temporary file is dropped.
+struct OpfsPool {
+    free: std::cell::RefCell<Vec<web_sys::FileSystemSyncAccessHandle>>,
+}
+
+struct OpfsStore(std::rc::Rc<OpfsPool>);
+
+struct OpfsBlob {
+    h: Option<web_sys::FileSystemSyncAccessHandle>,
+    pos: f64,
+    pool: std::rc::Rc<OpfsPool>,
+}
+
+// SAFETY: the store is set for the calling thread only (`spill::set_temp_store`), so the handles stay on the thread
+// that opened them.
+unsafe impl Send for OpfsBlob {}
+
+impl duckosm_core::spill::Store for OpfsStore {
+    fn create(&self) -> io::Result<Box<dyn duckosm_core::spill::Blob>> {
+        let h = self.0.free.borrow_mut().pop().ok_or_else(|| {
+            io::Error::other("OPFS: all files of the pool for the temporary files are in use")
+        })?;
+        h.truncate_with_f64(0.0).map_err(opfs_err)?;
+        Ok(Box::new(OpfsBlob { h: Some(h), pos: 0.0, pool: self.0.clone() }))
+    }
+}
+
+impl Drop for OpfsBlob {
+    fn drop(&mut self) {
+        if let Some(h) = self.h.take() {
+            let _ = h.truncate_with_f64(0.0);
+            self.pool.free.borrow_mut().push(h);
+        }
+    }
+}
+
+impl OpfsBlob {
+    fn h(&self) -> &web_sys::FileSystemSyncAccessHandle {
+        self.h.as_ref().expect("the handle is there until the drop")
+    }
+}
+
+impl Read for OpfsBlob {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let a = Uint8Array::new_with_length(buf.len() as u32);
+        let n = self.h().read_with_buffer_source_and_options(&a, &opfs_at(self.pos)).map_err(opfs_err)? as usize;
+        a.subarray(0, n as u32).copy_to(&mut buf[..n]);
+        self.pos += n as f64;
+        Ok(n)
+    }
+}
+
+impl Write for OpfsBlob {
+    fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+        let n = opfs_write(self.h(), self.pos, b)?;
+        self.pos += n as f64;
+        Ok(n)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.h().flush().map_err(opfs_err)
+    }
+}
+
+impl Seek for OpfsBlob {
+    fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
+        self.pos = match to {
+            SeekFrom::Start(x) => x as f64,
+            SeekFrom::End(x) => self.h().get_size().map_err(opfs_err)? + x as f64,
+            SeekFrom::Current(x) => self.pos + x as f64,
+        };
+        Ok(self.pos as u64)
+    }
+}
+
 /// The same as [`build_area`], with the bytes of the region file (for Node, which has no `FileReaderSync`).
 #[wasm_bindgen]
 pub fn build_area_bytes(
