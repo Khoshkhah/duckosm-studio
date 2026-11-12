@@ -116,11 +116,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             super().log_message(*a)
 
 
+class Server(http.server.ThreadingHTTPServer):
+    # The thread workers of the build (up to 12) ask for the module files at the same time. With the default queue of 5
+    # waiting connections, macOS reset some of them, and a thread that could not load its module stopped the build.
+    request_queue_size = 128
+
+
 def start(port, isolated=True, quiet=False, directory=WWW):
     """Start the server in a thread; port 0 takes a free port (server.server_address[1]). directory: the page's folder (a
     copy with versions, version_refs.py, for a test of the deployed page)."""
     h = type("H", (Handler,), {"isolated": isolated, "quiet": quiet})
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", port), functools.partial(h, directory=str(directory)))
+    server = Server(("127.0.0.1", port), functools.partial(h, directory=str(directory)))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server
 
