@@ -252,8 +252,9 @@ each, the computer had a load average of about 6 from other work:
 - The allocator of the standard library has one global lock in WebAssembly. With 4 threads, pass 2 (the blocks
   of ways, millions of small allocations) took 2.2 s instead of 1.2 s. `src/alloc.rs` gives each thread its
   own lists of free small blocks: pass 2 then took 0.5 s.
-- More than 8 threads gave no more speed, only more memory (20 threads: 195 MiB), so the default is the number
-  of cores, at most 8. The network step after the cut (about 0.8 s) stays on one thread.
+- More than 8 threads gave no more speed on Tartu, only more memory (20 threads: 195 MiB). On Kentucky, after the
+  cut writes full blocks and the faces keep their lists (duckOSM PR 122), 12 threads are faster than 8: 46.7 s
+  against 50.4 s, for 45 MiB more. So the default is the number of cores, at most 12.
 - For a public page, the host must send the two headers. GitHub Pages cannot; a service worker
   (`coi-serviceworker`) can add them. Not done: the page has no public host yet. The file is read from the disk each time; a file kept in the browser storage (OPFS) does not make it
 faster. Not done: keep the
