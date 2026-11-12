@@ -2,11 +2,10 @@
 //! chosen modes out, as GeoParquet bytes. The steps are `duckosm_build::run`, as in the native build.
 
 use duckosm_build::{
-    config::parse_osm_fixes, parse_levels, run, Input, Params, Source, StepLog, FEATURES_SQL,
+    config::parse_osm_fixes, parse_levels, run, Input, Params, StepLog, FEATURES_SQL,
 };
 use duckosm_core::boundary::Boundary;
 use duckosm_core::filter::Mode;
-use duckosm_core::pbf::BlobReader;
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use std::io::{self, BufWriter, Read, Seek, SeekFrom, Write};
 use wasm_bindgen::prelude::*;
@@ -112,7 +111,7 @@ impl BlobRead {
     }
 }
 
-// SAFETY: osmpbf needs Send. `pbf::read_area` reads the blobs on the calling thread and gives only the read
+// SAFETY: the cut needs Send. Step 0 (`cutstream`) reads the blocks on the calling thread and gives only the read
 // bytes to rayon, so the browser objects never move to another thread, also in the build with threads.
 unsafe impl Send for BlobRead {}
 
@@ -161,7 +160,8 @@ pub fn features_sql() -> String {
 }
 
 /// Build duckOSM's tables of an area: `region` is a `.osm.pbf` file (a `File` or `Blob`) that covers the
-/// `boundary` (GeoJSON, as `duckosm boundary` writes it). The file is cut to the boundary while it is read. With
+/// `boundary` (GeoJSON, as `duckosm boundary` writes it). Step 0 cuts it to the area file (in memory), and the build
+/// reads the area file. With
 /// `raw`, the output also has `raw_nodes.parquet`, `raw_ways.parquet` and `raw_relations.parquet`: duckOSM's
 /// `raw.*` of the area, cut as osmium's `smart` does, the input of [`features_sql`], and the cut itself as
 /// `cut.osm.pbf` (the file for the user to download).
@@ -176,10 +176,8 @@ pub fn build_area(
 ) -> Result<Output, JsError> {
     let text = boundary;
     let boundary = Boundary::parse(boundary).map_err(|e| JsError::new(&e))?;
-    let open = || -> Result<BlobReader<Box<dyn Source>>, String> {
-        let r: Box<dyn Source> = Box::new(BlobRead::new(region.clone())?);
-        BlobReader::new_seekable(r).map_err(|e| e.to_string())
-    };
+    let area = cut(|| BlobRead::new(region.clone()), &boundary)?;
+    let open = || -> Result<Box<dyn Read + Send + '_>, String> { Ok(Box::new(io::Cursor::new(&area[..]))) };
     js_build(
         Input::Area(&open, &boundary),
         modes,
@@ -188,6 +186,13 @@ pub fn build_area(
         raw.unwrap_or(false),
         levels,
     )
+}
+
+/// Step 0: cut the region file to the area file (a `.osm.pbf` file), with only lists of ids in memory.
+// ponytail: the area file stays in memory (Kentucky: 149 MB); a file in OPFS keeps it out when an area needs it
+fn cut<R: Read + Seek + Send>(open: impl Fn() -> Result<R, String>, boundary: &Boundary) -> Result<Vec<u8>, JsError> {
+    let (area, _) = duckosm_core::cutstream::cut_to_pbf(open, boundary, Vec::new()).map_err(|e| JsError::new(&e))?;
+    Ok(area)
 }
 
 /// The same as [`build_area`], with the bytes of the region file (for Node, which has no `FileReaderSync`).
@@ -202,10 +207,8 @@ pub fn build_area_bytes(
 ) -> Result<Output, JsError> {
     let text = boundary;
     let boundary = Boundary::parse(boundary).map_err(|e| JsError::new(&e))?;
-    let open = || -> Result<BlobReader<Box<dyn Source + '_>>, String> {
-        let r: Box<dyn Source> = Box::new(io::Cursor::new(region));
-        BlobReader::new_seekable(r).map_err(|e| e.to_string())
-    };
+    let area = cut(|| Ok(io::Cursor::new(region)), &boundary)?;
+    let open = || -> Result<Box<dyn Read + Send + '_>, String> { Ok(Box::new(io::Cursor::new(&area[..]))) };
     js_build(
         Input::Area(&open, &boundary),
         modes,
