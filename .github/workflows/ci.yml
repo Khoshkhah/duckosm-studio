@@ -63,3 +63,7 @@ jobs:
       # The table views of duckOSM in the data dock, with the real DuckDB-wasm of the page (kinds_e2e.py): a turn, a node, an H3 cell, lane_profile, and the Reset of Ask
       - name: Every table is on the map with a card (Playwright, Monaco)
         run: cd crates/duckosm-wasm/www && python3 kinds_e2e.py "$RUNNER_TEMP/out-kinds"
+      # The download of a region file through the relay (download_e2e.py, no network): a slow request goes again, a part that is done
+      # takes half of another, and the stored file equals the relay's bytes
+      - name: The download of a region file is complete and helps a slow part (Playwright)
+        run: cd crates/duckosm-wasm/www && python3 download_e2e.py
