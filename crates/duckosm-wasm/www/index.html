@@ -1259,11 +1259,16 @@ function canBuild() {
   // Build has just become ready (the last input came): when card 4 is open (refreshSteps, the next frame), the cards scroll until Build is in
   // view, also when the card is taller than the panel. On a phone the 40 % sheet is the whole panel, lower than the screen: the bottom of the
   // screen counts, not the panel's own bottom
-  if (nowReady) requestAnimationFrame(() => {
-    const body = document.querySelector(".sb-body"), b = $("run").getBoundingClientRect();
-    const over = body && b.height ? b.bottom + 8 - Math.min(innerHeight, body.getBoundingClientRect().bottom) : 0;
-    if (over > 0) body.scrollTop += over;
-  });
+  if (nowReady) {
+    let frames = 0;
+    const show = () => {
+      const body = document.querySelector(".sb-body"), b = $("run").getBoundingClientRect();
+      if (!b.height && ++frames < 30) return requestAnimationFrame(show);      // card 4 opens in one of the next frames (a slow computer: later)
+      const over = body && b.height ? b.bottom + 8 - Math.min(innerHeight, body.getBoundingClientRect().bottom) : 0;
+      if (over > 0) body.scrollTop += over;
+    };
+    requestAnimationFrame(show);
+  }
 }
 // step 4, Ground height: duckOSM's Ground step lists the DEM sources that cover the area and gives the build the DEM with its product, vertical datum and licence
 fetch("duckosm/ground_step/dem_sources.json").then((r) => r.json()).then((d) => initGroundStep({      // the page fetches the catalog: a deploy gives its address a version
