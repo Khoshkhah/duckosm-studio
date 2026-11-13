@@ -49,6 +49,8 @@ with sync_playwright() as p:
       await put(["other-page"], "data.bin", 1);
       await put(["lv-other-app"], "pairs.csv", 1);
     }""")
+    # the raw_* files of the build go from the browser disk after the layers are made
+    assert page.evaluate("window.duckApi.rawRemoved") == 3, page.evaluate("window.duckApi.rawRemoved")
     # the row shows after the page saved the area; Delete all reads the entries again when it is clicked
     page.wait_for_function("!document.getElementById('storage-row').hidden && /Studio keeps/.test(document.getElementById('storage-line').textContent)", timeout=30_000)
     before = page.evaluate(NAMES)

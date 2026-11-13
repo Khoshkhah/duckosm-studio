@@ -221,7 +221,10 @@ async function endLoad() {
 
 // the files of a build into DuckDB, one schema for each mode; the old tables go away. folder: the folder of the build in the folder of this
 // tab, when the files of the build are there (Files in OPFS, a region file); it stays until the next build.
+let buildFolder = null;     // the folder of the last build in the folder of this tab (its files of the result), or null
+export let rawRemoved = 0;  // the raw_* files that loadFeatures removed from the browser disk (for storage_e2e.py)
 export async function loadTables(files, folder) {
+  buildFolder = folder ?? null;
   for (const f of Object.values(files)) if (folder && f instanceof File) onDisk.add(f);
   await clearTables(folder);
   cut = files["cut.osm.pbf"] ?? null;
@@ -281,6 +284,13 @@ export async function loadFeatures(files, sql) {
   }
   await conn.query(sql);
   for (const name of ["raw_nodes.parquet", "raw_ways.parquet", "raw_relations.parquet"]) await db.dropFile(name);
+  // the raw_* files of the build (Kentucky: 1.25 GB) are needed only for the layers: they go from the browser disk now, not at the next build
+  const dir = buildFolder && await tableFolder();
+  const build = dir && await dir.getDirectoryHandle(buildFolder).catch(() => null);
+  rawRemoved = 0;
+  for (const name of ["raw_nodes.parquet", "raw_ways.parquet", "raw_relations.parquet"]) {
+    if (build && files[name] instanceof File) await build.removeEntry(files[name].name).then(() => rawRemoved++, () => {});     // its name in OPFS (o<n>)
+  }
   const names = (await conn.query("SELECT table_name AS t FROM information_schema.tables WHERE table_catalog = 'memory' " +
     "AND table_schema = 'features' ORDER BY 1")).toArray().map((r) => r.t);
   for (const table of names) await toFile("features", table, `features_${table}.parquet`);
