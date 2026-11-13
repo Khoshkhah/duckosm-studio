@@ -154,7 +154,7 @@ const homeOf = (mode, file) => !(file instanceof File) || mode === "visualizatio
   : HOME === "disk" || file.size > AUTO_DISK ? "disk" : "memory";
 // The folder of this tab: tables-<id>. A Web Lock with its name lives as long as the tab, so a build removes only the folders of closed tabs, and two tabs do not
 // remove the files of each other. Null: the browser has no OPFS that can write.
-const FOLDER = "tables-" + Math.random().toString(36).slice(2, 10);
+export const FOLDER = "tables-" + Math.random().toString(36).slice(2, 10);
 let folder;
 const tableFolder = () => (folder ??= (async () => {
   if (!navigator.locks || !globalThis.FileSystemFileHandle?.prototype.createWritable) return null;
