@@ -26,8 +26,10 @@ export async function kept() {
 
 // get an extract ({id, name, pbf}) through the relay into the storage; onProgress(bytes, total); signal: an AbortController's.
 // The relay gives Range (206) and the dated file (Content-Location): the file comes in PARTS parts at the same time, each into its
-// place in the stored file (one request is slow on some paths of the relay). Without that, one stream, as before.
-const PARTS = 8, TRIES = 4, MIN_PART = 4 << 20;
+// place in the stored file (one request is slow on some paths of the relay). Without that, one stream, as before. A part that is
+// done takes the second half of the part with the most bytes left: one slow part (its first byte came after 9 s on Kentucky) does
+// not decide the end. More, smaller parts from the start are slower: each request through the relay waits before its first byte.
+const PARTS = 8, TRIES = 4, MIN_PART = 4 << 20, AGAIN_MS = 2000;
 export async function download(x, onProgress, signal) {
   const ctl = new AbortController();     // the page's signal, and the stop of all parts when one part fails
   signal?.addEventListener("abort", () => ctl.abort());
@@ -55,32 +57,69 @@ export async function download(x, onProgress, signal) {
   await dir.removeEntry(key(x.id) + ".json").catch(() => {});      // the old file is not complete from now on
   const out = await (await dir.getFileHandle(key(x.id) + ".osm.pbf", { create: true })).createWritable();
   let got = 0;
-  const part = async (i) => {
-    const size = Math.ceil(total / parts), end = Math.min(total, (i + 1) * size) - 1;
-    let pos = i * size;
-    for (let t = 1; pos <= end; t++) {
+  // The answer of a range request; when it has not come in AGAIN_MS, the same request goes again, and the first answer is taken (a
+  // request through the relay sometimes waits 9 s for its first byte, and the same request again does not)
+  const answer = async (range) => {
+    const asks = [0, AGAIN_MS].map((wait) => {
+      const stop = new AbortController();
+      ctl.signal.addEventListener("abort", () => stop.abort(), { once: true });
+      let timer;
+      const p = new Promise((ok, no) => { timer = setTimeout(() => get(url, { headers: { Range: range }, signal: stop.signal }).then(ok, no), wait); });
+      return { stop, timer, p };
+    });
+    let won = null;
+    const r = await Promise.any(asks.map((a) => a.p.then((res) => {
+      if (won) { a.stop.abort(); throw new Error("a later answer"); }     // both answered: the later one stops
+      won = a;
+      return res;
+    })));
+    for (const a of asks) if (a !== won) { clearTimeout(a.timer); a.stop.abort(); }
+    return r;
+  };
+  // a range {pos, end} of the file; another part can make its end smaller (take its second half)
+  const size = Math.ceil(total / parts);
+  const ranges = Array.from({ length: parts }, (_, i) => ({ pos: i * size, end: Math.min(total, (i + 1) * size) - 1 }));
+  const fill = async (rg) => {
+    for (let t = 1; rg.pos <= rg.end; t++) {
       try {
-        const r = await get(url, { headers: { Range: `bytes=${pos}-${end}` } });
+        const r = await answer(`bytes=${rg.pos}-${rg.end}`);
         if (r.status !== 206) throw await bad(r);
         if (etag && r.headers.get("ETag") !== etag) throw new Error("the file changed during the download");
         const reader = r.body.getReader();
-        for (;;) {
+        while (rg.pos <= rg.end) {
           const { done, value } = await reader.read();
           if (done) break;
-          await out.write({ type: "write", position: pos, data: value });
-          pos += value.length;
-          got += value.length;
+          const n = Math.min(value.length, rg.end - rg.pos + 1);   // the end can be smaller now: the bytes after it are another part's
+          await out.write({ type: "write", position: rg.pos, data: n < value.length ? value.subarray(0, n) : value });
+          // another part can have taken the end of this range during the write: the bytes after the new end are the same, and
+          // that part writes and counts them
+          got += Math.max(0, Math.min(n, rg.end + 1 - rg.pos));
+          rg.pos += n;
           onProgress(got, total);
         }
-        if (pos <= end) throw new Error("a part ended early");
+        if (rg.pos <= rg.end) throw new Error("a part ended early");
+        reader.cancel().catch(() => {});
       } catch (e) {
         if (ctl.signal.aborted || t >= TRIES) throw e;
         await new Promise((ok) => setTimeout(ok, 500 * t));       // the next try starts at pos: the bytes written stay
       }
     }
   };
+  const part = async (rg) => {
+    await fill(rg);
+    for (;;) {
+      // this part is done: take the second half of the range with the most bytes left (at least MIN_PART after its pos)
+      const v = ranges.reduce((a, b) => (b.end - b.pos > a.end - a.pos ? b : a));
+      const left = v.end - v.pos + 1;
+      if (left < 2 * MIN_PART) return;
+      const mine = { pos: v.pos + Math.max(MIN_PART, Math.floor(left / 2)), end: v.end };
+      v.end = mine.pos - 1;
+      ranges.push(mine);
+      await fill(mine);
+    }
+  };
   try {
-    if (parts) await Promise.all(Array.from({ length: parts }, (_, i) => part(i).catch((e) => { ctl.abort(); throw e; })));
+    if (parts) await Promise.all(ranges.slice().map((rg) => part(rg).catch((e) => { ctl.abort(); throw e; })));
     else {
       const r = await get(x.pbf);
       if (!r.ok) throw await bad(r);
