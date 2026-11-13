@@ -117,6 +117,7 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
 
   /* the extracts are roadstyle's option rows (rs-opt), with Get or Use and the download at the end; a download: roadstyle's bar (rs.progress) and Cancel under the name */
   #extracts .rs-opt { align-items: center; }
+  .storage-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
   #extracts .rs-opt > button { padding: 5px 9px; }
   #extracts .prog { display: grid; grid-template-columns: minmax(40px, 1fr) auto; align-items: end; gap: 8px; margin-top: 4px; }
   #kept { margin-top: 12px; display: grid; gap: 4px; }
@@ -285,6 +286,10 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
   <div id="saved-areas-list" class="rs-scroll" style="display:flex;flex-direction:column;gap:8px">
     <p class="small muted">Checking saved areas…</p>
   </div>
+  <div id="storage-row" class="storage-row" hidden>
+    <span id="storage-line" class="small muted"></span>
+    <button type="button" class="sb-danger" id="storage-clear" title="Delete the saved areas, the kept region files and the files of old builds">Delete all</button>
+  </div>
 </div>
 
 </section>
@@ -409,6 +414,7 @@ import * as duck from "./app/duck.js";
 window.duckApi = duck;   // for the tests (drawLaps, tileStats)
 import * as regions from "./app/regions.js";
 import * as areaStore from "./app/area_store.js";
+import * as storage from "./app/storage.js";
 import { initGroundStep } from "./duckosm/ground_step/ground_step.js";
 import { polygons, geometry, areaKm2, inside, bbox, covering as coverIn } from "./duckosm/build_steps/core.js";   // duckOSM's logic of the area (copied by build.sh at the engine's rev)   // duckOSM's Ground step: the DEM of the area (copied by build.sh at the engine's rev)
 import { initFixesPanel } from "./duckosm/fixes_editor/fixes_panel.js";   // duckOSM's fixes editor (copied by build.sh at the engine's rev)
@@ -1297,6 +1303,7 @@ async function refreshKept() {
   try { keptRegions = await regions.kept(); } catch (e) { keptRegions = []; }   // no storage (for example a private window)
   renderKept();
   renderExtracts();
+  renderSavedAreasList();          // the size of Studio's files in this browser (the row of Delete all)
 }
 async function get(x) {
   const abort = new AbortController();
@@ -1425,10 +1432,28 @@ async function restoreSavedArea(slug) {
 
 // the card "Your areas" (above card 1, roadstyle's card that folds): the areas that the person worked on, each with Open and Delete. It shows only while an area is saved.
 let areasCard = null, areasShown = false;
-function paintAreasCard(n) {
+// the card shows when an area is saved, or when Studio has other files in this browser that Delete all can delete (kept region files)
+function paintAreasCard(n, files = false) {
   if (!areasCard) return;
   areasCard.querySelector(".rs-sec-title").textContent = `Your areas (${n})`;
-  n ? rs.sections.show("areas") : rs.sections.hide("areas");
+  n || files ? rs.sections.show("areas") : rs.sections.hide("areas");
+}
+// "Studio keeps ... in this browser" and Delete all (app/storage.js: only Studio's own files; the open area stays)
+const storageOpts = (list) => ({ keep: duck.FOLDER, areaNames: list.map((a) => a.name).filter(Boolean), openArea: duck.tables.length ? areaName : null });
+async function paintStorage(list) {
+  const st = await storage.use(storageOpts(list)).catch(() => ({ bytes: 0, staying: 0 }));
+  const free = st.bytes - st.staying, gb = (b) => b >= 2 ** 30 ? num(b / 2 ** 30, 1) + " GB" : num(b / 2 ** 20, 1) + " MB";
+  $("storage-row").hidden = free <= 0;
+  $("storage-line").textContent = `Studio keeps ${gb(st.bytes)} in this browser` + (st.staying ? ` (the open area: ${gb(st.staying)}, it stays).` : ".");
+  $("storage-clear").onclick = async () => {
+    if (!await rs.confirm({ title: "Delete all of Studio's files?", text: `The saved areas, the kept region files and the files of old builds go from this browser (${gb(free)}). ` +
+      "The open area stays. Other pages of this site keep their files. You cannot undo this.", ok: "Delete all", danger: true })) return;
+    const n = await storage.clear(storageOpts(list));
+    localStorage.removeItem("duckosm.lastArea");
+    status(`Deleted ${gb(n)} from this browser.`, 5000);
+    await refreshKept();
+  };
+  return free > 0;
 }
 async function renderSavedAreasList() {
   const container = $("saved-areas-list");
@@ -1436,7 +1461,7 @@ async function renderSavedAreasList() {
   if (!areaStore.isSupported) { paintAreasCard(0); return; }
   try {
     const list = await areaStore.listSavedAreas();
-    paintAreasCard(list.length);
+    paintAreasCard(list.length, await paintStorage(list));
     if (list.length && !areasShown && typeof autoFold === "function") { areasShown = true; autoFold(areasCard, false); }     // a visit starts with the list open (the last visit may have folded it)
     if (!list.length) { container.innerHTML = ""; return; }
     // the networks of the build, from its summary text (the other lines of it are the log of the build, for example the sidewalk rule): a chip with an icon and the number of roads for each

@@ -67,3 +67,7 @@ jobs:
       # takes half of another, and the stored file equals the relay's bytes
       - name: The download of a region file is complete and helps a slow part (Playwright)
         run: cd crates/duckosm-wasm/www && python3 download_e2e.py
+      # Delete all of Studio's files in the browser (storage_e2e.py, Monaco): Studio's entries go; other pages' entries of the same site, the
+      # folder of this tab and the open area stay
+      - name: Delete all removes only Studio's files (Playwright, Monaco)
+        run: cd crates/duckosm-wasm/www && python3 storage_e2e.py "$RUNNER_TEMP/out-storage"
