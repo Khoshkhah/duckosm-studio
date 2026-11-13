@@ -71,3 +71,33 @@ jobs:
       # folder of this tab and the open area stay
       - name: Delete all removes only Studio's files (Playwright, Monaco)
         run: cd crates/duckosm-wasm/www && python3 storage_e2e.py "$RUNNER_TEMP/out-storage"
+      # The page on a phone (iPhone 13 and 390 px): the sheet, Build in view when it is ready, the fixes editor and the design panel in the
+      # sheet. A page change needs this check before a merge.
+      - name: The page on a phone (Playwright, Monaco)
+        run: |
+          cd crates/duckosm-wasm/www
+          python3 phone_e2e.py "$RUNNER_TEMP/out-phone"
+          python3 phone_fixes_e2e.py
+          python3 phone_design_e2e.py
+      # The buttons and the steps: a disabled look with its reason, the progress in one place, Build in card 4; the boundary tools with no
+      # search (no Nominatim); the limit of roads on the map
+      - name: The buttons, the boundary and the limit of roads (Playwright, Monaco)
+        run: |
+          cd crates/duckosm-wasm/www
+          python3 buttons_e2e.py "$RUNNER_TEMP/out-buttons"
+          python3 boundary_e2e.py --no-search
+          python3 roads_limit_e2e.py
+      # A saved area opens again with its tables, its map and its cut file; a new look (theme) keeps the tiles
+      - name: Saved areas and a new look on the same tiles (Playwright, Monaco)
+        run: |
+          cd crates/duckosm-wasm/www
+          python3 saved_e2e.py "$RUNNER_TEMP/out-saved"
+          python3 restyle_e2e.py
+      # The ground: a DEM file in the Ground step, the terrain from the area's own ground (no AWS), the files of the export
+      - name: The ground and the export (Playwright, Monaco)
+        run: |
+          pip install pillow
+          cd crates/duckosm-wasm/www
+          python3 dem_e2e.py "$RUNNER_TEMP/out-dem"
+          python3 ground_e2e.py "$RUNNER_TEMP/out-ground"
+          python3 export_e2e.py "$RUNNER_TEMP/out-export"
