@@ -320,7 +320,7 @@ dependencies = [
 [[package]]
 name = "duckosm-build"
 version = "0.7.0"
-source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=31294c396bc267e874a1abda2b03d6538f8fe9d7#31294c396bc267e874a1abda2b03d6538f8fe9d7"
+source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=3e4b5b62612a7436f9dd42e89facce6afd455821#3e4b5b62612a7436f9dd42e89facce6afd455821"
 dependencies = [
  "duckosm-core",
  "duckosm-parquet",
@@ -336,7 +336,7 @@ dependencies = [
 [[package]]
 name = "duckosm-core"
 version = "0.7.0"
-source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=31294c396bc267e874a1abda2b03d6538f8fe9d7#31294c396bc267e874a1abda2b03d6538f8fe9d7"
+source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=3e4b5b62612a7436f9dd42e89facce6afd455821#3e4b5b62612a7436f9dd42e89facce6afd455821"
 dependencies = [
  "flate2",
  "miniz_oxide 0.8.9",
@@ -350,7 +350,7 @@ dependencies = [
 [[package]]
 name = "duckosm-parquet"
 version = "0.7.0"
-source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=31294c396bc267e874a1abda2b03d6538f8fe9d7#31294c396bc267e874a1abda2b03d6538f8fe9d7"
+source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=3e4b5b62612a7436f9dd42e89facce6afd455821#3e4b5b62612a7436f9dd42e89facce6afd455821"
 dependencies = [
  "arrow-array",
  "arrow-schema",
@@ -965,7 +965,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 [[package]]
 name = "roadstyle-levels"
 version = "0.29.0"
-source = "git+https://github.com/Khoshkhah/roadstyle.git?rev=59c30597ca943d5ebbf30da46c1d889e0d8b0b22#59c30597ca943d5ebbf30da46c1d889e0d8b0b22"
+source = "git+https://github.com/Khoshkhah/roadstyle.git?rev=73472e83802d441601ac36afe8697d09546a27d2#73472e83802d441601ac36afe8697d09546a27d2"
 dependencies = [
  "rstar",
  "sha2",
