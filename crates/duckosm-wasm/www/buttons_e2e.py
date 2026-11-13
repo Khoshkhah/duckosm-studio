@@ -78,7 +78,8 @@ def run(browser, name, dark=False, **context):
     assert page.evaluate("document.getElementById('run').classList.contains('rs-busy')"), "Build shows roadstyle's ring while it builds (rs.busy)"
     assert why("buildhint") == "", ("no text line under Build while it builds", why("buildhint"))
     # the progress of the build is in one place (the map's busy box): during the build only one visible element says "Building", and it is in #rs-mapbusy
-    says = "[...document.querySelectorAll('body *')].filter((e) => !e.children.length && /\\bbuilding\\b/i.test(e.textContent) && e.tagName !== 'TD' && e.getBoundingClientRect().height > 0).map((e) => !!e.closest('#rs-mapbusy'))"
+    # a progress text starts with "Building" ("Building the networks…"); other texts can have the word (the hint of Wall labels: "each wall of a building")
+    says = "[...document.querySelectorAll('body *')].filter((e) => !e.children.length && /^\\s*building\\b/i.test(e.textContent) && e.tagName !== 'TD' && e.getBoundingClientRect().height > 0).map((e) => !!e.closest('#rs-mapbusy'))"
     box = "(() => { const e = document.querySelector('#rs-mapbusy .rs-mapbusy-t'), r = e.getBoundingClientRect(), s = document.getElementById('sb').getBoundingClientRect(); return {w: r.width, h: r.height, top: r.top, bottom: r.bottom, left: r.left, right: r.right, sbTop: s.top, sbLeft: s.left, sbRight: s.right, vw: innerWidth, vh: innerHeight}; })()"
     seen = []
     while not page.evaluate("!document.getElementById('step5-card').classList.contains('off')") and len(seen) < 3000:

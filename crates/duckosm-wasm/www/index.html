@@ -511,7 +511,7 @@ const here = rs.toggle(hereBtn, (on) => { if (on) tool(null); picking(on); });  
 // the search field: roadstyle's rs.search (the button is inside it, `end`). The list of the places is the page's own (#found, with the boundaries), so the field has no suggestions.
 rs.search($("search"), { placeholder: "City, region, country or H3 ID", label: "Name of a place or an H3 cell ID", end: hereBtn, onSubmit: () => search(), onClear: () => search() });
 $("search").querySelector("input").id = "q";
-const drop = rs.drop($("drop"), { accept: ".geojson,.json", text: "Drop a GeoJSON file here or on the map, or <u>choose a file</u>", onFiles: (f) => openFile(f[0]), onClear: () => unselectArea() });
+const drop = rs.drop($("drop"), { accept: ".geojson,.json", text: "Drop a GeoJSON file here or on the map, or <u>choose a file</u>", onFiles: (f) => openFile(f[0], true), onClear: () => unselectArea() });
 $("drop").querySelector("input").id = "file";
 const bufferNum = rs.number($("buffer-field"), { label: "Buffer around the area", unit: "m", min: 0, max: 50000, step: 50, snap: false, value: 0, onChange: () => rebuffer() });
 $("buffer-field").querySelector("input").id = "buffer";
@@ -728,9 +728,12 @@ async function bufferPolys(polys, m) {
   return g.type === "Polygon" ? [g.coordinates] : g.coordinates;
 }
 
-async function setArea(polys, props, { zoom = true, findExtracts = true } = {}) {
+async function setArea(polys, props, { zoom = true, findExtracts = true, fromZone = false } = {}) {
   if (!polys.length) return clearArea();
   if (props.source !== "drawn" && draw.enabled) draw.clear();
+  // the drop zone shows only the file of the area: an area from another place (a drawing, a search, H3, a file on the map) clears it, and the
+  // same file can then come again (the browser gives no change event for the file that the input already has)
+  if (!fromZone) drop.clear();
   if (props.source !== "h3" && cells.size) h3Forget();
   if (props.name) $("name").value = props.name;
   const base = polys, m = bufferM();
@@ -1048,8 +1051,9 @@ function readGeoJSON(text, fileName) {
   return [polys, { name: p.name || fileName.replace(/\.(geo)?json$/, ""), osm_id: p.osm_id ?? null,
                    admin_level: p.admin_level ?? null, source: p.source || `file ${fileName}` }];
 }
-async function openFile(file) {
-  try { await setArea(...readGeoJSON(await file.text(), file.name)); }
+// zone: the file came from the drop zone of the File tab (it shows the file); a file dropped on the map does not show there
+async function openFile(file, zone = false) {
+  try { await setArea(...readGeoJSON(await file.text(), file.name), { fromZone: zone }); }
   catch (e) { status(`The file is not usable: ${e.message}`, 8000); }
 }
 addEventListener("dragover", (ev) => { ev.preventDefault(); document.body.classList.add("dragging"); });
@@ -1240,15 +1244,26 @@ function missingInput() {
     : source === "region" && !regionFile && (regions.relay ? "Get a file in step 3, or select a region file." : "Select a region file in step 3.");
 }
 let ground = null;       // duckOSM's Ground step (below), after the page has its first state
+let buildReady = false;  // the last state of canBuild: nothing missing for Build
 function canBuild() {
   const missing = building ? "" : missingInput();
   rs.busy($("run"), building);
   $("run").disabled = building || !!missing;
+  const nowReady = !missing && !buildReady && !building;
+  buildReady = !missing;
   $("save").disabled = !area;
   // the reason is the text under the buttons (not a tooltip); GeoJSON needs only the area. While it builds, the button has a spinner and the progress is in the map's busy box (progress())
   $("buildhint").textContent = building ? "" : missing || "";
   ground?.refresh();       // a new area gives a new list of DEM sources (it does nothing when the area is the same)
   refreshSteps();
+  // Build has just become ready (the last input came): when card 4 is open (refreshSteps, the next frame), the cards scroll until Build is in
+  // view, also when the card is taller than the panel. On a phone the 40 % sheet is the whole panel, lower than the screen: the bottom of the
+  // screen counts, not the panel's own bottom
+  if (nowReady) requestAnimationFrame(() => {
+    const body = document.querySelector(".sb-body"), b = $("run").getBoundingClientRect();
+    const over = body && b.height ? b.bottom + 8 - Math.min(innerHeight, body.getBoundingClientRect().bottom) : 0;
+    if (over > 0) body.scrollTop += over;
+  });
 }
 // step 4, Ground height: duckOSM's Ground step lists the DEM sources that cover the area and gives the build the DEM with its product, vertical datum and licence
 fetch("duckosm/ground_step/dem_sources.json").then((r) => r.json()).then((d) => initGroundStep({      // the page fetches the catalog: a deploy gives its address a version
