@@ -1444,7 +1444,7 @@ async function paintStorage(list) {
   const st = await storage.use(storageOpts(list)).catch(() => ({ bytes: 0, staying: 0 }));
   const free = st.bytes - st.staying, gb = (b) => b >= 2 ** 30 ? num(b / 2 ** 30, 1) + " GB" : num(b / 2 ** 20, 1) + " MB";
   $("storage-row").hidden = free <= 0;
-  $("storage-line").textContent = `Studio keeps ${gb(st.bytes)} in this browser` + (st.staying ? ` (the open area: ${gb(st.staying)}, it stays).` : ".");
+  $("storage-line").textContent = `Studio keeps ${gb(st.bytes)} in this browser: saved areas and region files` + (st.staying ? ` (the open area: ${gb(st.staying)}, it stays).` : ".");
   $("storage-clear").onclick = async () => {
     if (!await rs.confirm({ title: "Delete all of Studio's files?", text: `The saved areas, the kept region files and the files of old builds go from this browser (${gb(free)}). ` +
       "The open area stays. Other pages of this site keep their files. You cannot undo this.", ok: "Delete all", danger: true })) return;
