@@ -67,6 +67,8 @@ with sync_playwright() as p:
     page.wait_for_function("window.areas >= 1", timeout=60_000)
     page.tap("#tab-region")
     page.set_input_files("#region", str(ROOT / "tests/data/monaco_sample.osm.pbf"))
+    # the page scrolls Build into view when card 4 has opened (in one of the next frames)
+    page.wait_for_function(f"(() => {{ const b = document.getElementById('run').getBoundingClientRect(); return b.height > 0 && b.bottom <= {H}; }})()", timeout=3000)
     assert page.evaluate(BOX, "run")[3] <= H, "Build is in view in the sheet"
     page.tap("#run")
     # first the loading veil over the map that the sheet leaves free (the base map of before), then the blank base and the area in view

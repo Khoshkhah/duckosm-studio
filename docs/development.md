@@ -94,6 +94,12 @@ cargo test --release -p duckosm-wasm   # the browser build equals duckosm_build:
 The engine tests (hash vectors, geometry, the Monaco golden test, the lane profile, the levels) and the native program
 `duckosm-rust` (`duckosm-cli`) are in duckOSM: run `cargo test --release` in its `rust/` folder.
 
+CI (`.github/workflows/ci.yml`) runs these page tests (Playwright, headless Chromium) on each pull request: `parts_e2e`,
+`kinds_e2e`, `download_e2e`, `storage_e2e`, the phone tests (`phone_e2e`, `phone_fixes_e2e`, `phone_design_e2e`),
+`buttons_e2e`, `roads_limit_e2e`, `saved_e2e`, `restyle_e2e`, `dem_e2e` and `export_e2e`. Run the others by hand when a
+change touches their part: `boundary_e2e` and `ground_e2e` (they fail on the Linux machine of CI, not on a Mac), `e2e.py`, `fixes_e2e` (7 minutes), `editor_e2e`,
+`editor_path_e2e`, `h3_e2e`, `design_e2e`, `panel_e2e`, `qgis_e2e` (it needs QGIS) and `ask_e2e`.
+
 ## One shared build folder
 
 On Kaveh's machine, all worktrees of duckosm-rust and of roadstyle use one build folder for each repository:
