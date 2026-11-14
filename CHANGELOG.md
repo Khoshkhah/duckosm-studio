@@ -17,6 +17,9 @@ All versions are on the GitHub Releases page of `Khoshkhah/duckosm-rust`. There 
 
 ### Changed
 
+- **`quack.html`: a tile size, at most 4 million nodes or one zoom** (Kaveh, 2026-11-14). With tile by tile on, the page offers the map tiles
+  of one zoom (6 to 12) in place of the tiles of at most 4 million nodes (`quack(..., tile_nodes, tile_zoom)`, duckOSM PR 176). Île-de-France
+  in Chromium: zoom 8 (13 tiles) 42.5 s and 474 MiB, zoom 9 (32 tiles) 41.7 s and 467 MiB. `quack_e2e.py --tiles --zoom Z` tests it.
 - **`quack.html`: tile by tile, for a large file** (2026-11-14). A new option makes the table tile by tile (duckOSM's `quack --tiles`,
   `quack(pbf, sort, spill, out, tile_nodes)` of the module): the file is cut into tiles of at most 4 million nodes, and each tile gives its
   rows, so the memory follows the size of a tile, not of the file. The page selects it for a file larger than 150 MB, and shows the tile that

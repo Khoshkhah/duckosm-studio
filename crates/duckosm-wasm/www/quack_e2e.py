@@ -21,6 +21,7 @@ a = argparse.ArgumentParser()
 a.add_argument("out", nargs="?", default="out-quack")
 a.add_argument("--pbf", default=str(ROOT / "tests/data/monaco.osm.pbf"))
 a.add_argument("--tiles", action="store_true", help="make the table tile by tile")
+a.add_argument("--zoom", help="tile by tile with the map tiles of this zoom (with --tiles)")
 args = a.parse_args()
 out = pathlib.Path(args.out)
 out.mkdir(parents=True, exist_ok=True)
@@ -41,6 +42,8 @@ with sync_playwright() as p:
     assert page.evaluate("crossOriginIsolated"), "the page is not cross-origin isolated (serve.py sends COOP and COEP)"
     page.set_input_files("#file", args.pbf)
     page.set_checked("#tiles", args.tiles)
+    if args.tiles and args.zoom:
+        page.select_option("#zoom", args.zoom)
     if args.tiles and monaco:
         # small tiles, so that ways and multipolygons cross the edges of the tiles
         page.evaluate("document.getElementById('run').dataset.tileNodes = 2000")

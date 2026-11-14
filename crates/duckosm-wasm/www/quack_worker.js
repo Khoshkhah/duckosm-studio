@@ -1,7 +1,7 @@
 // duckOSM's quack in a Web Worker (docs/rust/quack.md of duckOSM): the features table of QuackOSM (feature_id, tags,
 // geometry) of a .osm.pbf file, made by the Rust engine in WebAssembly.
 // In: {pbf: File, sort: true or false (default true: the order of QuackOSM), tiles: the most nodes in a tile, to make
-// the table tile by tile (a large file), or null}. Out: {nodes, ways, relations, steps: for
+// the table tile by tile (a large file), or null; zoom: tile by tile with the map tiles of this zoom, or null}. Out: {nodes, ways, relations, steps: for
 // each step its time since the start (ms) and the WebAssembly memory (MiB), file: the GeoParquet file (a File in OPFS),
 // seconds, threads, mib} or {error}. The page makes a new worker for each run: the
 // memory of a WebAssembly module never shrinks. A cross-origin isolated page gets the module with threads
@@ -53,7 +53,7 @@ onmessage = async ({ data }) => {
     const fh = await dir.getFileHandle("quack.parquet", { create: true });
     out = await fh.createSyncAccessHandle();
     const t = performance.now();
-    const r = pkg.quack(data.pbf, data.sort !== false, spill, out, data.tiles ?? undefined);
+    const r = pkg.quack(data.pbf, data.sort !== false, spill, out, data.tiles ?? undefined, data.zoom ?? undefined);
     const seconds = (performance.now() - t) / 1000;
     const mib = Math.round(wasm.memory.buffer.byteLength / 2 ** 20);   // the WebAssembly memory at the end (it never shrinks)
     out.close();

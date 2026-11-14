@@ -215,7 +215,8 @@ pub fn cut_area(region: Blob, boundary: &str, out: web_sys::FileSystemSyncAccess
 /// rows are in QuackOSM's order (Sort-Tile-Recursive). `spill` is a pool of open files in OPFS for the temporary files
 /// (the node buckets alone can be about 100 at once), so neither they nor the result are in the WebAssembly memory.
 /// With `tile_nodes`, the table is made tile by tile, at most that many nodes in a tile (`quack_tiles_to` of duckOSM),
-/// so the memory follows the size of a tile, not of the file: the mode for a large file (Île-de-France, 338 MB).
+/// so the memory follows the size of a tile, not of the file: the mode for a large file (Île-de-France, 338 MB). With
+/// `tile_zoom` (0 to 14), the tiles are the map tiles of that zoom.
 /// Gives `{nodes, ways, relations, steps}`: the rows of each kind, and for each step its time since the start (ms)
 /// and the WebAssembly memory (MiB) at its end.
 #[wasm_bindgen]
@@ -225,7 +226,14 @@ pub fn quack(
     spill: Array,
     out: web_sys::FileSystemSyncAccessHandle,
     tile_nodes: Option<f64>,
+    tile_zoom: Option<u8>,
 ) -> Result<Object, JsError> {
+    use duckosm_build::TileSize;
+    let tiles = match (tile_zoom, tile_nodes) {
+        (Some(z), _) if z <= 14 => Some(TileSize::Zoom(z)),
+        (Some(z), _) => return Err(JsError::new(&format!("tile zoom {z}: use 0 to 14"))),
+        (None, n) => n.map(|n| TileSize::Nodes(n as usize)),
+    };
     QUACK_STEPS.with(|s| s.borrow_mut().clear());
     let _ = duckosm_core::util::STEP_HOOK.set(quack_step);
     QUACK_START.with(|t| t.set(js_sys::Date::now()));
@@ -244,8 +252,8 @@ pub fn quack(
         let r = Counted { r: BlobRead::new(pbf.clone())?, read: 0, next: 0, size, pass: pass.get() };
         Ok(io::BufReader::with_capacity(1 << 20, r))
     };
-    let res = match tile_nodes {
-        Some(n) => duckosm_build::quack_tiles_to(open, file, sort.unwrap_or(true), n as usize),
+    let res = match tiles {
+        Some(size) => duckosm_build::quack_tiles_to(open, file, sort.unwrap_or(true), size),
         None => duckosm_build::quack_to(open, file, sort.unwrap_or(true)),
     };
     duckosm_core::spill::set_temp_store(None);

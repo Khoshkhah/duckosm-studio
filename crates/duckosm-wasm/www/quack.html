@@ -27,6 +27,7 @@
   .opt { display: flex; gap: 10px; align-items: flex-start; margin: 14px 0 4px; cursor: pointer; }
   .opt input { margin-top: 4px; }
   .opt small { display: block; color: var(--muted); }
+  .opt select { font: inherit; margin-left: 6px; max-width: 100%; }
   .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
   button, a.button { font: inherit; font-weight: 600; padding: 9px 18px; border-radius: 8px; border: 1px solid var(--accent);
     background: var(--accent); color: #fff; cursor: pointer; text-decoration: none; display: inline-block; }
@@ -85,6 +86,19 @@
       <span>Make the table tile by tile
         <small>The file is cut into tiles of at most 4 million nodes, and each tile gives its rows. The memory then follows
           the size of a tile, not of the file: for a large file (Île-de-France, 338 MB). The same rows; it takes more time.</small></span>
+    </label>
+    <label class="opt" id="zoom-opt" hidden><span>Tile size
+        <select id="zoom">
+          <option value="">at most 4 million nodes (each tile)</option>
+          <option value="6">map tiles of zoom 6</option>
+          <option value="7">map tiles of zoom 7</option>
+          <option value="8">map tiles of zoom 8</option>
+          <option value="9">map tiles of zoom 9</option>
+          <option value="10">map tiles of zoom 10</option>
+          <option value="11">map tiles of zoom 11</option>
+          <option value="12">map tiles of zoom 12</option>
+        </select>
+        <small>With a zoom, all tiles are of that zoom: a dense city then gives a large tile.</small></span>
     </label>
     <label class="opt"><input id="sort" type="checkbox" checked>
       <span>Sort the rows as QuackOSM does
@@ -166,8 +180,10 @@
     if (file) $("drop-info").textContent = `${(file.size / 2 ** 20).toFixed(1)} MB` +
       (file.size > 150 * 2 ** 20 ? ": a large file, so the table is made tile by tile." : "");
     if (file) $("tiles").checked = file.size > 150 * 2 ** 20;
+    $("zoom-opt").hidden = !$("tiles").checked;
   };
   $("file").onchange = () => choose($("file").files[0]);
+  $("tiles").onchange = () => { $("zoom-opt").hidden = !$("tiles").checked; };
   const drop = $("drop");
   drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
   drop.ondragleave = () => drop.classList.remove("over");
@@ -411,7 +427,8 @@
     };
     // the size of a tile: a test can set a smaller one (data-tile-nodes of the button)
     const tileNodes = Number($("run").dataset.tileNodes) || TILE_NODES;
-    worker.postMessage({ pbf: file, sort, tiles: tiles ? tileNodes : null });
+    const zoom = tiles && $("zoom").value !== "" ? Number($("zoom").value) : null;
+    worker.postMessage({ pbf: file, sort, tiles: tiles ? tileNodes : null, zoom });
   };
 </script>
 </body>
