@@ -20,7 +20,7 @@ All versions are on the GitHub Releases page of `Khoshkhah/duckosm-rust`. There 
 - **`quack.html`: tile by tile, for a large file** (2026-11-14). A new option makes the table tile by tile (duckOSM's `quack --tiles`,
   `quack(pbf, sort, spill, out, tile_nodes)` of the module): the file is cut into tiles of at most 4 million nodes, and each tile gives its
   rows, so the memory follows the size of a tile, not of the file. The page selects it for a file larger than 150 MB, and shows the tile that
-  runs. The duckOSM pin moves to `86d3a9b` (branch `kaveh/quack-tiles`): it also has the levels without threads of their own in the browser
+  runs. The duckOSM pin moves to `3b409a4` (duckOSM PR 174): it also has the levels without threads of their own in the browser
   (duckOSM PR 173), so the build of the main page works again. `quack_e2e.py --tiles` checks the mode; the test removes its browser
   profile at the end. Île-de-France (338 MB) in Chromium: 41.4 s and 429 MiB (45.6 s and 586 MiB sorted), the same 8 833 620 rows as
   the native run; in one run it needs more than 4 GiB.
