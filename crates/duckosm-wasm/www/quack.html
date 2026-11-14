@@ -43,6 +43,7 @@
     <tr><td>Threads</td><td id="threads"></td></tr>
     <tr><td>WebAssembly memory</td><td id="mib"></td></tr>
     <tr><td>GeoParquet file</td><td id="size"></td></tr>
+    <tr><td>Steps (time at the end, memory)</td><td id="steps"></td></tr>
   </table>
   <div class="row"><a id="download" class="button" hidden>Download the GeoParquet file</a></div>
 </main>
@@ -71,10 +72,16 @@
       $("seconds").textContent = `${data.seconds.toFixed(2)} s`;
       $("threads").textContent = data.threads;
       $("mib").textContent = `${fmt(data.mib)} MiB`;
-      $("size").textContent = `${(data.parquet.length / 2 ** 20).toFixed(1)} MB`;
+      $("size").textContent = `${(data.file.size / 2 ** 20).toFixed(1)} MB`;
+      $("steps").replaceChildren(...data.steps.map((s) => {
+        const d = document.createElement("div");
+        d.textContent = `${s.step}: ${(s.ms / 1000).toFixed(1)} s, ${fmt(Math.round(s.mib))} MiB`;
+        return d;
+      }));
       const a = $("download");
       if (a.href) URL.revokeObjectURL(a.href);
-      a.href = URL.createObjectURL(new Blob([data.parquet], { type: "application/vnd.apache.parquet" }));
+      // the file is in OPFS (not in the memory of the tab) until the next run
+      a.href = URL.createObjectURL(data.file);
       a.download = file.name.replace(/\.osm\.pbf$|\.pbf$/, "") + "_quack.parquet";
       $("result").hidden = a.hidden = false;
     };

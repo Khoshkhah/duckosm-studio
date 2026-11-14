@@ -210,23 +210,62 @@ pub fn cut_area(region: Blob, boundary: &str, out: web_sys::FileSystemSyncAccess
 }
 
 /// duckOSM's `quack` (docs/rust/quack.md of duckOSM): the features table of QuackOSM (`feature_id`, `tags`,
-/// `geometry`) of the `.osm.pbf` file `pbf` (a `File` or a `Blob`, read piece by piece), as a GeoParquet file in
-/// memory. With `sort` (the default, as QuackOSM) the rows are in QuackOSM's order (Sort-Tile-Recursive). Gives
-/// `{nodes, ways, relations, parquet}`: the rows of each kind and the file. Like [`BlobRead`] in step 0, the reader
-/// stays on this thread; only the read blocks go to rayon.
-// ponytail: the GeoParquet file is in memory (Kentucky: 320 MB); an OPFS file keeps it out when a larger area needs it
+/// `geometry`) of the `.osm.pbf` file `pbf` (a `File` or a `Blob`, read twice, piece by piece), written as a GeoParquet
+/// file through `out`, an open file in OPFS (`FileSystemSyncAccessHandle`). With `sort` (the default, as QuackOSM) the
+/// rows are in QuackOSM's order (Sort-Tile-Recursive). `spill` is a pool of open files in OPFS for the temporary files
+/// (the node buckets alone can be about 100 at once), so neither they nor the result are in the WebAssembly memory.
+/// Gives `{nodes, ways, relations, steps}`: the rows of each kind, and for each step its time since the start (ms)
+/// and the WebAssembly memory (MiB) at its end.
 #[wasm_bindgen]
-pub fn quack(pbf: Blob, sort: Option<bool>) -> Result<Object, JsError> {
-    let r = io::BufReader::with_capacity(1 << 20, BlobRead::new(pbf).map_err(|e| JsError::new(&e))?);
-    let mut out = Vec::new();
-    let n = duckosm_build::quack_to(r, &mut out, duckosm_core::pbf::threads(), sort.unwrap_or(true)).map_err(|e| JsError::new(&e))?;
+pub fn quack(pbf: Blob, sort: Option<bool>, spill: Array, out: web_sys::FileSystemSyncAccessHandle) -> Result<Object, JsError> {
+    QUACK_STEPS.with(|s| s.borrow_mut().clear());
+    let _ = duckosm_core::util::STEP_HOOK.set(quack_step);
+    QUACK_START.with(|t| t.set(js_sys::Date::now()));
+    let pool = std::rc::Rc::new(OpfsPool {
+        free: std::cell::RefCell::new(spill.iter().map(|h| h.unchecked_into()).collect()),
+    });
+    duckosm_core::spill::set_temp_store(Some(std::rc::Rc::new(move || {
+        Box::new(OpfsStore(pool.clone())) as Box<dyn duckosm_core::spill::Store>
+    })));
+    let failed = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let file = BufWriter::with_capacity(1 << 20, OpfsOut { f: OpfsFile { h: out, at: 0.0 }, failed: failed.clone() });
+    let open = || -> Result<_, String> { Ok(io::BufReader::with_capacity(1 << 20, BlobRead::new(pbf.clone())?)) };
+    let res = duckosm_build::quack_to(open, file, sort.unwrap_or(true));
+    duckosm_core::spill::set_temp_store(None);
+    // a writer that is dropped does not give its error: the first one is kept here
+    if let Some(e) = failed.lock().expect("one thread").take() {
+        return Err(JsError::new(&e));
+    }
+    let n = res.map_err(|e| JsError::new(&e))?;
     let o = Object::new();
     let set = |k: &str, v: JsValue| Reflect::set(&o, &k.into(), &v).map(|_| ()).map_err(|_| JsError::new(k));
     set("nodes", (n.nodes as f64).into())?;
     set("ways", (n.ways as f64).into())?;
     set("relations", (n.relations as f64).into())?;
-    set("parquet", Uint8Array::from(&out[..]).into())?;
+    let steps = Array::new();
+    QUACK_STEPS.with(|s| {
+        for (name, ms, mib) in s.borrow().iter() {
+            let step = Object::new();
+            let _ = Reflect::set(&step, &"step".into(), &name.into());
+            let _ = Reflect::set(&step, &"ms".into(), &(*ms).into());
+            let _ = Reflect::set(&step, &"mib".into(), &(*mib).into());
+            steps.push(&step);
+        }
+    });
+    set("steps", steps.into())?;
     Ok(o)
+}
+
+thread_local! {
+    /// The steps of [`quack`]: the name, the time since the start (ms) and the WebAssembly memory (MiB) at its end.
+    static QUACK_STEPS: std::cell::RefCell<Vec<(String, f64, f64)>> = const { std::cell::RefCell::new(Vec::new()) };
+    static QUACK_START: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
+}
+
+/// The step hook of `duckosm_core::util::step` in [`quack`] (the steps run on the calling thread).
+fn quack_step(name: &str) {
+    let ms = js_sys::Date::now() - QUACK_START.with(|t| t.get());
+    QUACK_STEPS.with(|s| s.borrow_mut().push((name.to_string(), ms, memory_mib())));
 }
 
 /// Build duckOSM's tables of an area from its area file (`area`: the file of [`cut_area`], as a `File`). `spill` is a

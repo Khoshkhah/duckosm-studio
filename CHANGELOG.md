@@ -17,6 +17,11 @@ All versions are on the GitHub Releases page of `Khoshkhah/duckosm-rust`. There 
 
 ### Changed
 
+- **The duckOSM pin moves to `4388db4`** (duckOSM PRs 159, 163, 165, 168 and 169; before `b61eccb`). `quack.html` gets the cut fix (an empty tag
+  value moved the tags of a cut file), the design for large areas (each table in temporary files), the sort with the rows on disk, and passes 3
+  and 4 with no reader thread in WebAssembly. The temporary files of `quack` now go to a pool of 192 OPFS files, and the GeoParquet file to an
+  OPFS file (`quack(pbf, sort, spill, out)`), so neither is in the WebAssembly memory. The download link gives the OPFS file; the next run
+  removes it.
 - **The duckOSM pin moves to `b61eccb`** (duckOSM PR 157; before `d7841f3`). It brings `duckosm_core::quack` and `duckosm_build::quack_to`
   (the table of QuackOSM, docs/rust/quack.md of duckOSM) and the work on the build by tiles of duckOSM PRs 152 to 156.
 - **The roadstyle pin moves to `9df3ceda`** (roadstyle PR 171; before `426f5914`). It brings the adapters of the four ways (`dashboard/ways.js`), the

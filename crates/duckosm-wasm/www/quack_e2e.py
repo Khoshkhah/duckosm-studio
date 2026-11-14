@@ -8,6 +8,7 @@ relations), sorted and not sorted. Prints the rows, the time and the threads of 
 """
 import argparse
 import pathlib
+import tempfile
 
 from playwright.sync_api import sync_playwright
 
@@ -25,8 +26,11 @@ monaco = pathlib.Path(args.pbf).name == "monaco.osm.pbf"
 server = start(0, quiet=True, directory=WWW)
 url = f"http://127.0.0.1:{server.server_address[1]}/quack.html"
 with sync_playwright() as p:
-    b = p.chromium.launch()
-    page = b.new_page(viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True, accept_downloads=True)
+    # a profile on disk, as a person's browser: a new context of Playwright is like an incognito window, whose OPFS
+    # quota (about 1 GB) is less than the temporary files of Kentucky
+    b = p.chromium.launch_persistent_context(tempfile.mkdtemp(prefix="quack-e2e-"), viewport={"width": 390, "height": 844},
+                                             has_touch=True, is_mobile=True, accept_downloads=True)
+    page = b.new_page()
     errs = []
     page.on("pageerror", lambda e: errs.append(str(e)))
     page.goto(url)
@@ -39,7 +43,10 @@ with sync_playwright() as p:
         status = page.text_content("#status")
         assert status == "Done.", status
         got = {k: page.text_content(f"#{k}") for k in ("nodes", "ways", "relations", "seconds", "threads", "mib", "size")}
+        steps = page.eval_on_selector_all("#steps div", "ds => ds.map(d => d.textContent)")
+        assert steps and steps[-1].startswith("quack 4b" if not sort else "quack 5"), steps
         print("sorted" if sort else "not sorted", got)
+        print("   " + "\n   ".join(steps))
         if monaco:
             assert (got["nodes"], got["ways"], got["relations"]) == ("3,957", "5,573", "56"), got
         with page.expect_download() as d:
