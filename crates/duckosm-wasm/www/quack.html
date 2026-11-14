@@ -78,12 +78,17 @@
     <h2>1. The file</h2>
     <label id="drop" for="file">
       <strong id="drop-title">Choose an .osm.pbf file, or drop it here</strong>
-      <span id="drop-info">The browser has at most 4 GiB of memory: files up to about 300 MB (Kentucky, 141 MB, needs 1.9 GiB). For a larger file, use <code>duckosm-rust quack</code> on a computer.</span>
+      <span id="drop-info">The browser has at most 4 GiB of memory. For a file larger than about 150 MB, make the table tile by tile.</span>
     </label>
     <input id="file" type="file" accept=".pbf">
+    <label class="opt"><input id="tiles" type="checkbox">
+      <span>Make the table tile by tile
+        <small>The file is cut into tiles of at most 4 million nodes, and each tile gives its rows. The memory then follows
+          the size of a tile, not of the file: for a large file (Île-de-France, 338 MB). The same rows; it takes more time.</small></span>
+    </label>
     <label class="opt"><input id="sort" type="checkbox" checked>
       <span>Sort the rows as QuackOSM does
-        <small>Each row group of the file then holds a small area. The sort needs more memory: clear it for a large file.</small></span>
+        <small>Each row group of the file then holds a small area. The sort takes more time and memory: in one run, clear it for a large file.</small></span>
     </label>
     <div class="actions">
       <button id="run" disabled>Make the table</button>
@@ -120,7 +125,7 @@
     </div>
     <p class="note" id="duckdb-status"></p>
     <p class="note"><span id="threads"></span> threads. The same table on a computer, with no memory limit:
-      <code>duckosm-rust quack file.osm.pbf -o out -f geoparquet</code></p>
+      <code>duckosm-rust quack file.osm.pbf -o out -f geoparquet</code> (tile by tile: add <code>--tiles 4000000</code>)</p>
   </section>
 </main>
 <script type="module">
@@ -140,6 +145,18 @@
     "quack 5: the sort": "6. Sort the rows as QuackOSM and write",
   };
   const label = (name) => LABELS[name] ?? name;
+  // tile by tile (duckosm_core::quack::features_by_tiles): the steps of the page, and the step of each step of the engine
+  const TILE_NODES = 4000000;
+  const TILE_STEPS = ["tiles 1", "tiles 2", "tiles 3", "quack 5: the sort"];
+  const TILE_LABELS = {
+    "tiles 1": "1. Count the nodes and choose the tiles",
+    "tiles 2": "2. Cut the file into tiles",
+    "tiles 3": "3. Make the rows of each tile",
+    "quack 5: the sort": "4. Sort the rows as QuackOSM and write",
+  };
+  const tileStep = (name) => name.match(/^quack by (tiles \d)/)?.[1] ?? (name.startsWith("quack 5") ? name : null);
+  // "quack by tiles 3: tile 3 of 20 (...)" gives [3, 20]
+  const tileOf = (name) => name.match(/tile (\d+) of (\d+)/)?.slice(1).map(Number);
   let worker = null, clock = null, file = null;
 
   const choose = (f) => {
@@ -147,7 +164,8 @@
     $("run").disabled = !file;
     $("drop-title").textContent = file ? file.name : "Choose an .osm.pbf file, or drop it here";
     if (file) $("drop-info").textContent = `${(file.size / 2 ** 20).toFixed(1)} MB` +
-      (file.size > 300 * 2 ** 20 ? ": too large for the browser (4 GiB of memory). Use duckosm-rust quack on a computer." : "");
+      (file.size > 150 * 2 ** 20 ? ": a large file, so the table is made tile by tile." : "");
+    if (file) $("tiles").checked = file.size > 150 * 2 ** 20;
   };
   $("file").onchange = () => choose($("file").files[0]);
   const drop = $("drop");
@@ -263,10 +281,12 @@
   };
 
   $("run").onclick = async () => {
-    if (file.size > 300 * 2 ** 20 && !confirm(`${file.name} is ${(file.size / 2 ** 20).toFixed(0)} MB. The browser has at most ` +
-      "4 GiB of memory, and Ile-de-France (338 MB) already needs more. The run most likely stops with an error. " +
-      "For a large file, use duckosm-rust quack on a computer. Run in the browser anyway?")) return;
+    const tiles = $("tiles").checked;
+    if (!tiles && file.size > 300 * 2 ** 20 && !confirm(`${file.name} is ${(file.size / 2 ** 20).toFixed(0)} MB. The browser ` +
+      "has at most 4 GiB of memory, and Île-de-France (338 MB) needs more in one run. Make the table tile by tile, or the " +
+      "run most likely stops with an error. Run in one run anyway?")) return;
     const sort = $("sort").checked;
+    const name = (s) => (tiles ? TILE_LABELS[s] : label(s));
     $("run").disabled = true;
     $("stop").hidden = false;
     $("result").hidden = $("download").hidden = $("duckdb-download").hidden = true;
@@ -277,12 +297,12 @@
     memory(0);
     await clearStorage();
     // all steps of the run, the first one running
-    $("progress").replaceChildren(...STEPS.filter((s) => sort || !s.startsWith("quack 5")).map((s, i) => {
+    $("progress").replaceChildren(...(tiles ? TILE_STEPS : STEPS).filter((s) => sort || !s.startsWith("quack 5")).map((s, i) => {
       const li = document.createElement("li");
       li.dataset.step = s;
       li.className = i ? "" : "now";
       li.innerHTML = `<i class="dot"></i><span></span><span class="t"></span>`;
-      li.children[1].textContent = label(s);
+      li.children[1].textContent = name(s);
       return li;
     }));
     const t0 = performance.now();
@@ -310,7 +330,30 @@
         const gb = (b) => (b / 2 ** 30).toFixed(2);
         const li = $("progress").querySelector("li.now");
         if (li) li.querySelector(".t").textContent = `read ${gb(data.read)} of ${gb(data.size)} GB`;
-        status(`Making the table of ${file.name}: reading the file, pass ${data.pass} of 2, ${Math.floor((100 * data.read) / data.size)} %`);
+        status(`Making the table of ${file.name}: reading the file, ` +
+          (tiles ? "" : `pass ${data.pass} of 2, `) + `${Math.floor((100 * data.read) / data.size)} %`);
+        return;
+      }
+      // tile by tile: the steps of the cut and of each tile show in the step that runs; the step of the tiles is done
+      // with its last tile
+      if (data.step && tiles && tileStep(data.step) !== "quack 5: the sort") {
+        const step = tileStep(data.step);
+        const tile = tileOf(data.step);
+        const now = $("progress").querySelector("li.now");
+        memory(data.mib);
+        if (!step || (tile && tile[0] < tile[1])) {
+          status(`Making the table of ${file.name}: ${tile ? `tile ${tile[0]} of ${tile[1]} done` : data.step}`);
+          if (now && tile) now.querySelector(".t").textContent = `tile ${tile[0]} of ${tile[1]}`;
+          return;
+        }
+        status(`Making the table of ${file.name} ...`);
+        const li = $("progress").querySelector(`li[data-step="${step}"]`);
+        if (li) {
+          li.className = "done";
+          li.querySelector(".t").textContent = `${((data.ms - last) / 1000).toFixed(1)} s` + (tile ? `, ${tile[1]} tiles` : "");
+          li.nextElementSibling?.classList.add("now");
+        }
+        last = data.ms;
         return;
       }
       // a step that is done: marked at once, and the next one runs
@@ -341,9 +384,14 @@
       $("mib").textContent = `${fmt(data.mib)} MiB`;
       $("size").textContent = `${(data.file.size / 2 ** 20).toFixed(1)} MB`;
       let at = 0;
-      $("steps").replaceChildren(...data.steps.map((s) => {
+      // tile by tile: the steps of the page only (the last tile ends step 3)
+      const steps = !tiles ? data.steps : data.steps.filter((s) => {
+        const step = tileStep(s.step), tile = tileOf(s.step);
+        return step && (!tile || tile[0] === tile[1]);
+      }).map((s) => ({ ...s, step: tileStep(s.step) }));
+      $("steps").replaceChildren(...steps.map((s) => {
         const tr = document.createElement("tr");
-        for (const [text, n] of [[label(s.step), false], [`${((s.ms - at) / 1000).toFixed(1)} s`, true],
+        for (const [text, n] of [[name(s.step), false], [`${((s.ms - at) / 1000).toFixed(1)} s`, true],
           [`${(s.ms / 1000).toFixed(1)} s`, true], [`${fmt(Math.round(s.mib))} MiB`, true]]) {
           const td = document.createElement("td");
           td.textContent = text;
@@ -361,7 +409,9 @@
       a.download = file.name.replace(/\.osm\.pbf$|\.pbf$/, "") + "_quack.parquet";
       $("result").hidden = a.hidden = false;
     };
-    worker.postMessage({ pbf: file, sort });
+    // the size of a tile: a test can set a smaller one (data-tile-nodes of the button)
+    const tileNodes = Number($("run").dataset.tileNodes) || TILE_NODES;
+    worker.postMessage({ pbf: file, sort, tiles: tiles ? tileNodes : null });
   };
 </script>
 </body>

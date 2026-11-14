@@ -214,10 +214,18 @@ pub fn cut_area(region: Blob, boundary: &str, out: web_sys::FileSystemSyncAccess
 /// file through `out`, an open file in OPFS (`FileSystemSyncAccessHandle`). With `sort` (the default, as QuackOSM) the
 /// rows are in QuackOSM's order (Sort-Tile-Recursive). `spill` is a pool of open files in OPFS for the temporary files
 /// (the node buckets alone can be about 100 at once), so neither they nor the result are in the WebAssembly memory.
+/// With `tile_nodes`, the table is made tile by tile, at most that many nodes in a tile (`quack_tiles_to` of duckOSM),
+/// so the memory follows the size of a tile, not of the file: the mode for a large file (Île-de-France, 338 MB).
 /// Gives `{nodes, ways, relations, steps}`: the rows of each kind, and for each step its time since the start (ms)
 /// and the WebAssembly memory (MiB) at its end.
 #[wasm_bindgen]
-pub fn quack(pbf: Blob, sort: Option<bool>, spill: Array, out: web_sys::FileSystemSyncAccessHandle) -> Result<Object, JsError> {
+pub fn quack(
+    pbf: Blob,
+    sort: Option<bool>,
+    spill: Array,
+    out: web_sys::FileSystemSyncAccessHandle,
+    tile_nodes: Option<f64>,
+) -> Result<Object, JsError> {
     QUACK_STEPS.with(|s| s.borrow_mut().clear());
     let _ = duckosm_core::util::STEP_HOOK.set(quack_step);
     QUACK_START.with(|t| t.set(js_sys::Date::now()));
@@ -229,14 +237,17 @@ pub fn quack(pbf: Blob, sort: Option<bool>, spill: Array, out: web_sys::FileSyst
     })));
     let failed = std::sync::Arc::new(std::sync::Mutex::new(None));
     let file = BufWriter::with_capacity(1 << 20, OpfsOut { f: OpfsFile { h: out, at: 0.0 }, failed: failed.clone() });
-    // the file is read twice: each read tells the page how far it is (`{read, size, pass}`)
+    // the file is read twice (by tiles: more times): each read tells the page how far it is (`{read, size, pass}`)
     let (size, pass) = (pbf.size(), std::cell::Cell::new(0u32));
     let open = || -> Result<_, String> {
         pass.set(pass.get() + 1);
         let r = Counted { r: BlobRead::new(pbf.clone())?, read: 0, next: 0, size, pass: pass.get() };
         Ok(io::BufReader::with_capacity(1 << 20, r))
     };
-    let res = duckosm_build::quack_to(open, file, sort.unwrap_or(true));
+    let res = match tile_nodes {
+        Some(n) => duckosm_build::quack_tiles_to(open, file, sort.unwrap_or(true), n as usize),
+        None => duckosm_build::quack_to(open, file, sort.unwrap_or(true)),
+    };
     duckosm_core::spill::set_temp_store(None);
     // a writer that is dropped does not give its error: the first one is kept here
     if let Some(e) = failed.lock().expect("one thread").take() {
@@ -306,6 +317,15 @@ impl Read for Counted {
             post(&[("read", (self.read as f64).into()), ("size", self.size.into()), ("pass", self.pass.into())]);
         }
         Ok(n)
+    }
+}
+
+impl Seek for Counted {
+    fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
+        let at = self.r.seek(to)?;
+        self.read = at;
+        self.next = at + (64 << 20);
+        Ok(at)
     }
 }
 

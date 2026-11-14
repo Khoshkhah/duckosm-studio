@@ -1,16 +1,18 @@
 """quack.html in headless Chromium (Playwright), at phone size (390 x 844): choose a .osm.pbf file, make the features table
 of QuackOSM in the browser (duckOSM's quack, docs/rust/quack.md of duckOSM), and download the GeoParquet file into the
 out folder. On Monaco (the default file), the rows of each kind must be QuackOSM's (3957 nodes, 5573 ways, 56
-relations), sorted and not sorted. Prints the rows, the time and the threads of each run. Build the page first
-(build.sh).
+relations), sorted and not sorted. With --tiles, the table is made tile by tile (the mode for a large file); on Monaco
+(the test sets tiles of at most 2000 nodes, so many ways cross a tile edge) the rows must be the same. Prints the rows, the
+time, the threads and the WebAssembly memory of each run. Build the page first (build.sh).
 
-    python crates/duckosm-wasm/www/quack_e2e.py [out folder] [--pbf file.osm.pbf]
+    python crates/duckosm-wasm/www/quack_e2e.py [out folder] [--pbf file.osm.pbf] [--tiles]
 """
 import argparse
 import pathlib
+import shutil
 import tempfile
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeout, sync_playwright
 
 from serve import WWW, start
 
@@ -18,6 +20,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[3]
 a = argparse.ArgumentParser()
 a.add_argument("out", nargs="?", default="out-quack")
 a.add_argument("--pbf", default=str(ROOT / "tests/data/monaco.osm.pbf"))
+a.add_argument("--tiles", action="store_true", help="make the table tile by tile")
 args = a.parse_args()
 out = pathlib.Path(args.out)
 out.mkdir(parents=True, exist_ok=True)
@@ -28,7 +31,8 @@ url = f"http://127.0.0.1:{server.server_address[1]}/quack.html"
 with sync_playwright() as p:
     # a profile on disk, as a person's browser: a new context of Playwright is like an incognito window, whose OPFS
     # quota (about 1 GB) is less than the temporary files of Kentucky
-    b = p.chromium.launch_persistent_context(tempfile.mkdtemp(prefix="quack-e2e-"), viewport={"width": 390, "height": 844},
+    profile = tempfile.mkdtemp(prefix="quack-e2e-")
+    b = p.chromium.launch_persistent_context(profile, viewport={"width": 390, "height": 844},
                                              has_touch=True, is_mobile=True, accept_downloads=True)
     page = b.new_page()
     errs = []
@@ -36,15 +40,28 @@ with sync_playwright() as p:
     page.goto(url)
     assert page.evaluate("crossOriginIsolated"), "the page is not cross-origin isolated (serve.py sends COOP and COEP)"
     page.set_input_files("#file", args.pbf)
+    page.set_checked("#tiles", args.tiles)
+    if args.tiles and monaco:
+        # small tiles, so that ways and multipolygons cross the edges of the tiles
+        page.evaluate("document.getElementById('run').dataset.tileNodes = 2000")
     for sort in (True, False):
         page.set_checked("#sort", sort)
         page.click("#run")
-        page.wait_for_function("/Done|Error/.test(document.getElementById('status').textContent)", timeout=600000)
+        # the status and the memory each 15 s, so a long run shows where it is
+        for _ in range(80):
+            try:
+                page.wait_for_function("/Done|Error/.test(document.getElementById('status').textContent)", timeout=15000)
+                break
+            except PlaywrightTimeout:
+                print("  ", page.text_content("#clock"), page.text_content("#status"), "|", page.text_content("#mem-text"), flush=True)
+        else:
+            raise AssertionError("no end after 20 minutes: " + page.text_content("#status"))
         status = page.text_content("#status")
         assert status == "Done.", status
         got = {k: page.text_content(f"#{k}") for k in ("nodes", "ways", "relations", "seconds", "threads", "mib", "size")}
         steps = page.eval_on_selector_all("#steps tr", "rs => rs.map(r => [...r.cells].map(c => c.textContent).join(' | '))")
-        assert steps and steps[-1].startswith("5." if not sort else "6."), steps
+        last = ("3." if not sort else "4.") if args.tiles else ("5." if not sort else "6.")
+        assert steps and steps[-1].startswith(last), steps
         done = page.eval_on_selector_all("#progress li.done", "ls => ls.length")
         assert done == len(steps), (done, steps)
         print("sorted" if sort else "not sorted", got)
@@ -57,7 +74,9 @@ with sync_playwright() as p:
         d.value.save_as(f)
         data = f.read_bytes()
         assert data[:4] == b"PAR1" and data[-4:] == b"PAR1", f"{f} is not a Parquet file"
-        # the .duckdb file, made by DuckDB in the browser
+        # the .duckdb file, made by DuckDB in the browser in its memory: a small table only
+        if not monaco:
+            continue
         page.click("#duckdb")
         page.wait_for_function("/MB in|Error/.test(document.getElementById('duckdb-status').textContent)", timeout=600000)
         print("   " + page.text_content("#duckdb-status"))
@@ -73,4 +92,6 @@ with sync_playwright() as p:
     assert not errs, errs
     b.close()
     server.shutdown()
+    # the profile holds the files of the runs in OPFS (Kentucky: 2 GB)
+    shutil.rmtree(profile, ignore_errors=True)
 print("quack_e2e: passed")
