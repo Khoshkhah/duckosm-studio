@@ -1,0 +1,85 @@
+<!doctype html>
+<!-- duckOSM's quack in the browser (docs/rust/quack.md of duckOSM): the features table of QuackOSM of a .osm.pbf file,
+     made by the Rust engine in WebAssembly, as a GeoParquet file. quack_e2e.py tests it. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>duckOSM quack</title>
+<style>
+  :root { --bg: #fff; --fg: #1d2330; --muted: #5b6475; --line: #d9dde5; --accent: #1f6feb; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #11151c; --fg: #e6e9ef; --muted: #9aa3b2; --line: #2b3240; --accent: #58a6ff; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 24px 16px; }
+  h1 { font-size: 1.4rem; margin: 0 0 8px; }
+  p { color: var(--muted); margin: 0 0 16px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+  input[type=file] { max-width: 100%; }
+  button, a.button { font: inherit; padding: 8px 14px; border: 1px solid var(--accent); border-radius: 6px;
+    background: var(--accent); color: #fff; cursor: pointer; text-decoration: none; }
+  button:disabled { opacity: .5; cursor: default; }
+  table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+  td { padding: 6px 0; border-bottom: 1px solid var(--line); }
+  td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  #status { min-height: 1.5em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>duckOSM quack</h1>
+  <p>The features table of QuackOSM (feature_id, tags, geometry) of an .osm.pbf file, made in this browser by the Rust
+    engine of duckOSM. The file stays on your computer.</p>
+  <div class="row">
+    <input id="file" type="file" accept=".pbf">
+    <button id="run" disabled>Make the table</button>
+  </div>
+  <label class="row"><input id="sort" type="checkbox" checked> Sort the rows as QuackOSM does (each row group holds a small area)</label>
+  <div id="status" role="status"></div>
+  <table id="result" hidden>
+    <tr><td>Nodes</td><td id="nodes"></td></tr>
+    <tr><td>Ways</td><td id="ways"></td></tr>
+    <tr><td>Relations</td><td id="relations"></td></tr>
+    <tr><td>Time</td><td id="seconds"></td></tr>
+    <tr><td>Threads</td><td id="threads"></td></tr>
+    <tr><td>WebAssembly memory</td><td id="mib"></td></tr>
+    <tr><td>GeoParquet file</td><td id="size"></td></tr>
+  </table>
+  <div class="row"><a id="download" class="button" hidden>Download the GeoParquet file</a></div>
+</main>
+<script type="module">
+  const $ = (id) => document.getElementById(id);
+  const fmt = (n) => n.toLocaleString("en-US");
+  $("file").onchange = () => { $("run").disabled = !$("file").files.length; };
+  $("run").onclick = () => {
+    const file = $("file").files[0];
+    $("run").disabled = true;
+    $("result").hidden = $("download").hidden = true;
+    $("status").textContent = `Reading ${file.name} ...`;
+    // a new worker for each run: the memory of a WebAssembly module never shrinks
+    const worker = new Worker("./quack_worker.js", { type: "module" });
+    worker.onmessage = ({ data }) => {
+      $("run").disabled = false;
+      worker.terminate();
+      if (data.error) {
+        $("status").textContent = `Error: ${data.error}`;
+        return;
+      }
+      $("status").textContent = "Done.";
+      $("nodes").textContent = fmt(data.nodes);
+      $("ways").textContent = fmt(data.ways);
+      $("relations").textContent = fmt(data.relations);
+      $("seconds").textContent = `${data.seconds.toFixed(2)} s`;
+      $("threads").textContent = data.threads;
+      $("mib").textContent = `${fmt(data.mib)} MiB`;
+      $("size").textContent = `${(data.parquet.length / 2 ** 20).toFixed(1)} MB`;
+      const a = $("download");
+      if (a.href) URL.revokeObjectURL(a.href);
+      a.href = URL.createObjectURL(new Blob([data.parquet], { type: "application/vnd.apache.parquet" }));
+      a.download = file.name.replace(/\.osm\.pbf$|\.pbf$/, "") + "_quack.parquet";
+      $("result").hidden = a.hidden = false;
+    };
+    worker.postMessage({ pbf: file, sort: $("sort").checked });
+  };
+</script>
+</body>
+</html>

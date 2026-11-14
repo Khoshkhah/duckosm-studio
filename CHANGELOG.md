@@ -7,12 +7,18 @@ All versions are on the GitHub Releases page of `Khoshkhah/duckosm-rust`. There 
 
 ### Added
 
+- **`quack.html`: the features table of QuackOSM in the browser** (Kaveh, 2026-11-13). A page that makes QuackOSM's table (`feature_id`, `tags`,
+  `geometry`) of a `.osm.pbf` file with duckOSM's Rust `quack` in WebAssembly (`quack` of the module, `quack_worker.js`), sorted as QuackOSM
+  sorts it or not, and gives the GeoParquet file to download. Kentucky: 7.1 s (12.5 s sorted), with the same rows as QuackOSM; the WebAssembly
+  memory is 3.6 GiB (the file stays in memory). `quack_e2e.py` checks Monaco against QuackOSM's numbers, at phone size.
 - **Wall labels, a checkbox of the build step (card 4)** (Kaveh, 2026-11-11). Under **Layers**: on by default, the build makes `main.building_faces`,
   each wall of a building with its type, for the 3D walls by type. Before, the walls came with the layers and the page had no choice. The checkbox
   needs **Layers** (`set_building_faces` of the WebAssembly module; the build worker gives it). `e2e.py --no-walls` checks it.
 
 ### Changed
 
+- **The duckOSM pin moves to `b61eccb`** (duckOSM PR 157; before `d7841f3`). It brings `duckosm_core::quack` and `duckosm_build::quack_to`
+  (the table of QuackOSM, docs/rust/quack.md of duckOSM) and the work on the build by tiles of duckOSM PRs 152 to 156.
 - **The roadstyle pin moves to `9df3ceda`** (roadstyle PR 171; before `426f5914`). It brings the adapters of the four ways (`dashboard/ways.js`), the
   pan with the 3D terrain on with no lag (PR 167), the blank base map on a phone after a late base map (PR 169) and the way D parts.
 
