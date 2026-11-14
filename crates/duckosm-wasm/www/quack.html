@@ -7,88 +7,196 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>duckOSM quack</title>
 <style>
-  :root { --bg: #fff; --fg: #1d2330; --muted: #5b6475; --line: #d9dde5; --accent: #1f6feb; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #11151c; --fg: #e6e9ef; --muted: #9aa3b2; --line: #2b3240; --accent: #58a6ff; } }
-  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; }
-  main { max-width: 640px; margin: 0 auto; padding: 24px 16px; }
-  h1 { font-size: 1.4rem; margin: 0 0 8px; }
-  p { color: var(--muted); margin: 0 0 16px; }
-  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
-  input[type=file] { max-width: 100%; }
-  button, a.button { font: inherit; padding: 8px 14px; border: 1px solid var(--accent); border-radius: 6px;
-    background: var(--accent); color: #fff; cursor: pointer; text-decoration: none; }
-  button:disabled { opacity: .5; cursor: default; }
-  table { border-collapse: collapse; width: 100%; margin-top: 12px; }
-  td { padding: 6px 0; border-bottom: 1px solid var(--line); }
-  td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
-  #status { min-height: 1.5em; }
+  :root { --bg: #f6f7f9; --card: #fff; --fg: #1d2330; --muted: #5b6475; --line: #e1e4ea; --accent: #1f6feb;
+    --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e; --soft: #eef3fd; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0d1117; --card: #161b22; --fg: #e6e9ef; --muted: #9aa3b2;
+    --line: #2b3240; --accent: #58a6ff; --ok: #3fb950; --warn: #d29922; --bad: #f85149; --soft: #182235; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+  header h1 { font-size: 1.5rem; margin: 0; }
+  header p { color: var(--muted); margin: 4px 0 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .card h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; }
+  #drop { display: block; border: 2px dashed var(--line); border-radius: 10px; padding: 22px 16px; text-align: center;
+    cursor: pointer; transition: border-color .15s, background .15s; }
+  #drop:hover, #drop.over { border-color: var(--accent); background: var(--soft); }
+  #drop strong { display: block; font-size: 1.05rem; }
+  #drop span { color: var(--muted); font-size: .9rem; overflow-wrap: anywhere; }
+  #file { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .opt { display: flex; gap: 10px; align-items: flex-start; margin: 14px 0 4px; cursor: pointer; }
+  .opt input { margin-top: 4px; }
+  .opt small { display: block; color: var(--muted); }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  button, a.button { font: inherit; font-weight: 600; padding: 9px 18px; border-radius: 8px; border: 1px solid var(--accent);
+    background: var(--accent); color: #fff; cursor: pointer; text-decoration: none; display: inline-block; }
+  button.secondary { background: transparent; color: var(--bad); border-color: var(--bad); }
+  button:disabled { opacity: .45; cursor: default; }
+  #status { min-height: 1.5em; font-weight: 600; }
+  #status.error { color: var(--bad); }
+  #status.done { color: var(--ok); }
+  .run-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  #clock { font-variant-numeric: tabular-nums; color: var(--muted); }
+  ol.steps { list-style: none; padding: 0; margin: 12px 0 0; }
+  ol.steps li { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center; padding: 6px 0;
+    border-bottom: 1px solid var(--line); color: var(--muted); }
+  ol.steps li:last-child { border-bottom: 0; }
+  ol.steps li .dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line); justify-self: center; }
+  ol.steps li.now { color: var(--fg); font-weight: 600; }
+  ol.steps li.now .dot { border-color: var(--accent); border-top-color: transparent; animation: spin .8s linear infinite; }
+  ol.steps li.done { color: var(--fg); }
+  ol.steps li.done .dot { background: var(--ok); border-color: var(--ok); }
+  ol.steps li .t { font-variant-numeric: tabular-nums; font-size: .9rem; color: var(--muted); text-align: right; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .mem { margin-top: 14px; }
+  .mem .bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+  .mem .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+  .mem .bar i.high { background: var(--warn); }
+  .mem small { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .stat { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .stat small { display: block; color: var(--muted); font-size: .8rem; }
+  .stat b { font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+  table { border-collapse: collapse; width: 100%; margin-top: 14px; font-size: .92rem; }
+  th, td { padding: 6px 4px; border-bottom: 1px solid var(--line); text-align: left; }
+  th { color: var(--muted); font-weight: 600; font-size: .8rem; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .note { color: var(--muted); font-size: .88rem; margin: 12px 0 0; }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <main>
-  <h1>duckOSM quack</h1>
-  <p>The features table of QuackOSM (feature_id, tags, geometry) of an .osm.pbf file, made in this browser by the Rust
-    engine of duckOSM. The file stays on your computer.</p>
-  <div class="row">
+  <header>
+    <h1>duckOSM quack</h1>
+    <p>The features table of QuackOSM (<code>feature_id</code>, <code>tags</code>, <code>geometry</code>) of an
+      <code>.osm.pbf</code> file, made in this browser by duckOSM's Rust engine. The file stays on your computer.</p>
+  </header>
+
+  <section class="card">
+    <h2>1. The file</h2>
+    <label id="drop" for="file">
+      <strong id="drop-title">Choose an .osm.pbf file, or drop it here</strong>
+      <span id="drop-info">The browser has at most 4 GiB of memory: up to about 300 MB of file (Kentucky, 141 MB: 1.9 GiB).</span>
+    </label>
     <input id="file" type="file" accept=".pbf">
-    <button id="run" disabled>Make the table</button>
-    <button id="stop" hidden>Stop</button>
-  </div>
-  <label class="row"><input id="sort" type="checkbox" checked> Sort the rows as QuackOSM does (each row group holds a small area)</label>
-  <div id="status" role="status"></div>
-  <div id="progress"></div>
-  <table id="result" hidden>
-    <tr><td>Nodes</td><td id="nodes"></td></tr>
-    <tr><td>Ways</td><td id="ways"></td></tr>
-    <tr><td>Relations</td><td id="relations"></td></tr>
-    <tr><td>Time</td><td id="seconds"></td></tr>
-    <tr><td>Threads</td><td id="threads"></td></tr>
-    <tr><td>WebAssembly memory</td><td id="mib"></td></tr>
-    <tr><td>GeoParquet file</td><td id="size"></td></tr>
-    <tr><td>Steps (time at the end, memory)</td><td id="steps"></td></tr>
-  </table>
-  <div class="row"><a id="download" class="button" hidden>Download the GeoParquet file</a></div>
+    <label class="opt"><input id="sort" type="checkbox" checked>
+      <span>Sort the rows as QuackOSM does
+        <small>Each row group of the file then holds a small area. The sort needs more memory: clear it for a large file.</small></span>
+    </label>
+    <div class="actions">
+      <button id="run" disabled>Make the table</button>
+      <button id="stop" class="secondary" hidden>Stop</button>
+    </div>
+  </section>
+
+  <section class="card" id="run-card" hidden>
+    <div class="run-head"><h2>2. The run</h2><span id="clock"></span></div>
+    <div id="status" role="status"></div>
+    <ol class="steps" id="progress"></ol>
+    <div class="mem"><div class="bar"><i id="mem-bar"></i></div><small id="mem-text"></small></div>
+  </section>
+
+  <section class="card" id="result" hidden>
+    <h2>3. The result</h2>
+    <div class="stats">
+      <div class="stat"><small>Nodes</small><b id="nodes"></b></div>
+      <div class="stat"><small>Ways</small><b id="ways"></b></div>
+      <div class="stat"><small>Relations</small><b id="relations"></b></div>
+      <div class="stat"><small>Time</small><b id="seconds"></b></div>
+      <div class="stat"><small>Peak WebAssembly memory</small><b id="mib"></b></div>
+      <div class="stat"><small>GeoParquet file</small><b id="size"></b></div>
+    </div>
+    <table>
+      <thead><tr><th>Step</th><th class="n">Time</th><th class="n">At</th><th class="n">Memory</th></tr></thead>
+      <tbody id="steps"></tbody>
+    </table>
+    <div class="actions"><a id="download" class="button" hidden>Download the GeoParquet file</a></div>
+    <p class="note"><span id="threads"></span> threads. The same table on a computer, with no memory limit:
+      <code>duckosm-rust quack file.osm.pbf -o out -f geoparquet</code></p>
+  </section>
 </main>
 <script type="module">
   const $ = (id) => document.getElementById(id);
   const fmt = (n) => n.toLocaleString("en-US");
-  $("file").onchange = () => { $("run").disabled = !$("file").files.length; };
-  let worker = null;
-  const step = (s) => `${s.step}: ${(s.ms / 1000).toFixed(1)} s, ${fmt(Math.round(s.mib))} MiB`;
+  const LIMIT = 4096;   // MiB: the most memory of WebAssembly (32 bit)
+  // the steps of duckosm_core::quack, in their order (the sort only with the sort)
+  const STEPS = ["quack 1: the ways and the relations", "quack 2: the nodes and the points", "quack 3: the ways",
+    "quack 4a: the lines of the relations", "quack 4b: the relations", "quack 5: the sort"];
+  const label = (name) => name.replace(/^quack \w+: /, "");
+  let worker = null, clock = null, file = null;
+
+  const choose = (f) => {
+    file = f || null;
+    $("run").disabled = !file;
+    $("drop-title").textContent = file ? file.name : "Choose an .osm.pbf file, or drop it here";
+    if (file) $("drop-info").textContent = `${(file.size / 2 ** 20).toFixed(1)} MB` +
+      (file.size > 300 * 2 ** 20 ? ": large for the browser. It can run out of memory, so clear the sort." : "");
+  };
+  $("file").onchange = () => choose($("file").files[0]);
+  const drop = $("drop");
+  drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+  drop.ondragleave = () => drop.classList.remove("over");
+  drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); choose(e.dataTransfer.files[0]); };
+
+  const memory = (mib) => {
+    $("mem-bar").style.width = `${Math.min(100, (100 * mib) / LIMIT)}%`;
+    $("mem-bar").classList.toggle("high", mib > 0.75 * LIMIT);
+    $("mem-text").textContent = `WebAssembly memory ${fmt(Math.round(mib))} of ${fmt(LIMIT)} MiB`;
+  };
+  const status = (text, kind = "") => { $("status").textContent = text; $("status").className = kind; };
   const end = () => {
     worker.terminate();
     worker = null;
-    $("run").disabled = false;
+    clearInterval(clock);
+    $("run").disabled = !file;
     $("stop").hidden = true;
+    $("progress").querySelectorAll("li.now").forEach((li) => li.classList.remove("now"));
   };
-  $("stop").onclick = () => {
-    end();
-    $("status").textContent = "Stopped.";
-  };
+  $("stop").onclick = () => { end(); status("Stopped."); };
+
   $("run").onclick = () => {
-    const file = $("file").files[0];
+    const sort = $("sort").checked;
     $("run").disabled = true;
     $("stop").hidden = false;
     $("result").hidden = $("download").hidden = true;
-    $("progress").replaceChildren();
-    $("status").textContent = `Making the table of ${file.name} (${(file.size / 2 ** 20).toFixed(0)} MB) ...`;
+    $("run-card").hidden = false;
+    status(`Making the table of ${file.name} ...`);
+    memory(0);
+    // all steps of the run, the first one running
+    $("progress").replaceChildren(...STEPS.filter((s) => sort || !s.startsWith("quack 5")).map((s, i) => {
+      const li = document.createElement("li");
+      li.dataset.step = s;
+      li.className = i ? "" : "now";
+      li.innerHTML = `<i class="dot"></i><span></span><span class="t"></span>`;
+      li.children[1].textContent = label(s);
+      return li;
+    }));
+    const t0 = performance.now();
+    clock = setInterval(() => { $("clock").textContent = `${((performance.now() - t0) / 1000).toFixed(1)} s`; }, 100);
     // a new worker for each run: the memory of a WebAssembly module never shrinks
     worker = new Worker(new URL("./quack_worker.js", import.meta.url), { type: "module" });
+    let last = 0;
     worker.onmessage = ({ data }) => {
-      // a step that is done: shown at once
+      // a step that is done: marked at once, and the next one runs
       if (data.step) {
-        const d = document.createElement("div");
-        d.textContent = step(data);
-        $("progress").append(d);
+        const li = $("progress").querySelector(`li[data-step="${data.step}"]`);
+        if (li) {
+          li.className = "done";
+          li.querySelector(".t").textContent = `${((data.ms - last) / 1000).toFixed(1)} s`;
+          li.nextElementSibling?.classList.add("now");
+        }
+        last = data.ms;
+        memory(data.mib);
         return;
       }
       end();
       if (data.error) {
-        $("status").textContent = `Error: ${data.error}`;
+        status(`Error: ${data.error}`, "error");
         return;
       }
-      $("progress").replaceChildren();
-      $("status").textContent = "Done.";
+      status("Done.", "done");
+      memory(data.mib);
       $("nodes").textContent = fmt(data.nodes);
       $("ways").textContent = fmt(data.ways);
       $("relations").textContent = fmt(data.relations);
@@ -96,10 +204,18 @@
       $("threads").textContent = data.threads;
       $("mib").textContent = `${fmt(data.mib)} MiB`;
       $("size").textContent = `${(data.file.size / 2 ** 20).toFixed(1)} MB`;
+      let at = 0;
       $("steps").replaceChildren(...data.steps.map((s) => {
-        const d = document.createElement("div");
-        d.textContent = step(s);
-        return d;
+        const tr = document.createElement("tr");
+        for (const [text, n] of [[label(s.step), false], [`${((s.ms - at) / 1000).toFixed(1)} s`, true],
+          [`${(s.ms / 1000).toFixed(1)} s`, true], [`${fmt(Math.round(s.mib))} MiB`, true]]) {
+          const td = document.createElement("td");
+          td.textContent = text;
+          if (n) td.className = "n";
+          tr.append(td);
+        }
+        at = s.ms;
+        return tr;
       }));
       const a = $("download");
       if (a.href) URL.revokeObjectURL(a.href);
@@ -108,7 +224,7 @@
       a.download = file.name.replace(/\.osm\.pbf$|\.pbf$/, "") + "_quack.parquet";
       $("result").hidden = a.hidden = false;
     };
-    worker.postMessage({ pbf: file, sort: $("sort").checked });
+    worker.postMessage({ pbf: file, sort });
   };
 </script>
 </body>

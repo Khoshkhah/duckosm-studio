@@ -43,8 +43,10 @@ with sync_playwright() as p:
         status = page.text_content("#status")
         assert status == "Done.", status
         got = {k: page.text_content(f"#{k}") for k in ("nodes", "ways", "relations", "seconds", "threads", "mib", "size")}
-        steps = page.eval_on_selector_all("#steps div", "ds => ds.map(d => d.textContent)")
-        assert steps and steps[-1].startswith("quack 4b" if not sort else "quack 5"), steps
+        steps = page.eval_on_selector_all("#steps tr", "rs => rs.map(r => [...r.cells].map(c => c.textContent).join(' | '))")
+        assert steps and steps[-1].startswith("the relations" if not sort else "the sort"), steps
+        done = page.eval_on_selector_all("#progress li.done", "ls => ls.length")
+        assert done == len(steps), (done, steps)
         print("sorted" if sort else "not sorted", got)
         print("   " + "\n   ".join(steps))
         if monaco:
