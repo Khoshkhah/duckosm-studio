@@ -329,7 +329,7 @@ dependencies = [
 [[package]]
 name = "duckosm-build"
 version = "0.7.0"
-source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=b61eccb606f47c41278a285bf38a0f8b97b918ac#b61eccb606f47c41278a285bf38a0f8b97b918ac"
+source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=4388db49d0ac4fd2fc4920191ac18250cf41ebad#4388db49d0ac4fd2fc4920191ac18250cf41ebad"
 dependencies = [
  "arrow-array",
  "duckosm-core",
@@ -347,7 +347,7 @@ dependencies = [
 [[package]]
 name = "duckosm-core"
 version = "0.7.0"
-source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=b61eccb606f47c41278a285bf38a0f8b97b918ac#b61eccb606f47c41278a285bf38a0f8b97b918ac"
+source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=4388db49d0ac4fd2fc4920191ac18250cf41ebad#4388db49d0ac4fd2fc4920191ac18250cf41ebad"
 dependencies = [
  "flate2",
  "geo",
@@ -363,7 +363,7 @@ dependencies = [
 [[package]]
 name = "duckosm-parquet"
 version = "0.7.0"
-source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=b61eccb606f47c41278a285bf38a0f8b97b918ac#b61eccb606f47c41278a285bf38a0f8b97b918ac"
+source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=4388db49d0ac4fd2fc4920191ac18250cf41ebad#4388db49d0ac4fd2fc4920191ac18250cf41ebad"
 dependencies = [
  "arrow-array",
  "arrow-schema",
@@ -1092,7 +1092,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 [[package]]
 name = "roadstyle-levels"
 version = "0.29.0"
-source = "git+https://github.com/Khoshkhah/roadstyle.git?rev=36f8ca9f7342b72dd64e0d945c186d9dd6bf6396#36f8ca9f7342b72dd64e0d945c186d9dd6bf6396"
+source = "git+https://github.com/Khoshkhah/roadstyle.git?rev=39696602fac3a6e200fd324526022bc88239b95f#39696602fac3a6e200fd324526022bc88239b95f"
 dependencies = [
  "rstar",
  "sha2",
