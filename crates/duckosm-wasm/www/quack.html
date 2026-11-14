@@ -56,7 +56,7 @@
     $("result").hidden = $("download").hidden = true;
     $("status").textContent = `Reading ${file.name} ...`;
     // a new worker for each run: the memory of a WebAssembly module never shrinks
-    const worker = new Worker("./quack_worker.js", { type: "module" });
+    const worker = new Worker(new URL("./quack_worker.js", import.meta.url), { type: "module" });
     worker.onmessage = ({ data }) => {
       $("run").disabled = false;
       worker.terminate();
