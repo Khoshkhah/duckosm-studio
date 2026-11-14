@@ -32,9 +32,11 @@
   <div class="row">
     <input id="file" type="file" accept=".pbf">
     <button id="run" disabled>Make the table</button>
+    <button id="stop" hidden>Stop</button>
   </div>
   <label class="row"><input id="sort" type="checkbox" checked> Sort the rows as QuackOSM does (each row group holds a small area)</label>
   <div id="status" role="status"></div>
+  <div id="progress"></div>
   <table id="result" hidden>
     <tr><td>Nodes</td><td id="nodes"></td></tr>
     <tr><td>Ways</td><td id="ways"></td></tr>
@@ -51,20 +53,41 @@
   const $ = (id) => document.getElementById(id);
   const fmt = (n) => n.toLocaleString("en-US");
   $("file").onchange = () => { $("run").disabled = !$("file").files.length; };
+  let worker = null;
+  const step = (s) => `${s.step}: ${(s.ms / 1000).toFixed(1)} s, ${fmt(Math.round(s.mib))} MiB`;
+  const end = () => {
+    worker.terminate();
+    worker = null;
+    $("run").disabled = false;
+    $("stop").hidden = true;
+  };
+  $("stop").onclick = () => {
+    end();
+    $("status").textContent = "Stopped.";
+  };
   $("run").onclick = () => {
     const file = $("file").files[0];
     $("run").disabled = true;
+    $("stop").hidden = false;
     $("result").hidden = $("download").hidden = true;
-    $("status").textContent = `Reading ${file.name} ...`;
+    $("progress").replaceChildren();
+    $("status").textContent = `Making the table of ${file.name} (${(file.size / 2 ** 20).toFixed(0)} MB) ...`;
     // a new worker for each run: the memory of a WebAssembly module never shrinks
-    const worker = new Worker(new URL("./quack_worker.js", import.meta.url), { type: "module" });
+    worker = new Worker(new URL("./quack_worker.js", import.meta.url), { type: "module" });
     worker.onmessage = ({ data }) => {
-      $("run").disabled = false;
-      worker.terminate();
+      // a step that is done: shown at once
+      if (data.step) {
+        const d = document.createElement("div");
+        d.textContent = step(data);
+        $("progress").append(d);
+        return;
+      }
+      end();
       if (data.error) {
         $("status").textContent = `Error: ${data.error}`;
         return;
       }
+      $("progress").replaceChildren();
       $("status").textContent = "Done.";
       $("nodes").textContent = fmt(data.nodes);
       $("ways").textContent = fmt(data.ways);
@@ -75,7 +98,7 @@
       $("size").textContent = `${(data.file.size / 2 ** 20).toFixed(1)} MB`;
       $("steps").replaceChildren(...data.steps.map((s) => {
         const d = document.createElement("div");
-        d.textContent = `${s.step}: ${(s.ms / 1000).toFixed(1)} s, ${fmt(Math.round(s.mib))} MiB`;
+        d.textContent = step(s);
         return d;
       }));
       const a = $("download");

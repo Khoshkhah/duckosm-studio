@@ -263,9 +263,18 @@ thread_local! {
 }
 
 /// The step hook of `duckosm_core::util::step` in [`quack`] (the steps run on the calling thread).
+/// Each step also goes to the page at once (`postMessage` of the worker, `{step, ms, mib}`), so a long run shows where it is.
 fn quack_step(name: &str) {
-    let ms = js_sys::Date::now() - QUACK_START.with(|t| t.get());
-    QUACK_STEPS.with(|s| s.borrow_mut().push((name.to_string(), ms, memory_mib())));
+    let (ms, mib) = (js_sys::Date::now() - QUACK_START.with(|t| t.get()), memory_mib());
+    QUACK_STEPS.with(|s| s.borrow_mut().push((name.to_string(), ms, mib)));
+    let global = js_sys::global();
+    if let Ok(post) = Reflect::get(&global, &"postMessage".into()).and_then(|f| f.dyn_into::<js_sys::Function>()) {
+        let o = Object::new();
+        let _ = Reflect::set(&o, &"step".into(), &name.into());
+        let _ = Reflect::set(&o, &"ms".into(), &ms.into());
+        let _ = Reflect::set(&o, &"mib".into(), &mib.into());
+        let _ = post.call1(&global, &o);
+    }
 }
 
 /// Build duckOSM's tables of an area from its area file (`area`: the file of [`cut_area`], as a `File`). `spill` is a
