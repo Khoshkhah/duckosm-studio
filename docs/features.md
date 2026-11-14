@@ -137,8 +137,11 @@ These are the changes, each in its own small commit, so they merge easily with t
 - `app/duck.js`:
   - When the box is on, `LOAD spatial` starts at once, in parallel with the build.
   - After the build: the three raw files go into `raw.*` and `features.sql` runs. `features_sql.js` uses `main.boundary` for the
-    background; since the merge with the tables of group 1 ([tables.md](tables.md)), the build writes it. `raw.*` stays for SQL, as
-    in a duckOSM `.duckdb` file. The raw files are not in the downloads.
+    background; since the merge with the tables of group 1 ([tables.md](tables.md)), the build writes it. Then the building info and
+    the building entrances read `raw.*`, and `raw.*` goes (`DROP SCHEMA raw`): it is more than half of the memory of DuckDB, and the
+    map does not read it. So the page and its downloads (also the `.duckdb` file) have no `raw.*`. Offline, a `.duckdb` file of
+    `duckosm-rust` has `raw.*` for a whole file with no boundary, or with `--features`; with a boundary and `--raw`, the raw
+    tables are Parquet files next to it (`raw_nodes.parquet`, ...).
   - The rows of each `features.*` table go into `tables`, with `mode: "features"`, so the list of downloads and `load.sql` show them.
   - `zipAll`: `features_<table>.parquet` (DuckDB writes them with `COPY`, as duckOSM's `_export_geoparquet`: every column except
     `tags`, because a nested column is not for GDAL), their entries in `layers.json` (`{"file", "kind": "features", "table",
