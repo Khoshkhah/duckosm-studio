@@ -209,6 +209,26 @@ pub fn cut_area(region: Blob, boundary: &str, out: web_sys::FileSystemSyncAccess
     Ok(f.at)
 }
 
+/// duckOSM's `quack` (docs/rust/quack.md of duckOSM): the features table of QuackOSM (`feature_id`, `tags`,
+/// `geometry`) of the `.osm.pbf` file `pbf` (a `File` or a `Blob`, read piece by piece), as a GeoParquet file in
+/// memory. With `sort` (the default, as QuackOSM) the rows are in QuackOSM's order (Sort-Tile-Recursive). Gives
+/// `{nodes, ways, relations, parquet}`: the rows of each kind and the file. Like [`BlobRead`] in step 0, the reader
+/// stays on this thread; only the read blocks go to rayon.
+// ponytail: the GeoParquet file is in memory (Kentucky: 320 MB); an OPFS file keeps it out when a larger area needs it
+#[wasm_bindgen]
+pub fn quack(pbf: Blob, sort: Option<bool>) -> Result<Object, JsError> {
+    let r = io::BufReader::with_capacity(1 << 20, BlobRead::new(pbf).map_err(|e| JsError::new(&e))?);
+    let mut out = Vec::new();
+    let n = duckosm_build::quack_to(r, &mut out, duckosm_core::pbf::threads(), sort.unwrap_or(true)).map_err(|e| JsError::new(&e))?;
+    let o = Object::new();
+    let set = |k: &str, v: JsValue| Reflect::set(&o, &k.into(), &v).map(|_| ()).map_err(|_| JsError::new(k));
+    set("nodes", (n.nodes as f64).into())?;
+    set("ways", (n.ways as f64).into())?;
+    set("relations", (n.relations as f64).into())?;
+    set("parquet", Uint8Array::from(&out[..]).into())?;
+    Ok(o)
+}
+
 /// Build duckOSM's tables of an area from its area file (`area`: the file of [`cut_area`], as a `File`). `spill` is a
 /// pool of open files in OPFS (`FileSystemSyncAccessHandle`) for the temporary files of the network step, so they are
 /// not in the WebAssembly memory (Kentucky: at most 11 at once). `outs` are open files in OPFS for the files of the
