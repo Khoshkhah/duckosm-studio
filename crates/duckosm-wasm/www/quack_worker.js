@@ -15,6 +15,20 @@ let pkg = null, wasm = null, threads = 1;
 // ponytail: 192 temporary files; the node buckets (2^27 ids each) and the point buckets of a run can be about 170 at once
 const SPILL = 192;
 
+// The threads of the pool are Workers that wasm-bindgen-rayon starts from this worker. An error in one of them (no memory
+// left gives "unreachable") comes only to its Worker object, and the run then waits for ever for that thread. So each
+// Worker that this worker starts sends its error to the page, which then ends the run.
+const NativeWorker = self.Worker;
+self.Worker = class extends NativeWorker {
+  constructor(...args) {
+    super(...args);
+    this.addEventListener("error", (e) => {
+      postMessage({ error: `a thread of the WebAssembly module stopped (${e.message || "error"}): most likely the 4 GiB ` +
+        "of memory of the browser are not enough for this file. Clear the sort, or use duckosm-rust quack on a computer." });
+    });
+  }
+};
+
 onmessage = async ({ data }) => {
   const root = await navigator.storage.getDirectory();
   // ponytail: removes the folders of all earlier runs, also of a run in another tab

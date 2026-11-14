@@ -44,7 +44,7 @@ with sync_playwright() as p:
         assert status == "Done.", status
         got = {k: page.text_content(f"#{k}") for k in ("nodes", "ways", "relations", "seconds", "threads", "mib", "size")}
         steps = page.eval_on_selector_all("#steps tr", "rs => rs.map(r => [...r.cells].map(c => c.textContent).join(' | '))")
-        assert steps and steps[-1].startswith("the relations" if not sort else "the sort"), steps
+        assert steps and steps[-1].startswith("5." if not sort else "6."), steps
         done = page.eval_on_selector_all("#progress li.done", "ls => ls.length")
         assert done == len(steps), (done, steps)
         print("sorted" if sort else "not sorted", got)
@@ -57,6 +57,15 @@ with sync_playwright() as p:
         d.value.save_as(f)
         data = f.read_bytes()
         assert data[:4] == b"PAR1" and data[-4:] == b"PAR1", f"{f} is not a Parquet file"
+        # the .duckdb file, made by DuckDB in the browser
+        page.click("#duckdb")
+        page.wait_for_function("/MB in|Error/.test(document.getElementById('duckdb-status').textContent)", timeout=600000)
+        print("   " + page.text_content("#duckdb-status"))
+        with page.expect_download() as d:
+            page.click("#duckdb-download")
+        f = out / (("sorted_" if sort else "") + d.value.suggested_filename)
+        d.value.save_as(f)
+        assert f.read_bytes()[8:12] == b"DUCK", f"{f} is not a DuckDB file"
     # phone size: nothing wider than the screen
     wide = page.evaluate("document.documentElement.scrollWidth - innerWidth")
     page.screenshot(path=str(out / "quack-phone.png"), full_page=True)

@@ -31,6 +31,7 @@
   button, a.button { font: inherit; font-weight: 600; padding: 9px 18px; border-radius: 8px; border: 1px solid var(--accent);
     background: var(--accent); color: #fff; cursor: pointer; text-decoration: none; display: inline-block; }
   button.secondary { background: transparent; color: var(--bad); border-color: var(--bad); }
+  button.outline { background: transparent; color: var(--accent); }
   button:disabled { opacity: .45; cursor: default; }
   #status { min-height: 1.5em; font-weight: 600; }
   #status.error { color: var(--bad); }
@@ -77,7 +78,7 @@
     <h2>1. The file</h2>
     <label id="drop" for="file">
       <strong id="drop-title">Choose an .osm.pbf file, or drop it here</strong>
-      <span id="drop-info">The browser has at most 4 GiB of memory: up to about 300 MB of file (Kentucky, 141 MB: 1.9 GiB).</span>
+      <span id="drop-info">The browser has at most 4 GiB of memory: files up to about 300 MB (Kentucky, 141 MB, needs 1.9 GiB). For a larger file, use <code>duckosm-rust quack</code> on a computer.</span>
     </label>
     <input id="file" type="file" accept=".pbf">
     <label class="opt"><input id="sort" type="checkbox" checked>
@@ -88,6 +89,7 @@
       <button id="run" disabled>Make the table</button>
       <button id="stop" class="secondary" hidden>Stop</button>
     </div>
+    <p class="note"><span id="storage"></span> <button id="clear" class="outline" hidden>Clear</button></p>
   </section>
 
   <section class="card" id="run-card" hidden>
@@ -111,7 +113,12 @@
       <thead><tr><th>Step</th><th class="n">Time</th><th class="n">At</th><th class="n">Memory</th></tr></thead>
       <tbody id="steps"></tbody>
     </table>
-    <div class="actions"><a id="download" class="button" hidden>Download the GeoParquet file</a></div>
+    <div class="actions">
+      <a id="download" class="button" hidden>Download the GeoParquet file</a>
+      <button id="duckdb" class="outline" title="Small tables only: DuckDB in the browser makes the file in its memory">Make the .duckdb file (small tables)</button>
+      <a id="duckdb-download" class="button" hidden>Download the .duckdb file</a>
+    </div>
+    <p class="note" id="duckdb-status"></p>
     <p class="note"><span id="threads"></span> threads. The same table on a computer, with no memory limit:
       <code>duckosm-rust quack file.osm.pbf -o out -f geoparquet</code></p>
   </section>
@@ -123,7 +130,16 @@
   // the steps of duckosm_core::quack, in their order (the sort only with the sort)
   const STEPS = ["quack 1: the ways and the relations", "quack 2: the nodes and the points", "quack 3: the ways",
     "quack 4a: the lines of the relations", "quack 4b: the relations", "quack 5: the sort"];
-  const label = (name) => name.replace(/^quack \w+: /, "");
+  // the names of the page for the steps of the engine (its step log)
+  const LABELS = {
+    "quack 1: the ways and the relations": "1. Read the file (1 of 2): ways and relations",
+    "quack 2: the nodes and the points": "2. Read the file (2 of 2): nodes, point rows",
+    "quack 3: the ways": "3. Make the way rows (lines and polygons)",
+    "quack 4a: the lines of the relations": "4. Collect the member lines of the relations",
+    "quack 4b: the relations": "5. Make the relation rows (multipolygons)",
+    "quack 5: the sort": "6. Sort the rows as QuackOSM and write",
+  };
+  const label = (name) => LABELS[name] ?? name;
   let worker = null, clock = null, file = null;
 
   const choose = (f) => {
@@ -131,7 +147,7 @@
     $("run").disabled = !file;
     $("drop-title").textContent = file ? file.name : "Choose an .osm.pbf file, or drop it here";
     if (file) $("drop-info").textContent = `${(file.size / 2 ** 20).toFixed(1)} MB` +
-      (file.size > 300 * 2 ** 20 ? ": large for the browser. It can run out of memory, so clear the sort." : "");
+      (file.size > 300 * 2 ** 20 ? ": too large for the browser (4 GiB of memory). Use duckosm-rust quack on a computer." : "");
   };
   $("file").onchange = () => choose($("file").files[0]);
   const drop = $("drop");
@@ -152,17 +168,114 @@
     $("run").disabled = !file;
     $("stop").hidden = true;
     $("progress").querySelectorAll("li.now").forEach((li) => li.classList.remove("now"));
+    showStorage();
   };
   $("stop").onclick = () => { end(); status("Stopped."); };
 
-  $("run").onclick = () => {
+  // The files of quack in the storage of the browser (OPFS): the folder of a run (quack-*) and the .duckdb file. They stay
+  // for the download until the next run; the page removes them when it opens and before each run, and Clear removes them.
+  async function clearStorage() {
+    const root = await navigator.storage.getDirectory();
+    for await (const name of root.keys()) {
+      if (name.startsWith("quack")) await root.removeEntry(name, { recursive: true }).catch(() => {});
+    }
+    for (const a of [$("download"), $("duckdb-download")]) {
+      if (a.href) URL.revokeObjectURL(a.href);
+      a.removeAttribute("href");
+    }
+    parquet = null;
+    await showStorage();
+  }
+  async function showStorage() {
+    const { usage } = await navigator.storage.estimate();
+    $("storage").textContent = `Browser storage of this page: ${(usage / 2 ** 20).toFixed(0)} MB.`;
+    $("clear").hidden = usage < 2 ** 20 || !!worker;
+  }
+  $("clear").onclick = async () => {
+    await clearStorage();
+    $("result").hidden = true;
+  };
+  // closing or reloading the tab stops the run (its files go at the next open of the page)
+  addEventListener("pagehide", () => worker?.terminate());
+  clearStorage();
+  // a thread of the WebAssembly module that stops (no memory left gives "unreachable") reports its error to the page, not
+  // to the worker of the run: without this, the run waits for ever for that thread
+  window.addEventListener("error", (e) => {
+    if (!worker) return;
+    e.preventDefault();
+    end();
+    status(`Error: a thread of the WebAssembly module stopped (${e.message || "error"}). Most likely the 4 GiB of memory of ` +
+      "the browser are not enough for this file. Clear the sort, or use duckosm-rust quack on a computer.", "error");
+  });
+
+  // The .duckdb file: DuckDB in the browser (duckdb-wasm, the version of duck.js) loads the GeoParquet file into the table
+  // main.quackosm, with the SQL of the native writer (duckOSM's crates/duckosm-duckdb, write_quack). The file is made in the
+  // memory of DuckDB's worker (at most 4 GiB), as duck.js makes its .duckdb file, so it works only for a small table:
+  // Monaco yes; Estonia and Kentucky "Allocation failure".
+  // ponytail: an opfs:// database stays empty in duckdb-wasm 1.33.1-dev57.0 (an ATTACH and an open both tried); a file in
+  // OPFS would remove the limit
+  const DUCKDB = "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.33.1-dev57.0/+esm";
+  let parquet = null;
+  async function duckdbFile(name) {
+    const duckdb = await import(DUCKDB);
+    const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
+    const url = URL.createObjectURL(new Blob([`importScripts("${bundle.mainWorker}");`], { type: "text/javascript" }));
+    const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), new Worker(url));
+    try {
+      await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+      URL.revokeObjectURL(url);
+      // Direct IO: else duckdb-wasm keeps the lock of the file after DETACH, and the copy fails (duck.js)
+      await db.open({ path: ":memory:", useDirectIO: true });
+      const c = await db.connect();
+      // the geometry as WKB, then ST_GeomFromWKB, as the native writer (and duck.js: issue 2199 of duckdb-wasm)
+      await c.query("SET enable_geoparquet_conversion = false");
+      await db.registerFileHandle("quack.parquet", parquet, duckdb.DuckDBDataProtocol.BROWSER_FILEREADER, true);
+      await c.query(`ATTACH '${name}' AS out`);
+      await c.query("CREATE TABLE out.main.quackosm AS SELECT feature_id, tags, ST_GeomFromWKB(geometry) AS geometry FROM read_parquet('quack.parquet')");
+      await c.query("DETACH out");
+      const blob = new Blob([await db.copyFileToBuffer(name)], { type: "application/vnd.duckdb" });
+      await c.close();
+      return blob;
+    } finally {
+      await db.terminate();
+    }
+  }
+  $("duckdb").onclick = async () => {
+    const name = file.name.replace(/\.osm\.pbf$|\.pbf$/, "") + "_quack.duckdb";
+    $("duckdb").disabled = true;
+    $("duckdb-status").textContent = "Making the .duckdb file with DuckDB in the browser ...";
+    const t = performance.now();
+    try {
+      const blob = await duckdbFile(name);
+      const a = $("duckdb-download");
+      if (a.href) URL.revokeObjectURL(a.href);
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.hidden = false;
+      $("duckdb").hidden = true;
+      $("duckdb-status").textContent = `The .duckdb file (table main.quackosm): ${(blob.size / 2 ** 20).toFixed(1)} MB in ` +
+        `${((performance.now() - t) / 1000).toFixed(1)} s.`;
+    } catch (e) {
+      $("duckdb-status").textContent = `Error: ${(e && e.message) || e}. In the browser, the .duckdb file works only for a ` +
+        "small table (DuckDB makes it in its memory). For a larger area, use duckosm-rust quack -f duckdb on a computer.";
+      $("duckdb").disabled = false;
+    }
+  };
+
+  $("run").onclick = async () => {
+    if (file.size > 300 * 2 ** 20 && !confirm(`${file.name} is ${(file.size / 2 ** 20).toFixed(0)} MB. The browser has at most ` +
+      "4 GiB of memory, and Ile-de-France (338 MB) already needs more. The run most likely stops with an error. " +
+      "For a large file, use duckosm-rust quack on a computer. Run in the browser anyway?")) return;
     const sort = $("sort").checked;
     $("run").disabled = true;
     $("stop").hidden = false;
-    $("result").hidden = $("download").hidden = true;
+    $("result").hidden = $("download").hidden = $("duckdb-download").hidden = true;
+    $("duckdb").hidden = $("duckdb").disabled = false;
+    $("duckdb-status").textContent = "";
     $("run-card").hidden = false;
     status(`Making the table of ${file.name} ...`);
     memory(0);
+    await clearStorage();
     // all steps of the run, the first one running
     $("progress").replaceChildren(...STEPS.filter((s) => sort || !s.startsWith("quack 5")).map((s, i) => {
       const li = document.createElement("li");
@@ -173,13 +286,36 @@
       return li;
     }));
     const t0 = performance.now();
-    clock = setInterval(() => { $("clock").textContent = `${((performance.now() - t0) / 1000).toFixed(1)} s`; }, 100);
+    let heard = t0;
+    // a thread of the browser that runs out of memory stops with no message: after 60 s with no news, the page says so
+    clock = setInterval(() => {
+      const now = performance.now();
+      $("clock").textContent = `${((now - t0) / 1000).toFixed(1)} s`;
+      if (now - heard > 60000 && !$("status").textContent.includes("no news"))
+        status(`${$("status").textContent} (no news for 60 s: the browser may be out of memory; click Stop)`);
+    }, 100);
     // a new worker for each run: the memory of a WebAssembly module never shrinks
     worker = new Worker(new URL("./quack_worker.js", import.meta.url), { type: "module" });
     let last = 0;
+    // an error that the worker cannot catch (a panic in a thread, no memory left) ends the run too
+    worker.onerror = (e) => {
+      e.preventDefault();
+      end();
+      status(`Error: ${e.message || "the WebAssembly module stopped (no memory left?)"}`, "error");
+    };
     worker.onmessage = ({ data }) => {
+      heard = performance.now();
+      // the read of the file (twice: pass 1 for the ways and the relations, pass 2 for the nodes)
+      if (data.read !== undefined) {
+        const gb = (b) => (b / 2 ** 30).toFixed(2);
+        const li = $("progress").querySelector("li.now");
+        if (li) li.querySelector(".t").textContent = `read ${gb(data.read)} of ${gb(data.size)} GB`;
+        status(`Making the table of ${file.name}: reading the file, pass ${data.pass} of 2, ${Math.floor((100 * data.read) / data.size)} %`);
+        return;
+      }
       // a step that is done: marked at once, and the next one runs
       if (data.step) {
+        status(`Making the table of ${file.name} ...`);
         const li = $("progress").querySelector(`li[data-step="${data.step}"]`);
         if (li) {
           li.className = "done";
@@ -221,6 +357,7 @@
       if (a.href) URL.revokeObjectURL(a.href);
       // the file is in OPFS (not in the memory of the tab) until the next run
       a.href = URL.createObjectURL(data.file);
+      parquet = data.file;
       a.download = file.name.replace(/\.osm\.pbf$|\.pbf$/, "") + "_quack.parquet";
       $("result").hidden = a.hidden = false;
     };

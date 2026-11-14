@@ -229,7 +229,13 @@ pub fn quack(pbf: Blob, sort: Option<bool>, spill: Array, out: web_sys::FileSyst
     })));
     let failed = std::sync::Arc::new(std::sync::Mutex::new(None));
     let file = BufWriter::with_capacity(1 << 20, OpfsOut { f: OpfsFile { h: out, at: 0.0 }, failed: failed.clone() });
-    let open = || -> Result<_, String> { Ok(io::BufReader::with_capacity(1 << 20, BlobRead::new(pbf.clone())?)) };
+    // the file is read twice: each read tells the page how far it is (`{read, size, pass}`)
+    let (size, pass) = (pbf.size(), std::cell::Cell::new(0u32));
+    let open = || -> Result<_, String> {
+        pass.set(pass.get() + 1);
+        let r = Counted { r: BlobRead::new(pbf.clone())?, read: 0, next: 0, size, pass: pass.get() };
+        Ok(io::BufReader::with_capacity(1 << 20, r))
+    };
     let res = duckosm_build::quack_to(open, file, sort.unwrap_or(true));
     duckosm_core::spill::set_temp_store(None);
     // a writer that is dropped does not give its error: the first one is kept here
@@ -267,13 +273,39 @@ thread_local! {
 fn quack_step(name: &str) {
     let (ms, mib) = (js_sys::Date::now() - QUACK_START.with(|t| t.get()), memory_mib());
     QUACK_STEPS.with(|s| s.borrow_mut().push((name.to_string(), ms, mib)));
+    post(&[("step", name.into()), ("ms", ms.into()), ("mib", mib.into())]);
+}
+
+/// `postMessage` of the worker with an object of `fields`.
+fn post(fields: &[(&str, JsValue)]) {
     let global = js_sys::global();
     if let Ok(post) = Reflect::get(&global, &"postMessage".into()).and_then(|f| f.dyn_into::<js_sys::Function>()) {
         let o = Object::new();
-        let _ = Reflect::set(&o, &"step".into(), &name.into());
-        let _ = Reflect::set(&o, &"ms".into(), &ms.into());
-        let _ = Reflect::set(&o, &"mib".into(), &mib.into());
+        for (k, v) in fields {
+            let _ = Reflect::set(&o, &(*k).into(), v);
+        }
         let _ = post.call1(&global, &o);
+    }
+}
+
+/// A reader of the PBF file that tells the page how far it is, each 64 MB (`{read, size, pass}`, `pass` 1 or 2).
+struct Counted {
+    r: BlobRead,
+    read: u64,
+    next: u64,
+    size: f64,
+    pass: u32,
+}
+
+impl Read for Counted {
+    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+        let n = self.r.read(out)?;
+        self.read += n as u64;
+        if self.read >= self.next {
+            self.next = self.read + (64 << 20);
+            post(&[("read", (self.read as f64).into()), ("size", self.size.into()), ("pass", self.pass.into())]);
+        }
+        Ok(n)
     }
 }
 
