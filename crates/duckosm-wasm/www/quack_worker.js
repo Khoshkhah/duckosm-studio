@@ -1,7 +1,8 @@
 // duckOSM's quack in a Web Worker (docs/rust/quack.md of duckOSM): the features table of QuackOSM (feature_id, tags,
 // geometry) of a .osm.pbf file, made by the Rust engine in WebAssembly.
 // In: {pbf: File, sort: true or false (default true: the order of QuackOSM), tiles: the most nodes in a tile, to make
-// the table tile by tile (a large file), or null; zoom: tile by tile with the map tiles of this zoom, or null}. Out: {nodes, ways, relations, steps: for
+// the table tile by tile (a large file), or null; zoom: tile by tile with the map tiles of this zoom, or null; workers: the
+// threads of the module and the tile workers (default: navigator.hardwareConcurrency, which Brave can make smaller)}. Out: {nodes, ways, relations, steps: for
 // each step its time since the start (ms) and the WebAssembly memory (MiB), file: the GeoParquet file (a File in OPFS),
 // seconds, threads, mib} or {error}. The page makes a new worker for each run: the
 // memory of a WebAssembly module never shrinks. A cross-origin isolated page gets the module with threads
@@ -45,7 +46,7 @@ onmessage = async ({ data }) => {
       pkg = await import(isolated ? "./pkg-threads/duckosm_wasm.js" : "./pkg/duckosm_wasm.js");
       wasm = await pkg.default();
       if (isolated) {
-        threads = Math.min(navigator.hardwareConcurrency || 4, 12);
+        threads = Math.min(data.workers || navigator.hardwareConcurrency || 4, 32);
         await pkg.initThreadPool(threads);
       }
     }
@@ -101,7 +102,7 @@ async function byTiles(data, dir, spill, fh) {
   const todo = [];
   counts.forEach((n, i) => { if (n > 0) todo.push(i); });
   todo.sort((a, b) => counts[b] - counts[a]);
-  const workers = Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 16, todo.length));
+  const workers = Math.max(1, Math.min(data.workers || navigator.hardwareConcurrency || 4, 32, todo.length));
   const totals = { nodes: 0, ways: 0, relations: 0 };
   await new Promise((resolve, reject) => {
     const pool = [];

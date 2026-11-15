@@ -101,6 +101,11 @@
         </select>
         <small>With a zoom, all tiles are of that zoom: a dense city then gives a large tile.</small></span>
     </label>
+    <label class="opt"><span>Workers
+        <input id="workers" type="number" min="1" max="32" step="1" style="width:5em;margin-left:6px;font:inherit">
+        <small>The threads of the cut and the tile workers. The default is the number of cores that the browser gives; some
+          browsers (Brave) give a smaller number than the computer has, to protect privacy: then type your number of cores.</small></span>
+    </label>
     <label class="opt"><input id="sort" type="checkbox" checked>
       <span>Sort the rows as QuackOSM does
         <small>Each row group of the file then holds a small area. The sort takes more time and memory: in one run, clear it for a large file.</small></span>
@@ -185,6 +190,7 @@
     $("zoom-opt").hidden = !$("tiles").checked;
   };
   $("file").onchange = () => choose($("file").files[0]);
+  $("workers").value = navigator.hardwareConcurrency || 4;
   $("tiles").onchange = () => { $("zoom-opt").hidden = !$("tiles").checked; };
   const drop = $("drop");
   drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
@@ -432,7 +438,9 @@
     // the size of a tile: a test can set a smaller one (data-tile-nodes of the button)
     const tileNodes = Number($("run").dataset.tileNodes) || TILE_NODES;
     const zoom = tiles && $("zoom").value !== "" ? Number($("zoom").value) : null;
-    worker.postMessage({ pbf: file, sort, tiles: tiles ? tileNodes : null, zoom });
+    const workers = Math.max(1, Math.min(32, Number($("workers").value) || navigator.hardwareConcurrency || 4));
+    status(`Making the table of ${file.name} with ${workers} workers ...`);
+    worker.postMessage({ pbf: file, sort, tiles: tiles ? tileNodes : null, zoom, workers });
   };
 </script>
 </body>
