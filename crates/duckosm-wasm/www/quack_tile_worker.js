@@ -24,12 +24,15 @@ onmessage = async ({ data }) => {
     const out = await (await data.dir.getFileHandle(`part-${data.i}.parquet`, { create: true })).createSyncAccessHandle();
     const t = performance.now();
     try {
+      pkg.quack_storage_ms();
       const r = pkg.quack_tile(file, data.tile[0], data.tile[1], data.tile[2], out);
+      // the time that this tile waited for its file and for the browser storage
+      const io = pkg.quack_storage_ms();
       out.flush();
       // the memory of this worker (each worker has its own WebAssembly memory; it never shrinks)
       const mib = Math.round(wasm.memory.buffer.byteLength / 2 ** 20);
       // begin: when this tile began, after the start of the worker (a time that all workers share)
-      postMessage({ i: data.i, nodes: r.nodes, ways: r.ways, relations: r.relations, ms: performance.now() - t, mib, begin: performance.timeOrigin + t });
+      postMessage({ i: data.i, nodes: r.nodes, ways: r.ways, relations: r.relations, ms: performance.now() - t, io, mib, begin: performance.timeOrigin + t });
     } finally {
       out.close();
     }

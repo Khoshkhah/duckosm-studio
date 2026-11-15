@@ -150,6 +150,8 @@ async function byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, stora
   // the timeline of step 3: for each tile, its worker, the time it went to the worker and the time it came back (ms)
   const timeline = [];
   const started = new Map();
+  // the passes of each tile in its worker: {tile, step, ms since the start of the tile}
+  const tileSteps = [];
   const module = await tileModule;
   await new Promise((resolve, reject) => {
     const pool = [];
@@ -180,6 +182,7 @@ async function byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, stora
         // a step in the tile (each pass of quack): the memory of the worker now
         if (r.step !== undefined) {
           workerMib.set(k, r.mib);
+          if (working[k] !== null) tileSteps.push({ tile: tiles[working[k]].join("/"), step: r.step, ms: r.ms });
           live();
           return;
         }
@@ -188,7 +191,7 @@ async function byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, stora
           const [worker, given] = started.get(r.i);
           // the start of the tile in the worker (after the start of a new worker); `given`: when the tile went to it
           const start = r.begin - performance.timeOrigin - t0;
-          timeline.push({ worker, start, given, end: performance.now() - t0, tile: tiles[r.i].join("/"), nodes: counts[r.i] });
+          timeline.push({ worker, start, given, end: performance.now() - t0, tile: tiles[r.i].join("/"), nodes: counts[r.i], io: r.io });
         }
         if (r.error) {
           stop();
@@ -247,5 +250,5 @@ async function byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, stora
   for (const i of todo) await dir.removeEntry(`part-${i}.parquet`).catch(() => {});
   const seconds = (performance.now() - t0) / 1000;
   const workersMib = [...workerMib.values()].reduce((a, b) => a + b, 0);
-  postMessage({ ...totals, steps, timeline, workers, workersMib, file: await fh.getFile(), seconds, storageMib: Math.round(storageMax() / 2 ** 20), threads: `cut ${threads}, ${workers} tile workers` + (big.length ? ` (the largest ${big.length === 1 ? "tile" : `${big.length} tiles`} on ${big.map((b) => b[1]).join(", ")} threads)` : "") + `, join ${joinThreads}`, mib: mib() });
+  postMessage({ ...totals, steps, timeline, tileSteps, workers, workersMib, file: await fh.getFile(), seconds, storageMib: Math.round(storageMax() / 2 ** 20), threads: `cut ${threads}, ${workers} tile workers` + (big.length ? ` (the largest ${big.length === 1 ? "tile" : `${big.length} tiles`} on ${big.map((b) => b[1]).join(", ")} threads)` : "") + `, join ${joinThreads}`, mib: mib() });
 }

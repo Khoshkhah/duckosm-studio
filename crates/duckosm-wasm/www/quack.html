@@ -490,6 +490,7 @@
       }));
       // step 3 on a timeline: one row for each worker, one bar for each tile (from the time it went to the worker to the
       // time it came back), so the page shows whether the workers ran at the same time
+      window.lastResult = data;
       const tl = data.timeline || [];
       $("timeline").hidden = !tl.length;
       if (tl.length) {

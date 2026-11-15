@@ -81,6 +81,13 @@ with sync_playwright() as p:
         print("   " + "\n   ".join(steps))
         if args.tiles:
             print("  ", page.text_content("#timeline-text"))
+            # the passes of the longest tile (window.lastResult: the result of the run)
+            print("   " + "\n   ".join(page.evaluate("""() => { const r = window.lastResult || {}; const tl = r.timeline || [];
+                if (!tl.length) return [];
+                const long = tl.reduce((a, x) => (x.end - x.start > a.end - a.start ? x : a), tl[0]).tile;
+                const io = tl.find((x) => x.tile === long).io;
+                return (r.tileSteps || []).filter((s) => s.tile === long).map((s) => `${long} ${(s.ms / 1000).toFixed(1)} s ${s.step}`)
+                  .concat([`${long}: ${((io || 0) / 1000).toFixed(1)} s waiting for the file and the storage`]); }""")))
         print("   " + "\n   ".join(l for l in page.evaluate("statusLog") if "tile cut" in l or "tiles 2" in l))
         if monaco:
             assert (got["nodes"], got["ways"], got["relations"]) == ("3,957", "5,573", "56"), got
