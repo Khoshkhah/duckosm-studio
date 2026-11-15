@@ -330,7 +330,9 @@ pub fn quack_cut(pbf: Blob, tiles: Array, outs: Array, spill: Array) -> Result<A
     })));
     let open = || -> Result<_, String> { Ok(io::BufReader::with_capacity(1 << 20, BlobRead::new(pbf.clone())?)) };
     let world = Boundary::parse(duckosm_core::quack::WORLD).map_err(|e| JsError::new(&e))?;
-    let res = duckosm_core::tilecut::cut_to_sink(open, &world, &list, &["multipolygon", "boundary"], &mut |t, b| {
+    // ponytail: the parts of the tiles in OPFS; in memory (compressed) Sweden (975 MB) ran out of the 4 GiB in the cut
+    let memory = false;
+    let res = duckosm_core::tilecut::cut_to_sink(open, &world, &list, &["multipolygon", "boundary"], memory, &mut |t, b| {
         files[t as usize].write_all(b).map_err(|e| e.to_string())
     });
     duckosm_core::spill::set_temp_store(None);

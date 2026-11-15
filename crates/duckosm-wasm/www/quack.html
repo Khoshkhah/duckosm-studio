@@ -103,8 +103,9 @@
     </label>
     <label class="opt"><span>Workers
         <input id="workers" type="number" min="1" max="32" step="1" style="width:5em;margin-left:6px;font:inherit">
-        <small>The threads of the cut and the tile workers. The default is the number of cores that the browser gives; some
-          browsers (Brave) give a smaller number than the computer has, to protect privacy: then type your number of cores.</small></span>
+        <small>The threads of the cut and the tile workers: the number of cores of the computer. The default is the number
+          that the browser reports; in Brave twice that, because Brave reports fewer cores than the computer has, to protect
+          privacy.</small></span>
     </label>
     <label class="opt"><input id="sort" type="checkbox" checked>
       <span>Sort the rows as QuackOSM does
@@ -119,6 +120,7 @@
 
   <section class="card" id="run-card" hidden>
     <div class="run-head"><h2>2. The run</h2><span id="clock"></span></div>
+    <p class="note" id="facts"></p>
     <div id="status" role="status"></div>
     <ol class="steps" id="progress"></ol>
     <div class="mem"><div class="bar"><i id="mem-bar"></i></div><small id="mem-text"></small></div>
@@ -190,7 +192,12 @@
     $("zoom-opt").hidden = !$("tiles").checked;
   };
   $("file").onchange = () => choose($("file").files[0]);
-  $("workers").value = navigator.hardwareConcurrency || 4;
+  // the cores that the browser reports; Brave reports fewer cores than the computer has, to protect privacy (a page with 4
+  // threads on 8 cores used 50 % of the CPU), so in Brave twice that, at most 16. More threads than real cores make the cut
+  // slower (Chromium, 12 cores: 16 threads 21.5 s, 12 threads 16.1 s for Île-de-France).
+  const BRAVE = !!navigator.brave;
+  const DEFAULT_WORKERS = BRAVE ? Math.min(16, 2 * (navigator.hardwareConcurrency || 4)) : navigator.hardwareConcurrency || 4;
+  $("workers").value = DEFAULT_WORKERS;
   $("tiles").onchange = () => { $("zoom-opt").hidden = !$("tiles").checked; };
   const drop = $("drop");
   drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
@@ -410,11 +417,11 @@
       $("mib").textContent = `${fmt(data.mib)} MiB`;
       $("size").textContent = `${(data.file.size / 2 ** 20).toFixed(1)} MB`;
       let at = 0;
-      // tile by tile: the steps of the page only (the last tile ends step 3)
+      // tile by tile: the steps of the page, and the parts of the cut (the last tile ends step 3)
       const steps = !tiles ? data.steps : data.steps.filter((s) => {
         const step = tileStep(s.step), tile = tileOf(s.step);
-        return step && (!tile || tile[0] === tile[1]);
-      }).map((s) => ({ ...s, step: tileStep(s.step) }));
+        return (step && (!tile || tile[0] === tile[1])) || s.step.startsWith("tile cut");
+      }).map((s) => ({ ...s, step: tileStep(s.step) ?? s.step }));
       $("steps").replaceChildren(...steps.map((s) => {
         const tr = document.createElement("tr");
         for (const [text, n] of [[name(s.step), false], [`${((s.ms - at) / 1000).toFixed(1)} s`, true],
@@ -438,8 +445,12 @@
     // the size of a tile: a test can set a smaller one (data-tile-nodes of the button)
     const tileNodes = Number($("run").dataset.tileNodes) || TILE_NODES;
     const zoom = tiles && $("zoom").value !== "" ? Number($("zoom").value) : null;
-    const workers = Math.max(1, Math.min(32, Number($("workers").value) || navigator.hardwareConcurrency || 4));
-    status(`Making the table of ${file.name} with ${workers} workers ...`);
+    const workers = Math.max(1, Math.min(32, Number($("workers").value) || DEFAULT_WORKERS));
+    status(`Making the table of ${file.name} with ${workers} workers (the browser reports ${navigator.hardwareConcurrency} cores; ` +
+      `cross-origin isolated: ${self.crossOriginIsolated ? "yes" : "no"}) ...`);
+    $("facts").textContent = `${workers} workers; the browser reports ${navigator.hardwareConcurrency} cores` +
+      (BRAVE ? " (Brave: often fewer than the computer has)" : "") + "; cross-origin " +
+      `isolated: ${self.crossOriginIsolated ? "yes" : "no, so one thread only"}.`;
     worker.postMessage({ pbf: file, sort, tiles: tiles ? tileNodes : null, zoom, workers });
   };
 </script>
