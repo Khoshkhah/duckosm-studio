@@ -81,8 +81,10 @@ async function byTiles(data, dir, spill, fh) {
   const t0 = performance.now();
   const steps = [];
   const mib = () => Math.round(wasm.memory.buffer.byteLength / 2 ** 20);
+  // the memory of each tile worker (its own WebAssembly memory), added to the memory of this module
+  const workerMib = new Map();
   const step = (name) => {
-    const s = { step: name, ms: performance.now() - t0, mib: mib() };
+    const s = { step: name, ms: performance.now() - t0, mib: mib(), workersMib: [...workerMib.values()].reduce((a, b) => a + b, 0) };
     steps.push(s);
     postMessage(s);
   };
@@ -105,19 +107,28 @@ async function byTiles(data, dir, spill, fh) {
   todo.sort((a, b) => counts[b] - counts[a]);
   const workers = Math.max(1, Math.min(data.workers || navigator.hardwareConcurrency || 4, 64, todo.length));
   const totals = { nodes: 0, ways: 0, relations: 0 };
+  // the timeline of step 3: for each tile, its worker, the time it went to the worker and the time it came back (ms)
+  const timeline = [];
+  const started = new Map();
   await new Promise((resolve, reject) => {
     const pool = [];
     let next = 0, done = 0;
     const stop = () => pool.forEach((w) => w.terminate());
-    const give = (w) => {
+    const give = (w, k) => {
       if (next < todo.length) {
         const i = todo[next++];
+        started.set(i, [k, performance.now() - t0]);
         w.postMessage({ dir, i, tile: tiles[i] });
       }
     };
     for (let k = 0; k < workers; k++) {
       const w = new Worker(new URL("./quack_tile_worker.js", import.meta.url), { type: "module" });
       w.onmessage = ({ data: r }) => {
+        if (!r.error) {
+          workerMib.set(k, r.mib);
+          const [worker, start] = started.get(r.i);
+          timeline.push({ worker, start, end: performance.now() - t0, tile: tiles[r.i].join("/"), nodes: counts[r.i] });
+        }
         if (r.error) {
           stop();
           reject(new Error(`tile ${tiles[r.i].join("/")}: ${r.error}`));
@@ -132,7 +143,7 @@ async function byTiles(data, dir, spill, fh) {
           stop();
           resolve();
         } else {
-          give(w);
+          give(w, k);
         }
       };
       w.onerror = (e) => {
@@ -141,7 +152,7 @@ async function byTiles(data, dir, spill, fh) {
         reject(new Error(`a tile worker stopped (${e.message || "error"}): most likely it had no memory left`));
       };
       pool.push(w);
-      give(w);
+      give(w, k);
     }
     if (todo.length === 0) resolve();
   });
@@ -166,5 +177,6 @@ async function byTiles(data, dir, spill, fh) {
   step(data.sort !== false ? "quack 5: the sort" : "quack by tiles 4: the join of the parts");
   for (const i of todo) await dir.removeEntry(`part-${i}.parquet`).catch(() => {});
   const seconds = (performance.now() - t0) / 1000;
-  postMessage({ ...totals, steps, file: await fh.getFile(), seconds, threads: `cut ${threads}, ${workers} tile workers, join ${joinThreads}`, mib: mib() });
+  const workersMib = [...workerMib.values()].reduce((a, b) => a + b, 0);
+  postMessage({ ...totals, steps, timeline, workers, workersMib, file: await fh.getFile(), seconds, threads: `cut ${threads}, ${workers} tile workers, join ${joinThreads}`, mib: mib() });
 }

@@ -143,6 +143,11 @@
       <div class="stat"><small>Peak WebAssembly memory</small><b id="mib"></b></div>
       <div class="stat"><small>GeoParquet file</small><b id="size"></b></div>
     </div>
+    <div id="timeline" hidden>
+      <h2 style="margin-top:16px">Step 3: the tiles of each worker</h2>
+      <svg id="timeline-svg" width="100%" role="img" aria-label="the tiles of each worker in time"></svg>
+      <p class="note" id="timeline-text"></p>
+    </div>
     <table>
       <thead><tr><th>Step</th><th class="n">Time</th><th class="n">At</th><th class="n">Memory</th></tr></thead>
       <tbody id="steps"></tbody>
@@ -210,10 +215,12 @@
   drop.ondragleave = () => drop.classList.remove("over");
   drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); choose(e.dataTransfer.files[0]); };
 
-  const memory = (mib) => {
+  // the memory of the main module (its limit is 4 GiB), and the memory of the tile workers (each has its own 4 GiB)
+  const memory = (mib, workersMib = 0) => {
     $("mem-bar").style.width = `${Math.min(100, (100 * mib) / LIMIT)}%`;
     $("mem-bar").classList.toggle("high", mib > 0.75 * LIMIT);
-    $("mem-text").textContent = `WebAssembly memory ${fmt(Math.round(mib))} of ${fmt(LIMIT)} MiB`;
+    $("mem-text").textContent = `WebAssembly memory ${fmt(Math.round(mib))} of ${fmt(LIMIT)} MiB` +
+      (workersMib ? `, and ${fmt(Math.round(workersMib))} MiB in the tile workers` : "");
   };
   const status = (text, kind = "") => { $("status").textContent = text; $("status").className = kind; };
   const end = () => {
@@ -379,7 +386,7 @@
         const step = tileStep(data.step);
         const tile = tileOf(data.step);
         const now = $("progress").querySelector("li.now");
-        memory(data.mib);
+        memory(data.mib, data.workersMib);
         if (!step || (tile && tile[0] < tile[1])) {
           status(`Making the table of ${file.name}: ${tile ? `tile ${tile[0]} of ${tile[1]} done` : data.step}`);
           if (now && tile) now.querySelector(".t").textContent = `tile ${tile[0]} of ${tile[1]}`;
@@ -408,7 +415,7 @@
           li.nextElementSibling?.classList.add("now");
         }
         last = data.ms;
-        memory(data.mib);
+        memory(data.mib, data.workersMib);
         return;
       }
       end();
@@ -417,13 +424,13 @@
         return;
       }
       status("Done.", "done");
-      memory(data.mib);
+      memory(data.mib, data.workersMib);
       $("nodes").textContent = fmt(data.nodes);
       $("ways").textContent = fmt(data.ways);
       $("relations").textContent = fmt(data.relations);
       $("seconds").textContent = `${data.seconds.toFixed(2)} s`;
       $("threads").textContent = data.threads;
-      $("mib").textContent = `${fmt(data.mib)} MiB`;
+      $("mib").textContent = `${fmt(data.mib)} MiB` + (data.workersMib ? ` + ${fmt(data.workersMib)} MiB (tile workers)` : "");
       $("size").textContent = `${(data.file.size / 2 ** 20).toFixed(1)} MB`;
       let at = 0;
       // tile by tile: the steps of the page, and the parts of the cut (the last tile ends step 3)
@@ -443,6 +450,28 @@
         at = s.ms;
         return tr;
       }));
+      // step 3 on a timeline: one row for each worker, one bar for each tile (from the time it went to the worker to the
+      // time it came back), so the page shows whether the workers ran at the same time
+      const tl = data.timeline || [];
+      $("timeline").hidden = !tl.length;
+      if (tl.length) {
+        const t0 = Math.min(...tl.map((x) => x.start)), t1 = Math.max(...tl.map((x) => x.end));
+        const rows = data.workers, row = 10, W = 1000;
+        const svg = $("timeline-svg");
+        svg.setAttribute("viewBox", `0 0 ${W} ${rows * row}`);
+        svg.setAttribute("preserveAspectRatio", "none");
+        svg.style.height = `${rows * row}px`;
+        svg.innerHTML = tl.map((x) => {
+          const xa = (W * (x.start - t0)) / (t1 - t0 || 1), xb = (W * (x.end - t0)) / (t1 - t0 || 1);
+          return `<rect x="${xa.toFixed(1)}" y="${x.worker * row + 1}" width="${Math.max(1, xb - xa).toFixed(1)}" height="${row - 2}"` +
+            ` fill="var(--accent)" opacity="0.8"><title>${x.tile}: ${((x.end - x.start) / 1000).toFixed(1)} s, ${fmt(x.nodes)} nodes</title></rect>`;
+        }).join("");
+        const busy = tl.reduce((a, x) => a + x.end - x.start, 0) / (t1 - t0 || 1);
+        const long = tl.reduce((a, x) => (x.end - x.start > a.end - a.start ? x : a), tl[0]);
+        $("timeline-text").textContent = `${tl.length} tiles in ${((t1 - t0) / 1000).toFixed(1)} s on ${rows} workers: on ` +
+          `average ${busy.toFixed(1)} workers busy at the same time. The longest tile: ${long.tile}, ` +
+          `${((long.end - long.start) / 1000).toFixed(1)} s.`;
+      }
       const a = $("download");
       if (a.href) URL.revokeObjectURL(a.href);
       // the file is in OPFS (not in the memory of the tab) until the next run
