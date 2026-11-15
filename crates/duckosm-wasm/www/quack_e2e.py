@@ -21,7 +21,7 @@ a = argparse.ArgumentParser()
 a.add_argument("out", nargs="?", default="out-quack")
 a.add_argument("--pbf", default=str(ROOT / "tests/data/monaco.osm.pbf"))
 a.add_argument("--tiles", action="store_true", help="make the table tile by tile")
-a.add_argument("--zoom", help="tile by tile with the map tiles of this zoom (with --tiles)")
+a.add_argument("--zoom", help="tile by tile with the map tiles of this zoom (with --tiles; the page's default is zoom 8, Monaco uses small tiles)")
 a.add_argument("--threads", help="with --tiles: the threads of the cut, the tile workers and the threads of the join")
 a.add_argument("--memory", choices=["0", "1"], help="with --tiles: the parts of the cut in OPFS (0) or in memory (1)")
 a.add_argument("--keep", action="store_true", help="keep the GeoParquet file of a large file (to compare it)")
@@ -51,6 +51,8 @@ with sync_playwright() as p:
     page.set_checked("#tiles", args.tiles)
     if args.tiles and args.zoom:
         page.select_option("#zoom", args.zoom)
+    elif args.tiles and monaco:
+        page.select_option("#zoom", "")  # the small tiles of at most 2000 nodes below (zoom 8 is one tile for Monaco)
     if args.tiles and args.threads:
         for i in ("#cut-threads", "#workers", "#join-threads"):
             page.fill(i, args.threads)
