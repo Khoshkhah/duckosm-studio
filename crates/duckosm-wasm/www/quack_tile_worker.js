@@ -1,7 +1,8 @@
-// One tile of quack by tiles in a Web Worker of its own (quack_worker.js starts one for each core). Each worker has its
-// own WebAssembly module (with one thread) and its own memory, and opens its own files in OPFS, so the tiles run at the
-// same time with no wait for each other.
-// In: {dir: the folder of the run in OPFS, i: the number of the tile, tile: [z, x, y], module: the compiled module}. The worker reads tile-<i>.pbf
+// One tile of quack by tiles in a Web Worker of its own (quack_worker.js starts one for each thread). Each worker has its
+// own WebAssembly module and its own memory, and opens its own files in OPFS, so the tiles run at the same time with no
+// wait for each other. A worker of a large tile has the module with threads and a pool of its own.
+// In: {dir: the folder of the run in OPFS, i: the number of the tile, tile: [z, x, y], module: the compiled module
+// (one thread), threads: the threads of this worker (the first message sets them)}. The worker reads tile-<i>.pbf
 // and writes part-<i>.parquet: the rows that the tile owns. Out: {i, nodes, ways, relations, ms, mib: the memory of this
 // worker} or {i, error}.
 
@@ -9,7 +10,12 @@ let pkg = null, wasm = null;
 
 onmessage = async ({ data }) => {
   try {
-    if (!pkg) {
+    if (!pkg && data.threads > 1) {
+      // a large tile: the module with threads and a pool of `threads` threads for this worker
+      pkg = await import("./pkg-threads/duckosm_wasm.js");
+      wasm = await pkg.default();
+      await pkg.initThreadPool(data.threads);
+    } else if (!pkg) {
       pkg = await import("./pkg/duckosm_wasm.js");
       // the module that quack_worker.js compiled one time for all the tile workers
       wasm = await pkg.default({ module_or_path: data.module });
