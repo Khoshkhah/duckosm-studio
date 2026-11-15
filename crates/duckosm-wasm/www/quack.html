@@ -85,7 +85,8 @@
     <label class="opt"><input id="tiles" type="checkbox">
       <span>Make the table tile by tile
         <small>The file is cut into tiles of at most 4 million nodes, and each tile gives its rows. The memory then follows
-          the size of a tile, not of the file: for a large file (Île-de-France, 338 MB). The same rows; it takes more time.</small></span>
+          the size of a tile, not of the file: for a large file (Île-de-France, 338 MB). Each tile runs in a worker of its own,
+          one for each core. The same rows.</small></span>
     </label>
     <label class="opt" id="zoom-opt" hidden><span>Tile size
         <select id="zoom">
@@ -161,12 +162,13 @@
   const label = (name) => LABELS[name] ?? name;
   // tile by tile (duckosm_core::quack::features_by_tiles): the steps of the page, and the step of each step of the engine
   const TILE_NODES = 4000000;
-  const TILE_STEPS = ["tiles 1", "tiles 2", "tiles 3", "quack 5: the sort"];
+  const TILE_STEPS = ["tiles 1", "tiles 2", "tiles 3", "tiles 4", "quack 5: the sort"];
   const TILE_LABELS = {
     "tiles 1": "1. Count the nodes and choose the tiles",
-    "tiles 2": "2. Cut the file into tiles",
-    "tiles 3": "3. Make the rows of each tile",
-    "quack 5: the sort": "4. Sort the rows as QuackOSM and write",
+    "tiles 2": "2. Cut the file into tiles (one file for each tile)",
+    "tiles 3": "3. Make the rows of each tile (a worker for each core)",
+    "tiles 4": "4. Join the parts of the tiles",
+    "quack 5: the sort": "4. Join the parts and sort the rows as QuackOSM",
   };
   const tileStep = (name) => name.match(/^quack by (tiles \d)/)?.[1] ?? (name.startsWith("quack 5") ? name : null);
   // "quack by tiles 3: tile 3 of 20 (...)" gives [3, 20]
@@ -313,7 +315,9 @@
     memory(0);
     await clearStorage();
     // all steps of the run, the first one running
-    $("progress").replaceChildren(...(tiles ? TILE_STEPS : STEPS).filter((s) => sort || !s.startsWith("quack 5")).map((s, i) => {
+    // tile by tile: the join is step 4, or with the sort, the sort
+    const shown = (s) => (sort ? !(tiles && s === "tiles 4") : !s.startsWith("quack 5"));
+    $("progress").replaceChildren(...(tiles ? TILE_STEPS : STEPS).filter(shown).map((s, i) => {
       const li = document.createElement("li");
       li.dataset.step = s;
       li.className = i ? "" : "now";

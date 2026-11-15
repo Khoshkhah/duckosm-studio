@@ -51,6 +51,10 @@ onmessage = async ({ data }) => {
     }
     for (let i = 0; i < SPILL; i++) spill.push(await (await dir.getFileHandle(`t${i}`, { create: true })).createSyncAccessHandle());
     const fh = await dir.getFileHandle("quack.parquet", { create: true });
+    if (data.tiles || data.zoom != null) {
+      await byTiles(data, dir, spill, fh);
+      return;
+    }
     out = await fh.createSyncAccessHandle();
     const t = performance.now();
     const r = pkg.quack(data.pbf, data.sort !== false, spill, out, data.tiles ?? undefined, data.zoom ?? undefined);
@@ -67,3 +71,91 @@ onmessage = async ({ data }) => {
     for (let i = 0; i < SPILL; i++) await dir.removeEntry(`t${i}`).catch(() => {});
   }
 };
+
+// Quack by tiles with a worker for each tile: (1) the tiles of the file, (2) the cut, each tile into its own file
+// tile-<i>.pbf, (3) a pool of tile workers (quack_tile_worker.js, one for each core), each takes the next tile (the largest
+// first) and writes part-<i>.parquet, (4) the join of the parts into quack.parquet. Only steps 2 and 4 run here.
+async function byTiles(data, dir, spill, fh) {
+  const t0 = performance.now();
+  const steps = [];
+  const mib = () => Math.round(wasm.memory.buffer.byteLength / 2 ** 20);
+  const step = (name) => {
+    const s = { step: name, ms: performance.now() - t0, mib: mib() };
+    steps.push(s);
+    postMessage(s);
+  };
+  const tiles = pkg.quack_plan(data.pbf, data.tiles ?? undefined, data.zoom ?? undefined);
+  step(`quack by tiles 1: ${tiles.length} tiles`);
+  const outs = [];
+  for (let i = 0; i < tiles.length; i++) {
+    outs.push(await (await dir.getFileHandle(`tile-${i}.pbf`, { create: true })).createSyncAccessHandle());
+  }
+  let counts;
+  try {
+    counts = pkg.quack_cut(data.pbf, tiles, outs, spill);
+  } finally {
+    for (const h of outs) h.close();
+  }
+  step("quack by tiles 2: the tile cut");
+  // the largest tiles first, so the small ones fill the end and no worker waits for one large tile
+  const todo = [];
+  counts.forEach((n, i) => { if (n > 0) todo.push(i); });
+  todo.sort((a, b) => counts[b] - counts[a]);
+  const workers = Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 16, todo.length));
+  const totals = { nodes: 0, ways: 0, relations: 0 };
+  await new Promise((resolve, reject) => {
+    const pool = [];
+    let next = 0, done = 0;
+    const stop = () => pool.forEach((w) => w.terminate());
+    const give = (w) => {
+      if (next < todo.length) {
+        const i = todo[next++];
+        w.postMessage({ dir, i, tile: tiles[i] });
+      }
+    };
+    for (let k = 0; k < workers; k++) {
+      const w = new Worker(new URL("./quack_tile_worker.js", import.meta.url), { type: "module" });
+      w.onmessage = ({ data: r }) => {
+        if (r.error) {
+          stop();
+          reject(new Error(`tile ${tiles[r.i].join("/")}: ${r.error}`));
+          return;
+        }
+        totals.nodes += r.nodes;
+        totals.ways += r.ways;
+        totals.relations += r.relations;
+        done++;
+        step(`quack by tiles 3: tile ${done} of ${todo.length} (${tiles[r.i].join("/")}, ${(r.ms / 1000).toFixed(1)} s)`);
+        if (done === todo.length) {
+          stop();
+          resolve();
+        } else {
+          give(w);
+        }
+      };
+      w.onerror = (e) => {
+        e.preventDefault();
+        stop();
+        reject(new Error(`a tile worker stopped (${e.message || "error"}): most likely it had no memory left`));
+      };
+      pool.push(w);
+      give(w);
+    }
+    if (todo.length === 0) resolve();
+  });
+  for (let i = 0; i < tiles.length; i++) await dir.removeEntry(`tile-${i}.pbf`).catch(() => {});
+  const parts = [];
+  for (const i of todo) parts.push(await (await dir.getFileHandle(`part-${i}.parquet`)).getFile());
+  const out = await fh.createSyncAccessHandle();
+  try {
+    pkg.quack_join(parts, data.sort !== false, spill, out);
+    // with the sort, the join is the sort
+    step(data.sort !== false ? "quack 5: the sort" : "quack by tiles 4: the join of the parts");
+    out.flush();
+  } finally {
+    out.close();
+  }
+  for (const i of todo) await dir.removeEntry(`part-${i}.parquet`).catch(() => {});
+  const seconds = (performance.now() - t0) / 1000;
+  postMessage({ ...totals, steps, file: await fh.getFile(), seconds, threads: `${workers} tile workers, ${threads}`, mib: mib() });
+}

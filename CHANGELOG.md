@@ -17,6 +17,12 @@ All versions are on the GitHub Releases page of `Khoshkhah/duckosm-rust`. There 
 
 ### Changed
 
+- **`quack.html` tile by tile: a worker for each tile** (Kaveh, 2026-11-14: "every thing is parallel but you run one thread"). The cut writes each
+  tile into its own OPFS file (`quack_plan`, `quack_cut`); a pool of tile workers (`quack_tile_worker.js`, one for each core, each with its own
+  module, memory and files) makes the rows of the tiles, the largest first (`quack_tile`); the join puts the parts into one GeoParquet file
+  (`quack_join`). Every tile file is complete (each multipolygon and boundary in each tile with a member). Chromium on the Mac mini, not sorted:
+  Île-de-France 41.4 s to 16.1 s; Sweden (975 MB, tiles of at most 4 million nodes) 153.3 s. Kentucky on a 20-core PC: about 4 times faster.
+  The duckOSM pin moves to `d3a20f8` (branch `kaveh/quack-tiles-raw`, duckOSM PR 179).
 - **`quack.html`: a tile size, at most 4 million nodes or one zoom** (Kaveh, 2026-11-14). With tile by tile on, the page offers the map tiles
   of one zoom (6 to 12) in place of the tiles of at most 4 million nodes (`quack(..., tile_nodes, tile_zoom)`, duckOSM PR 176). Île-de-France
   in Chromium: zoom 8 (13 tiles) 42.5 s and 474 MiB, zoom 9 (32 tiles) 41.7 s and 467 MiB. `quack_e2e.py --tiles --zoom Z` tests it.

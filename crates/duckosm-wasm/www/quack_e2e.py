@@ -64,7 +64,7 @@ with sync_playwright() as p:
         assert status == "Done.", status
         got = {k: page.text_content(f"#{k}") for k in ("nodes", "ways", "relations", "seconds", "threads", "mib", "size")}
         steps = page.eval_on_selector_all("#steps tr", "rs => rs.map(r => [...r.cells].map(c => c.textContent).join(' | '))")
-        last = ("3." if not sort else "4.") if args.tiles else ("5." if not sort else "6.")
+        last = "4." if args.tiles else ("5." if not sort else "6.")
         assert steps and steps[-1].startswith(last), steps
         done = page.eval_on_selector_all("#progress li.done", "ls => ls.length")
         assert done == len(steps), (done, steps)
