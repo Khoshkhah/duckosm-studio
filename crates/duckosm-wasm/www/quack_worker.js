@@ -1,8 +1,9 @@
 // duckOSM's quack in a Web Worker (docs/rust/quack.md of duckOSM): the features table of QuackOSM (feature_id, tags,
 // geometry) of a .osm.pbf file, made by the Rust engine in WebAssembly.
 // In: {pbf: File, sort: true or false (default true: the order of QuackOSM), tiles: the most nodes in a tile, to make
-// the table tile by tile (a large file), or null; zoom: tile by tile with the map tiles of this zoom, or null; workers: the
-// threads of the module and the tile workers (default: navigator.hardwareConcurrency, which Brave can make smaller)}. Out: {nodes, ways, relations, steps: for
+// the table tile by tile (a large file), or null; zoom: tile by tile with the map tiles of this zoom, or null; cutThreads:
+// the threads of the cut (and of one run); workers: the tile workers; joinThreads: the threads of the join (a worker of its
+// own, quack_join_worker.js)}. Out: {nodes, ways, relations, steps: for
 // each step its time since the start (ms) and the WebAssembly memory (MiB), file: the GeoParquet file (a File in OPFS),
 // seconds, threads, mib} or {error}. The page makes a new worker for each run: the
 // memory of a WebAssembly module never shrinks. A cross-origin isolated page gets the module with threads
@@ -46,7 +47,7 @@ onmessage = async ({ data }) => {
       pkg = await import(isolated ? "./pkg-threads/duckosm_wasm.js" : "./pkg/duckosm_wasm.js");
       wasm = await pkg.default();
       if (isolated) {
-        threads = Math.min(data.workers || navigator.hardwareConcurrency || 4, 64);
+        threads = Math.min(data.cutThreads || data.workers || navigator.hardwareConcurrency || 4, 64);
         await pkg.initThreadPool(threads);
       }
     }
@@ -145,18 +146,25 @@ async function byTiles(data, dir, spill, fh) {
     if (todo.length === 0) resolve();
   });
   for (let i = 0; i < tiles.length; i++) await dir.removeEntry(`tile-${i}.pbf`).catch(() => {});
-  const parts = [];
-  for (const i of todo) parts.push(await (await dir.getFileHandle(`part-${i}.parquet`)).getFile());
-  const out = await fh.createSyncAccessHandle();
-  try {
-    pkg.quack_join(parts, data.sort !== false, spill, out);
-    // with the sort, the join is the sort
-    step(data.sort !== false ? "quack 5: the sort" : "quack by tiles 4: the join of the parts");
-    out.flush();
-  } finally {
-    out.close();
-  }
+  // the join in a worker of its own, with its own pool of threads (the setting "join")
+  const joinThreads = Math.max(1, Math.min(data.joinThreads || threads, 64));
+  await new Promise((resolve, reject) => {
+    const w = new Worker(new URL("./quack_join_worker.js", import.meta.url), { type: "module" });
+    w.onmessage = ({ data: r }) => {
+      w.terminate();
+      if (r.error) reject(new Error(`the join: ${r.error}`));
+      else resolve();
+    };
+    w.onerror = (e) => {
+      e.preventDefault();
+      w.terminate();
+      reject(new Error(`the join worker stopped (${e.message || "error"})`));
+    };
+    w.postMessage({ dir, parts: todo.map((i) => `part-${i}.parquet`), sort: data.sort !== false, threads: joinThreads });
+  });
+  // with the sort, the join is the sort
+  step(data.sort !== false ? "quack 5: the sort" : "quack by tiles 4: the join of the parts");
   for (const i of todo) await dir.removeEntry(`part-${i}.parquet`).catch(() => {});
   const seconds = (performance.now() - t0) / 1000;
-  postMessage({ ...totals, steps, file: await fh.getFile(), seconds, threads: `${workers} tile workers, ${threads}`, mib: mib() });
+  postMessage({ ...totals, steps, file: await fh.getFile(), seconds, threads: `cut ${threads}, ${workers} tile workers, join ${joinThreads}`, mib: mib() });
 }

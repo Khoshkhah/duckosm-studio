@@ -28,6 +28,8 @@
   .opt input { margin-top: 4px; }
   .opt small { display: block; color: var(--muted); }
   .opt select { font: inherit; margin-left: 6px; max-width: 100%; }
+  .threads .nums { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 4px 0 2px; }
+  .threads .nums input { width: 4.5em; margin-left: 4px; font: inherit; }
   .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
   button, a.button { font: inherit; font-weight: 600; padding: 9px 18px; border-radius: 8px; border: 1px solid var(--accent);
     background: var(--accent); color: #fff; cursor: pointer; text-decoration: none; display: inline-block; }
@@ -101,11 +103,17 @@
         </select>
         <small>With a zoom, all tiles are of that zoom: a dense city then gives a large tile.</small></span>
     </label>
-    <label class="opt"><span>Workers
-        <input id="workers" type="number" min="1" max="64" step="1" style="width:5em;margin-left:6px;font:inherit">
-        <small>The threads of the cut and the tile workers. The default is 8, or the number of cores that the browser
-          reports when it is larger (at most 16).</small></span>
-    </label>
+    <div class="opt threads"><span>Threads
+        <span class="nums">
+          <label>cut <input id="cut-threads" type="number" min="1" max="64" step="1"></label>
+          <label>tile workers <input id="workers" type="number" min="1" max="64" step="1"></label>
+          <label>join <input id="join-threads" type="number" min="1" max="64" step="1"></label>
+        </span>
+        <small>A setting for each part: the threads of the cut, the tile workers that make the rows of the tiles (each
+          with one thread), and the threads of the join of the parts. A number larger than the cores can help when the
+          threads wait for the browser storage. The default is 8, or the cores that the browser reports when it is more
+          (at most 16). In one run (not tile by tile), the threads of the cut are the threads of the run.</small></span>
+    </div>
     <label class="opt"><input id="sort" type="checkbox" checked>
       <span>Sort the rows as QuackOSM does
         <small>Each row group of the file then holds a small area. The sort takes more time and memory: in one run, clear it for a large file.</small></span>
@@ -195,7 +203,7 @@
   // has (a page with 4 threads on 8 cores used 50 % of the CPU). Many more threads than cores make the cut slower
   // (Chromium, 12 cores: 16 threads 21.5 s, 12 threads 16.1 s for Île-de-France).
   const DEFAULT_WORKERS = Math.max(8, Math.min(16, navigator.hardwareConcurrency || 8));
-  $("workers").value = DEFAULT_WORKERS;
+  for (const id of ["cut-threads", "workers", "join-threads"]) $(id).value = DEFAULT_WORKERS;
   $("tiles").onchange = () => { $("zoom-opt").hidden = !$("tiles").checked; };
   const drop = $("drop");
   drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
@@ -443,12 +451,13 @@
     // the size of a tile: a test can set a smaller one (data-tile-nodes of the button)
     const tileNodes = Number($("run").dataset.tileNodes) || TILE_NODES;
     const zoom = tiles && $("zoom").value !== "" ? Number($("zoom").value) : null;
-    const workers = Math.max(1, Math.min(64, Number($("workers").value) || DEFAULT_WORKERS));
-    status(`Making the table of ${file.name} with ${workers} workers (the browser reports ${navigator.hardwareConcurrency} cores; ` +
-      `cross-origin isolated: ${self.crossOriginIsolated ? "yes" : "no"}) ...`);
-    $("facts").textContent = `${workers} workers; the browser reports ${navigator.hardwareConcurrency} cores; cross-origin ` +
-      `isolated: ${self.crossOriginIsolated ? "yes" : "no, so one thread only"}.`;
-    worker.postMessage({ pbf: file, sort, tiles: tiles ? tileNodes : null, zoom, workers });
+    const count = (id) => Math.max(1, Math.min(64, Number($(id).value) || DEFAULT_WORKERS));
+    const [cutThreads, workers, joinThreads] = [count("cut-threads"), count("workers"), count("join-threads")];
+    const plan = tiles ? `cut ${cutThreads} threads, ${workers} tile workers, join ${joinThreads} threads` : `${cutThreads} threads`;
+    status(`Making the table of ${file.name} (${plan}) ...`);
+    $("facts").textContent = `${plan}; the browser reports ${navigator.hardwareConcurrency} cores; cross-origin isolated: ` +
+      `${self.crossOriginIsolated ? "yes" : "no, so one thread only"}.`;
+    worker.postMessage({ pbf: file, sort, tiles: tiles ? tileNodes : null, zoom, workers, cutThreads, joinThreads });
   };
 </script>
 </body>
