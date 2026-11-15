@@ -120,7 +120,7 @@ async function byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, stora
   }
   let counts;
   try {
-    counts = pkg.quack_cut(data.pbf, tiles, outs, spill);
+    counts = pkg.quack_cut(data.pbf, tiles, outs, spill, data.memory);
   } finally {
     for (const h of outs) h.close();
   }

@@ -566,8 +566,12 @@
     $("facts").textContent = `${plan}; the browser reports ${navigator.hardwareConcurrency} cores; cross-origin isolated: ` +
       `${self.crossOriginIsolated ? "yes" : "no, so one thread only"}.`;
     report("start", { file: `${file.name} ${(file.size / 2 ** 20).toFixed(0)} MB`, cores: navigator.hardwareConcurrency,
-      browser: navigator.userAgent, tiles: tiles ? zoom || tileNodes : "no", sort, cutThreads, workers, joinThreads });
-    worker.postMessage({ pbf: file, sort, tiles: tiles ? tileNodes : null, zoom, workers, cutThreads, joinThreads });
+      browser: navigator.userAgent, tiles: tiles ? zoom || tileNodes : "no", sort, cutThreads, workers, joinThreads,
+      memory: new URLSearchParams(location.search).get("memory") ?? "auto" });
+    // a test of the cut: quack.html?memory=0 keeps the parts of the cut in OPFS, ?memory=1 in memory (else: by the size)
+    const memoryOpt = new URLSearchParams(location.search).get("memory");
+    const inMemory = memoryOpt === null ? undefined : memoryOpt !== "0";
+    worker.postMessage({ pbf: file, sort, tiles: tiles ? tileNodes : null, zoom, workers, cutThreads, joinThreads, memory: inMemory });
   };
 </script>
 </body>

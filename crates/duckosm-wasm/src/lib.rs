@@ -308,7 +308,7 @@ pub fn quack_plan(pbf: Blob, tile_nodes: Option<f64>, tile_zoom: Option<u8>) -> 
 /// can run alone in a worker. `spill`: a pool of open files in OPFS for the temporary files of the cut. Gives the number of nodes of each
 /// tile (a tile with 0 has no file).
 #[wasm_bindgen]
-pub fn quack_cut(pbf: Blob, tiles: Array, outs: Array, spill: Array) -> Result<Array, JsError> {
+pub fn quack_cut(pbf: Blob, tiles: Array, outs: Array, spill: Array, memory: Option<bool>) -> Result<Array, JsError> {
     let list: Vec<duckosm_core::tiles::Tile> = tiles
         .iter()
         .map(|t| {
@@ -332,7 +332,8 @@ pub fn quack_cut(pbf: Blob, tiles: Array, outs: Array, spill: Array) -> Result<A
     let world = Boundary::parse(duckosm_core::quack::WORLD).map_err(|e| JsError::new(&e))?;
     // a file of at most 1.2 GB: the parts of the tiles in memory (compressed, each piece by itself), not in OPFS, so the
     // threads of the cut do not wait for the storage
-    let memory = pbf.size() <= 1.2e9;
+    // (`memory`: the choice of the page, for a test: quack.html?memory=0 or 1)
+    let memory = memory.unwrap_or(pbf.size() <= 1.2e9);
     let res = duckosm_core::tilecut::cut_to_sink(open, &world, &list, &["multipolygon", "boundary"], memory, &mut |t, b| {
         files[t as usize].write_all(b).map_err(|e| e.to_string())
     });

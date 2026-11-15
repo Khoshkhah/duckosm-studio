@@ -23,6 +23,7 @@ a.add_argument("--pbf", default=str(ROOT / "tests/data/monaco.osm.pbf"))
 a.add_argument("--tiles", action="store_true", help="make the table tile by tile")
 a.add_argument("--zoom", help="tile by tile with the map tiles of this zoom (with --tiles)")
 a.add_argument("--threads", help="with --tiles: the threads of the cut, the tile workers and the threads of the join")
+a.add_argument("--memory", choices=["0", "1"], help="with --tiles: the parts of the cut in OPFS (0) or in memory (1)")
 a.add_argument("--duckdb", action="store_true", help="also make the .duckdb file of a large file (always on Monaco)")
 a.add_argument("--sort", choices=["both", "yes", "no"], default="both", help="the runs: sorted, not sorted, or both")
 args = a.parse_args()
@@ -32,6 +33,8 @@ monaco = pathlib.Path(args.pbf).name == "monaco.osm.pbf"
 
 server = start(0, quiet=True, directory=WWW)
 url = f"http://127.0.0.1:{server.server_address[1]}/quack.html"
+if args.memory:
+    url += f"?memory={args.memory}"
 with sync_playwright() as p:
     # a profile on disk, as a person's browser: a new context of Playwright is like an incognito window, whose OPFS
     # quota (about 1 GB) is less than the temporary files of Kentucky
