@@ -24,6 +24,7 @@ a.add_argument("--tiles", action="store_true", help="make the table tile by tile
 a.add_argument("--zoom", help="tile by tile with the map tiles of this zoom (with --tiles)")
 a.add_argument("--threads", help="with --tiles: the threads of the cut, the tile workers and the threads of the join")
 a.add_argument("--memory", choices=["0", "1"], help="with --tiles: the parts of the cut in OPFS (0) or in memory (1)")
+a.add_argument("--keep", action="store_true", help="keep the GeoParquet file of a large file (to compare it)")
 a.add_argument("--duckdb", action="store_true", help="also make the .duckdb file of a large file (always on Monaco)")
 a.add_argument("--sort", choices=["both", "yes", "no"], default="both", help="the runs: sorted, not sorted, or both")
 args = a.parse_args()
@@ -103,7 +104,7 @@ with sync_playwright() as p:
             head = h.read(4)
             h.seek(-4, 2)
             assert head == b"PAR1" and h.read(4) == b"PAR1", f"{f} is not a Parquet file"
-        if not monaco:
+        if not monaco and not args.keep:
             f.unlink()  # a large file: the check is enough
         # the .duckdb file, written by DuckDB in the browser into OPFS
         if not monaco and not args.duckdb:
