@@ -222,6 +222,14 @@
   // the memory of the main module (its limit is 4 GiB), and the memory of the tile workers (each has its own 4 GiB)
   // one bar for each tile worker (each has its own WebAssembly memory, up to 4 GiB)
   let workerTiles = null;
+  // the facts of a run to the log of serve.py (a GET that it logs; the 404 is the answer): the start, the end or the
+  // error, with the time of each step, so a run on another computer can be read from the log
+  const report = (event, facts) => {
+    const q = new URLSearchParams({ event, ...Object.fromEntries(Object.entries(facts).map(([k, v]) => [k, String(v)])) });
+    fetch(`./__report?${q}`).catch(() => {});
+  };
+  const stepTimes = () => [...$("progress").querySelectorAll("li")]
+    .map((li) => `${li.dataset.step || li.textContent.slice(0, 30)}: ${li.querySelector(".t")?.textContent || ""}`).join("; ");
   const workerBars = (mibs, tiles = workerTiles) => {
     workerTiles = tiles;
     const box = $("worker-mem");
@@ -458,6 +466,7 @@
       }
       end();
       if (data.error) {
+        report("error", { error: data.error.slice(0, 600), steps: stepTimes() });
         status(`Error: ${data.error}`, "error");
         return;
       }
@@ -513,6 +522,8 @@
           `average ${busy.toFixed(1)} workers busy at the same time. The longest tile: ${long.tile}, ` +
           `${((long.end - long.start) / 1000).toFixed(1)} s. The workers started in ${(ready / 1000).toFixed(1)} s.`;
       }
+      report("end", { seconds: data.seconds, threads: data.threads, mib: data.mib, workersMib: data.workersMib,
+        storageMib: data.storageMib, steps: stepTimes(), tiles: $("timeline-text").textContent });
       const a = $("download");
       if (a.href) URL.revokeObjectURL(a.href);
       // the file is in OPFS (not in the memory of the tab) until the next run
@@ -530,6 +541,8 @@
     status(`Making the table of ${file.name} (${plan}) ...`);
     $("facts").textContent = `${plan}; the browser reports ${navigator.hardwareConcurrency} cores; cross-origin isolated: ` +
       `${self.crossOriginIsolated ? "yes" : "no, so one thread only"}.`;
+    report("start", { file: `${file.name} ${(file.size / 2 ** 20).toFixed(0)} MB`, cores: navigator.hardwareConcurrency,
+      browser: navigator.userAgent, tiles: tiles ? zoom || tileNodes : "no", sort, cutThreads, workers, joinThreads });
     worker.postMessage({ pbf: file, sort, tiles: tiles ? tileNodes : null, zoom, workers, cutThreads, joinThreads });
   };
 </script>
