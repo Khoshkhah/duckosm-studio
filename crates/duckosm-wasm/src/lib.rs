@@ -349,6 +349,8 @@ pub fn quack_cut(pbf: Blob, tiles: Array, outs: Array, spill: Array) -> Result<A
 /// this worker. Gives `{nodes, ways, relations}`.
 #[wasm_bindgen]
 pub fn quack_tile(tile: Blob, z: u8, x: u32, y: u32, out: web_sys::FileSystemSyncAccessHandle) -> Result<Object, JsError> {
+    // each pass of quack tells the page the memory of this worker (`{step, mib}` to quack_worker.js)
+    let _ = duckosm_core::util::STEP_HOOK.set(quack_step);
     let failed = std::sync::Arc::new(std::sync::Mutex::new(None));
     let file = BufWriter::with_capacity(1 << 20, OpfsOut { f: OpfsFile { h: out, at: 0.0 }, failed: failed.clone() });
     let open = || -> Result<_, String> { Ok(io::BufReader::with_capacity(1 << 20, BlobRead::new(tile.clone())?)) };

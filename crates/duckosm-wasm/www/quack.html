@@ -221,7 +221,9 @@
 
   // the memory of the main module (its limit is 4 GiB), and the memory of the tile workers (each has its own 4 GiB)
   // one bar for each tile worker (each has its own WebAssembly memory, up to 4 GiB)
-  const workerBars = (mibs) => {
+  let workerTiles = null;
+  const workerBars = (mibs, tiles = workerTiles) => {
+    workerTiles = tiles;
     const box = $("worker-mem");
     box.hidden = !mibs || !mibs.length;
     if (box.hidden) return;
@@ -238,7 +240,7 @@
     mibs.forEach((m, k) => {
       const bar = box.children[3 * k + 1].firstChild;
       bar.style.width = `${Math.min(100, (100 * m) / LIMIT)}%`;
-      box.children[3 * k + 2].textContent = `${fmt(m)} MiB`;
+      box.children[3 * k + 2].textContent = `${fmt(m)} MiB` + (tiles ? (tiles[k] ? `, tile ${tiles[k]}` : ", no tile") : "");
     });
   };
   const memory = (mib, workersMib = 0, mibs = null) => {
@@ -387,6 +389,7 @@
         status(`${$("status").textContent} (no news for 60 s: the browser may be out of memory; click Stop)`);
     }, 100);
     // a new worker for each run: the memory of a WebAssembly module never shrinks
+    workerTiles = null;
     worker = new Worker(new URL("./quack_worker.js", import.meta.url), { type: "module" });
     let last = 0;
     // an error that the worker cannot catch (a panic in a thread, no memory left) ends the run too
@@ -404,6 +407,15 @@
         if (li) li.querySelector(".t").textContent = `read ${gb(data.read)} of ${gb(data.size)} GB`;
         status(`Making the table of ${file.name}: reading the file, ` +
           (tiles ? "" : `pass ${data.pass} of 2, `) + `${Math.floor((100 * data.read) / data.size)} %`);
+        return;
+      }
+      // the tile workers while they run: the tile and the memory of each one
+      if (data.live) {
+        memory(data.mib, data.workersMib);
+        workerBars(data.workerMibs, data.workerTiles);
+        const busy = data.workerTiles.filter(Boolean).length;
+        const now = $("progress").querySelector("li.now");
+        if (now) now.querySelector(".t").textContent = `tile ${data.done} of ${data.total}, ${busy} workers busy`;
         return;
       }
       // tile by tile: the steps of the cut and of each tile show in the step that runs; the step of the tiles is done
@@ -494,9 +506,11 @@
         }).join("");
         const busy = tl.reduce((a, x) => a + x.end - x.start, 0) / (t1 - t0 || 1);
         const long = tl.reduce((a, x) => (x.end - x.start > a.end - a.start ? x : a), tl[0]);
+        // the start of the workers: from the first tile given to a worker to the first tile that began in a worker
+        const ready = t0 - Math.min(...tl.map((x) => x.given ?? x.start));
         $("timeline-text").textContent = `${tl.length} tiles in ${((t1 - t0) / 1000).toFixed(1)} s on ${rows} workers: on ` +
           `average ${busy.toFixed(1)} workers busy at the same time. The longest tile: ${long.tile}, ` +
-          `${((long.end - long.start) / 1000).toFixed(1)} s.`;
+          `${((long.end - long.start) / 1000).toFixed(1)} s. The workers started in ${(ready / 1000).toFixed(1)} s.`;
       }
       const a = $("download");
       if (a.href) URL.revokeObjectURL(a.href);

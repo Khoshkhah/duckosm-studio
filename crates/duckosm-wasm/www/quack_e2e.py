@@ -79,6 +79,8 @@ with sync_playwright() as p:
         assert done == len(steps), (done, steps)
         print("sorted" if sort else "not sorted", got)
         print("   " + "\n   ".join(steps))
+        if args.tiles:
+            print("  ", page.text_content("#timeline-text"))
         print("   " + "\n   ".join(l for l in page.evaluate("statusLog") if "tile cut" in l or "tiles 2" in l))
         if monaco:
             assert (got["nodes"], got["ways"], got["relations"]) == ("3,957", "5,573", "56"), got

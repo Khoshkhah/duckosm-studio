@@ -79,6 +79,10 @@ onmessage = async ({ data }) => {
 // first) and writes part-<i>.parquet, (4) the join of the parts into quack.parquet. Only steps 2 and 4 run here.
 async function byTiles(data, dir, spill, fh) {
   const t0 = performance.now();
+  // the module of the tile workers, compiled one time while the plan and the cut run (the browser compiles it on threads
+  // of its own); each tile worker then makes its instance from it at once (each worker compiled the 18 MB module again)
+  const tileModule = WebAssembly.compileStreaming(fetch(new URL("./pkg/duckosm_wasm_bg.wasm", import.meta.url)));
+  tileModule.catch(() => {});
   const steps = [];
   const mib = () => Math.round(wasm.memory.buffer.byteLength / 2 ** 20);
   // the memory of each tile worker (its own WebAssembly memory), added to the memory of this module
@@ -88,13 +92,13 @@ async function byTiles(data, dir, spill, fh) {
   const poll = () => navigator.storage.estimate().then((e) => { storage = Math.max(storage, e.usage); });
   const timer = setInterval(poll, 500);
   try {
-    return await byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, () => storage, poll);
+    return await byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, () => storage, poll, tileModule);
   } finally {
     clearInterval(timer);
   }
 }
 
-async function byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, storageMax, poll) {
+async function byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, storageMax, poll, tileModule) {
   const step = (name) => {
     const s = {
       step: name,
@@ -131,24 +135,44 @@ async function byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, stora
   // the timeline of step 3: for each tile, its worker, the time it went to the worker and the time it came back (ms)
   const timeline = [];
   const started = new Map();
+  const module = await tileModule;
   await new Promise((resolve, reject) => {
     const pool = [];
     let next = 0, done = 0;
     const stop = () => pool.forEach((w) => w.terminate());
+    // the tile of each worker now (null: no tile), for the page while the workers run
+    const working = new Array(workers).fill(null);
+    const live = () => postMessage({
+      live: true, mib: mib(), done, total: todo.length,
+      workersMib: [...workerMib.values()].reduce((a, b) => a + b, 0),
+      workerMibs: working.map((_, k) => workerMib.get(k) || 0),
+      workerTiles: working.map((i) => (i === null ? null : tiles[i].join("/"))),
+    });
     const give = (w, k) => {
+      working[k] = null;
       if (next < todo.length) {
         const i = todo[next++];
         started.set(i, [k, performance.now() - t0]);
-        w.postMessage({ dir, i, tile: tiles[i] });
+        working[k] = i;
+        w.postMessage({ dir, i, tile: tiles[i], module });
       }
     };
+    for (let k = 0; k < workers; k++) workerMib.set(k, 0);
     for (let k = 0; k < workers; k++) {
       const w = new Worker(new URL("./quack_tile_worker.js", import.meta.url), { type: "module" });
       w.onmessage = ({ data: r }) => {
+        // a step in the tile (each pass of quack): the memory of the worker now
+        if (r.step !== undefined) {
+          workerMib.set(k, r.mib);
+          live();
+          return;
+        }
         if (!r.error) {
           workerMib.set(k, r.mib);
-          const [worker, start] = started.get(r.i);
-          timeline.push({ worker, start, end: performance.now() - t0, tile: tiles[r.i].join("/"), nodes: counts[r.i] });
+          const [worker, given] = started.get(r.i);
+          // the start of the tile in the worker (after the start of a new worker); `given`: when the tile went to it
+          const start = r.begin - performance.timeOrigin - t0;
+          timeline.push({ worker, start, given, end: performance.now() - t0, tile: tiles[r.i].join("/"), nodes: counts[r.i] });
         }
         if (r.error) {
           stop();
@@ -171,6 +195,7 @@ async function byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, stora
           resolve();
         } else {
           give(w, k);
+          live();
         }
       };
       w.onerror = (e) => {
@@ -181,6 +206,7 @@ async function byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, stora
       pool.push(w);
       give(w, k);
     }
+    live();
     if (todo.length === 0) resolve();
   });
   for (let i = 0; i < tiles.length; i++) await dir.removeEntry(`tile-${i}.pbf`).catch(() => {});
