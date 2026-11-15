@@ -158,7 +158,7 @@
     </table>
     <div class="actions">
       <a id="download" class="button" hidden>Download the GeoParquet file</a>
-      <button id="duckdb" class="outline" title="Small tables only: DuckDB in the browser makes the file in its memory">Make the .duckdb file (small tables)</button>
+      <button id="duckdb" class="outline" title="DuckDB in the browser writes the file into the browser storage">Make the .duckdb file</button>
       <a id="duckdb-download" class="button" hidden>Download the .duckdb file</a>
     </div>
     <p class="note" id="duckdb-status"></p>
@@ -307,11 +307,10 @@
   });
 
   // The .duckdb file: DuckDB in the browser (duckdb-wasm, the version of duck.js) loads the GeoParquet file into the table
-  // main.quackosm, with the SQL of the native writer (duckOSM's crates/duckosm-duckdb, write_quack). The file is made in the
-  // memory of DuckDB's worker (at most 4 GiB), as duck.js makes its .duckdb file, so it works only for a small table:
-  // Monaco yes; Estonia and Kentucky "Allocation failure".
-  // ponytail: an opfs:// database stays empty in duckdb-wasm 1.33.1-dev57.0 (an ATTACH and an open both tried); a file in
-  // OPFS would remove the limit
+  // main.quackosm, with the SQL of the native writer (duckOSM's crates/duckosm-duckdb, write_quack). DuckDB writes the file
+  // into OPFS through a file handle (BROWSER_FSACCESS), so the file is not in the memory of DuckDB or of the page: made in
+  // the memory of DuckDB's worker, the file of Sweden stopped with "Allocation failure". The memory limit and no insertion
+  // order let DuckDB write each row group when it is full.
   const DUCKDB = "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.33.1-dev57.0/+esm";
   let parquet = null;
   async function duckdbFile(name) {
@@ -319,24 +318,45 @@
     const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
     const url = URL.createObjectURL(new Blob([`importScripts("${bundle.mainWorker}");`], { type: "text/javascript" }));
     const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), new Worker(url));
+    const root = await navigator.storage.getDirectory();
+    for (const n of [name, `${name}.wal`]) await root.removeEntry(n).catch(() => {});
+    let rows;
     try {
       await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
       URL.revokeObjectURL(url);
-      // Direct IO: else duckdb-wasm keeps the lock of the file after DETACH, and the copy fails (duck.js)
+      // Direct IO: else the copy of the empty database fails, and duckdb-wasm keeps the lock of a file after DETACH (duck.js)
       await db.open({ path: ":memory:", useDirectIO: true });
       const c = await db.connect();
+      // DuckDB does not take an empty file: an empty database, made in memory (a few hundred KB), goes into the file first
+      await c.query("ATTACH 'empty.duckdb' AS empty");
+      await c.query("DETACH empty");
+      const empty = await db.copyFileToBuffer("empty.duckdb");
+      await db.dropFile("empty.duckdb");
+      const w = await (await root.getFileHandle(name, { create: true })).createWritable();
+      await w.write(empty);
+      await w.close();
+      for (const n of [name, `${name}.wal`]) {
+        await db.registerFileHandle(n, await root.getFileHandle(n, { create: true }), duckdb.DuckDBDataProtocol.BROWSER_FSACCESS, true);
+      }
+      await c.query("SET memory_limit = '1GB'");
+      await c.query("SET preserve_insertion_order = false");
       // the geometry as WKB, then ST_GeomFromWKB, as the native writer (and duck.js: issue 2199 of duckdb-wasm)
       await c.query("SET enable_geoparquet_conversion = false");
       await db.registerFileHandle("quack.parquet", parquet, duckdb.DuckDBDataProtocol.BROWSER_FILEREADER, true);
       await c.query(`ATTACH '${name}' AS out`);
       await c.query("CREATE TABLE out.main.quackosm AS SELECT feature_id, tags, ST_GeomFromWKB(geometry) AS geometry FROM read_parquet('quack.parquet')");
+      rows = Number((await c.query("SELECT count(*) AS n FROM out.main.quackosm")).toArray()[0].n);
+      await c.query("CHECKPOINT out");
       await c.query("DETACH out");
-      const blob = new Blob([await db.copyFileToBuffer(name)], { type: "application/vnd.duckdb" });
       await c.close();
-      return blob;
+      for (const n of [name, `${name}.wal`]) await db.dropFile(n);
     } finally {
       await db.terminate();
     }
+    await root.removeEntry(`${name}.wal`).catch(() => {});
+    // a File in OPFS, not a copy in memory
+    const f = await (await root.getFileHandle(name)).getFile();
+    return { blob: f, rows };
   }
   $("duckdb").onclick = async () => {
     const name = file.name.replace(/\.osm\.pbf$|\.pbf$/, "") + "_quack.duckdb";
@@ -344,18 +364,18 @@
     $("duckdb-status").textContent = "Making the .duckdb file with DuckDB in the browser ...";
     const t = performance.now();
     try {
-      const blob = await duckdbFile(name);
+      // in OPFS under a name that starts with "quack", so Clear and the next run remove it
+      const { blob, rows } = await duckdbFile(`quack_${name}`);
       const a = $("duckdb-download");
       if (a.href) URL.revokeObjectURL(a.href);
       a.href = URL.createObjectURL(blob);
       a.download = name;
       a.hidden = false;
       $("duckdb").hidden = true;
-      $("duckdb-status").textContent = `The .duckdb file (table main.quackosm): ${(blob.size / 2 ** 20).toFixed(1)} MB in ` +
+      $("duckdb-status").textContent = `The .duckdb file (table main.quackosm, ${fmt(rows)} rows): ${(blob.size / 2 ** 20).toFixed(1)} MB in ` +
         `${((performance.now() - t) / 1000).toFixed(1)} s.`;
     } catch (e) {
-      $("duckdb-status").textContent = `Error: ${(e && e.message) || e}. In the browser, the .duckdb file works only for a ` +
-        "small table (DuckDB makes it in its memory). For a larger area, use duckosm-rust quack -f duckdb on a computer.";
+      $("duckdb-status").textContent = `Error: ${(e && e.message) || e}`;
       $("duckdb").disabled = false;
     }
   };

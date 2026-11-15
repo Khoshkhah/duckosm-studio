@@ -23,6 +23,7 @@ a.add_argument("--pbf", default=str(ROOT / "tests/data/monaco.osm.pbf"))
 a.add_argument("--tiles", action="store_true", help="make the table tile by tile")
 a.add_argument("--zoom", help="tile by tile with the map tiles of this zoom (with --tiles)")
 a.add_argument("--threads", help="with --tiles: the threads of the cut, the tile workers and the threads of the join")
+a.add_argument("--duckdb", action="store_true", help="also make the .duckdb file of a large file (always on Monaco)")
 a.add_argument("--sort", choices=["both", "yes", "no"], default="both", help="the runs: sorted, not sorted, or both")
 args = a.parse_args()
 out = pathlib.Path(args.out)
@@ -101,12 +102,16 @@ with sync_playwright() as p:
             assert head == b"PAR1" and h.read(4) == b"PAR1", f"{f} is not a Parquet file"
         if not monaco:
             f.unlink()  # a large file: the check is enough
-        # the .duckdb file, made by DuckDB in the browser in its memory: a small table only
-        if not monaco:
+        # the .duckdb file, written by DuckDB in the browser into OPFS
+        if not monaco and not args.duckdb:
             continue
         page.click("#duckdb")
-        page.wait_for_function("/MB in|Error/.test(document.getElementById('duckdb-status').textContent)", timeout=600000)
+        page.wait_for_function("/MB in|Error/.test(document.getElementById('duckdb-status').textContent)", timeout=3600000)
         print("   " + page.text_content("#duckdb-status"))
+        assert "Error" not in page.text_content("#duckdb-status")
+        if not monaco:
+            assert got["nodes"] and page.text_content("#duckdb-status").count("rows"), "no rows"
+            continue
         with page.expect_download() as d:
             page.click("#duckdb-download")
         f = out / (("sorted_" if sort else "") + d.value.suggested_filename)
