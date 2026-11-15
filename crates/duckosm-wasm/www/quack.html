@@ -338,7 +338,7 @@
       for (const n of [name, `${name}.wal`]) {
         await db.registerFileHandle(n, await root.getFileHandle(n, { create: true }), duckdb.DuckDBDataProtocol.BROWSER_FSACCESS, true);
       }
-      await c.query("SET memory_limit = '1GB'");
+      await c.query("SET memory_limit = '3GB'");
       await c.query("SET preserve_insertion_order = false");
       // the geometry as WKB, then ST_GeomFromWKB, as the native writer (and duck.js: issue 2199 of duckdb-wasm)
       await c.query("SET enable_geoparquet_conversion = false");
