@@ -57,6 +57,9 @@
   .mem .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
   .mem .bar i.high { background: var(--warn); }
   .mem small { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .mem.workers { display: grid; grid-template-columns: auto 1fr auto; gap: 3px 8px; align-items: center; font-size: .8rem; }
+  .mem.workers .bar { height: 6px; }
+  .mem.workers small { text-align: right; }
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
   .stat { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
   .stat small { display: block; color: var(--muted); font-size: .8rem; }
@@ -131,6 +134,7 @@
     <div id="status" role="status"></div>
     <ol class="steps" id="progress"></ol>
     <div class="mem"><div class="bar"><i id="mem-bar"></i></div><small id="mem-text"></small></div>
+    <div class="mem workers" id="worker-mem" hidden></div>
   </section>
 
   <section class="card" id="result" hidden>
@@ -216,7 +220,29 @@
   drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); choose(e.dataTransfer.files[0]); };
 
   // the memory of the main module (its limit is 4 GiB), and the memory of the tile workers (each has its own 4 GiB)
-  const memory = (mib, workersMib = 0) => {
+  // one bar for each tile worker (each has its own WebAssembly memory, up to 4 GiB)
+  const workerBars = (mibs) => {
+    const box = $("worker-mem");
+    box.hidden = !mibs || !mibs.length;
+    if (box.hidden) return;
+    if (box.children.length !== 3 * mibs.length) {
+      box.replaceChildren(...mibs.flatMap((_, k) => {
+        const name = document.createElement("small");
+        name.textContent = `worker ${k + 1}`;
+        const bar = document.createElement("div");
+        bar.className = "bar";
+        bar.append(document.createElement("i"));
+        return [name, bar, document.createElement("small")];
+      }));
+    }
+    mibs.forEach((m, k) => {
+      const bar = box.children[3 * k + 1].firstChild;
+      bar.style.width = `${Math.min(100, (100 * m) / LIMIT)}%`;
+      box.children[3 * k + 2].textContent = `${fmt(m)} MiB`;
+    });
+  };
+  const memory = (mib, workersMib = 0, mibs = null) => {
+    if (mibs) workerBars(mibs);
     $("mem-bar").style.width = `${Math.min(100, (100 * mib) / LIMIT)}%`;
     $("mem-bar").classList.toggle("high", mib > 0.75 * LIMIT);
     $("mem-text").textContent = `WebAssembly memory ${fmt(Math.round(mib))} of ${fmt(LIMIT)} MiB` +
@@ -249,8 +275,8 @@
     await showStorage();
   }
   async function showStorage() {
-    const { usage } = await navigator.storage.estimate();
-    $("storage").textContent = `Browser storage of this page: ${(usage / 2 ** 20).toFixed(0)} MB.`;
+    const { usage, quota } = await navigator.storage.estimate();
+    $("storage").textContent = `Browser storage of this page: ${(usage / 2 ** 20).toFixed(0)} MB of ${(quota / 2 ** 20).toFixed(0)} MB that the browser gives.`;
     $("clear").hidden = usage < 2 ** 20 || !!worker;
   }
   $("clear").onclick = async () => {
@@ -386,7 +412,7 @@
         const step = tileStep(data.step);
         const tile = tileOf(data.step);
         const now = $("progress").querySelector("li.now");
-        memory(data.mib, data.workersMib);
+        memory(data.mib, data.workersMib, data.workerMibs);
         if (!step || (tile && tile[0] < tile[1])) {
           status(`Making the table of ${file.name}: ${tile ? `tile ${tile[0]} of ${tile[1]} done` : data.step}`);
           if (now && tile) now.querySelector(".t").textContent = `tile ${tile[0]} of ${tile[1]}`;
@@ -415,7 +441,7 @@
           li.nextElementSibling?.classList.add("now");
         }
         last = data.ms;
-        memory(data.mib, data.workersMib);
+        memory(data.mib, data.workersMib, data.workerMibs);
         return;
       }
       end();
@@ -424,7 +450,7 @@
         return;
       }
       status("Done.", "done");
-      memory(data.mib, data.workersMib);
+      memory(data.mib, data.workersMib, data.workerMibs);
       $("nodes").textContent = fmt(data.nodes);
       $("ways").textContent = fmt(data.ways);
       $("relations").textContent = fmt(data.relations);

@@ -84,7 +84,14 @@ async function byTiles(data, dir, spill, fh) {
   // the memory of each tile worker (its own WebAssembly memory), added to the memory of this module
   const workerMib = new Map();
   const step = (name) => {
-    const s = { step: name, ms: performance.now() - t0, mib: mib(), workersMib: [...workerMib.values()].reduce((a, b) => a + b, 0) };
+    const s = {
+      step: name,
+      ms: performance.now() - t0,
+      mib: mib(),
+      workersMib: [...workerMib.values()].reduce((a, b) => a + b, 0),
+      // the memory of each tile worker, in the order of the workers
+      workerMibs: [...workerMib.entries()].sort((a, b) => a[0] - b[0]).map((e) => e[1]),
+    };
     steps.push(s);
     postMessage(s);
   };
@@ -131,9 +138,15 @@ async function byTiles(data, dir, spill, fh) {
         }
         if (r.error) {
           stop();
-          reject(new Error(`tile ${tiles[r.i].join("/")}: ${r.error}`));
+          // a full storage: say how full, from the browser's own numbers
+          navigator.storage.estimate().then(({ usage, quota }) => {
+            const full = /Quota|space/i.test(r.error) ? ` (browser storage ${(usage / 2 ** 20).toFixed(0)} of ${(quota / 2 ** 20).toFixed(0)} MB)` : "";
+            reject(new Error(`tile ${tiles[r.i].join("/")}${full}: ${r.error}`));
+          });
           return;
         }
+        // the tile file is not necessary after its rows are made: free its storage at once
+        dir.removeEntry(`tile-${r.i}.pbf`).catch(() => {});
         totals.nodes += r.nodes;
         totals.ways += r.ways;
         totals.relations += r.relations;
