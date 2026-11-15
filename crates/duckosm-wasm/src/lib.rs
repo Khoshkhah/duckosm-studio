@@ -349,7 +349,13 @@ pub fn quack_cut(pbf: Blob, tiles: Array, outs: Array, spill: Array, memory: Opt
 /// [`quack_cut`]), as a GeoParquet part through `out` (an open file in OPFS). The temporary files are in the memory of
 /// this worker. Gives `{nodes, ways, relations}`.
 #[wasm_bindgen]
-pub fn quack_tile(tile: Blob, z: u8, x: u32, y: u32, out: web_sys::FileSystemSyncAccessHandle) -> Result<Object, JsError> {
+pub fn quack_tile(tile: Blob, z: u8, x: u32, y: u32, out: web_sys::FileSystemSyncAccessHandle, spill: Array) -> Result<Object, JsError> {
+    // the temporary files of the tile in OPFS, not in the memory of this worker (the Paris tile of France at zoom 6
+    // stopped at 4 GiB with them in memory)
+    let pool = std::rc::Rc::new(OpfsPool { free: std::cell::RefCell::new(spill.iter().map(|h| h.unchecked_into()).collect()) });
+    duckosm_core::spill::set_temp_store(Some(std::rc::Rc::new(move || {
+        Box::new(OpfsStore(pool.clone())) as Box<dyn duckosm_core::spill::Store>
+    })));
     // each pass of quack tells the page the memory of this worker (`{step, mib}` to quack_worker.js)
     let _ = duckosm_core::util::STEP_HOOK.set(quack_step);
     QUACK_START.with(|t| t.set(js_sys::Date::now()));
@@ -357,6 +363,7 @@ pub fn quack_tile(tile: Blob, z: u8, x: u32, y: u32, out: web_sys::FileSystemSyn
     let file = BufWriter::with_capacity(1 << 20, OpfsOut { f: OpfsFile { h: out, at: 0.0 }, failed: failed.clone() });
     let open = || -> Result<_, String> { Ok(io::BufReader::with_capacity(1 << 20, BlobRead::new(tile.clone())?)) };
     let res = duckosm_build::quack_tile_to(open, duckosm_core::tiles::Tile { z, x, y }, file);
+    duckosm_core::spill::set_temp_store(None);
     if let Some(e) = failed.lock().expect("one thread").take() {
         return Err(JsError::new(&e));
     }

@@ -64,7 +64,7 @@ onmessage = async ({ data }) => {
     const mib = Math.round(wasm.memory.buffer.byteLength / 2 ** 20);   // the WebAssembly memory at the end (it never shrinks)
     out.close();
     out = null;
-    postMessage({ nodes: r.nodes, ways: r.ways, relations: r.relations, steps: r.steps, file: await fh.getFile(), seconds, storageMib: Math.round(storageMax() / 2 ** 20), threads, mib });
+    postMessage({ nodes: r.nodes, ways: r.ways, relations: r.relations, steps: r.steps, file: await fh.getFile(), seconds, storageMib: Math.round((await navigator.storage.estimate()).usage / 2 ** 20), threads, mib });
   } catch (e) {
     postMessage({ error: String((e && e.message) || e) });
   } finally {
@@ -197,7 +197,9 @@ async function byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, stora
           stop();
           // a full storage: say how full, from the browser's own numbers
           navigator.storage.estimate().then(({ usage, quota }) => {
-            const full = /Quota|space/i.test(r.error) ? ` (browser storage ${(usage / 2 ** 20).toFixed(0)} of ${(quota / 2 ** 20).toFixed(0)} MB, at most ${(storageMax() / 2 ** 20).toFixed(0)} MB in this run)` : "";
+            const full = /Quota|space/i.test(r.error) ? ` (browser storage ${(usage / 2 ** 20).toFixed(0)} of ${(quota / 2 ** 20).toFixed(0)} MB, at most ${(storageMax() / 2 ** 20).toFixed(0)} MB in this run)`
+              // a trap of WebAssembly in a tile: most likely its worker had no memory left (4 GiB for each worker)
+              : /unreachable|memory/i.test(r.error) ? ` (${counts[r.i].toLocaleString("en")} nodes; its worker used ${(workerMib.get(started.get(r.i)[0]) || 0).toLocaleString("en")} MiB of its 4,096 MiB at its last pass, and most likely had no memory left)` : "";
             reject(new Error(`tile ${tiles[r.i].join("/")}${full}: ${r.error}`));
           });
           return;

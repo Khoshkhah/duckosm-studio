@@ -6,7 +6,9 @@
 // and writes part-<i>.parquet: the rows that the tile owns. Out: {i, nodes, ways, relations, ms, mib: the memory of this
 // worker} or {i, error}.
 
-let pkg = null, wasm = null;
+let pkg = null, wasm = null, spill = null;
+// the temporary files of a tile (the buckets of the nodes and of the points: about 100 each for France), as in one run
+const SPILL = 192;
 
 onmessage = async ({ data }) => {
   try {
@@ -20,12 +22,18 @@ onmessage = async ({ data }) => {
       // the module that quack_worker.js compiled one time for all the tile workers
       wasm = await pkg.default({ module_or_path: data.module });
     }
+    if (!spill) {
+      // the temporary files of this worker in OPFS (a folder of its own), opened one time for all its tiles
+      const own = await data.dir.getDirectoryHandle(`spill-${crypto.randomUUID()}`, { create: true });
+      spill = [];
+      for (let k = 0; k < SPILL; k++) spill.push(await (await own.getFileHandle(`t${k}`, { create: true })).createSyncAccessHandle());
+    }
     const file = await (await data.dir.getFileHandle(`tile-${data.i}.pbf`)).getFile();
     const out = await (await data.dir.getFileHandle(`part-${data.i}.parquet`, { create: true })).createSyncAccessHandle();
     const t = performance.now();
     try {
       pkg.quack_storage_ms();
-      const r = pkg.quack_tile(file, data.tile[0], data.tile[1], data.tile[2], out);
+      const r = pkg.quack_tile(file, data.tile[0], data.tile[1], data.tile[2], out, spill);
       // the time that this tile waited for its file and for the browser storage
       const io = pkg.quack_storage_ms();
       out.flush();
