@@ -386,6 +386,9 @@
           return;
         }
         status(`Making the table of ${file.name} ...`);
+        // the waiting of the cut for the file and the storage, on the page
+        const wait = data.step.match(/\(([\d.]+ s of it waiting[^)]*)\)/);
+        if (wait) $("facts").textContent += ` The cut: ${wait[1]}.`;
         const li = $("progress").querySelector(`li[data-step="${step}"]`);
         if (li) {
           li.className = "done";

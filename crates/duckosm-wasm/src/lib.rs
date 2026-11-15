@@ -128,9 +128,9 @@ impl Read for BlobRead {
                 .blob
                 .slice_with_f64_and_f64(self.pos as f64, end as f64)
                 .map_err(js)?;
-            self.buf =
-                Uint8Array::new(&self.reader.read_as_array_buffer(&part).map_err(js)?.into())
-                    .to_vec();
+            self.buf = timed(|| self.reader.read_as_array_buffer(&part))
+                .map(|b| Uint8Array::new(&b.into()).to_vec())
+                .map_err(js)?;
             self.buf_at = self.pos;
         }
         let from = (self.pos - self.buf_at) as usize;
@@ -330,8 +330,9 @@ pub fn quack_cut(pbf: Blob, tiles: Array, outs: Array, spill: Array) -> Result<A
     })));
     let open = || -> Result<_, String> { Ok(io::BufReader::with_capacity(1 << 20, BlobRead::new(pbf.clone())?)) };
     let world = Boundary::parse(duckosm_core::quack::WORLD).map_err(|e| JsError::new(&e))?;
-    // ponytail: the parts of the tiles in OPFS; in memory (compressed) Sweden (975 MB) ran out of the 4 GiB in the cut
-    let memory = false;
+    // a file of at most 1.2 GB: the parts of the tiles in memory (compressed, each piece by itself), not in OPFS, so the
+    // threads of the cut do not wait for the storage
+    let memory = pbf.size() <= 1.2e9;
     let res = duckosm_core::tilecut::cut_to_sink(open, &world, &list, &["multipolygon", "boundary"], memory, &mut |t, b| {
         files[t as usize].write_all(b).map_err(|e| e.to_string())
     });
@@ -531,7 +532,31 @@ fn opfs_at(at: f64) -> web_sys::FileSystemReadWriteOptions {
 
 /// Write `b` at `at`. The bytes are copied out of the WebAssembly memory first: the browser does not write from a view
 /// of the shared memory of the build with threads. A full storage quota gives a short count (Chromium: -8).
+thread_local! {
+    /// The milliseconds that this thread waited for the reads and writes of OPFS and for the reads of the input file
+    /// ([`quack_storage_ms`]).
+    static STORAGE_MS: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
+}
+
+/// Count the time of an OPFS call in [`STORAGE_MS`].
+fn timed<T>(f: impl FnOnce() -> T) -> T {
+    let t = js_sys::Date::now();
+    let r = f();
+    STORAGE_MS.with(|s| s.set(s.get() + js_sys::Date::now() - t));
+    r
+}
+
+/// The milliseconds that this thread waited for OPFS since the last call (the page shows the storage time of the cut).
+#[wasm_bindgen]
+pub fn quack_storage_ms() -> f64 {
+    STORAGE_MS.with(|s| s.replace(0.0))
+}
+
 fn opfs_write(h: &web_sys::FileSystemSyncAccessHandle, at: f64, b: &[u8]) -> io::Result<usize> {
+    timed(|| opfs_write_now(h, at, b))
+}
+
+fn opfs_write_now(h: &web_sys::FileSystemSyncAccessHandle, at: f64, b: &[u8]) -> io::Result<usize> {
     let a = Uint8Array::new_with_length(b.len() as u32);
     a.copy_from(b);
     let n = h.write_with_buffer_source_and_options(&a, &opfs_at(at)).map_err(opfs_err)?;
@@ -612,7 +637,7 @@ impl OpfsBlob {
 impl Read for OpfsBlob {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let a = Uint8Array::new_with_length(buf.len() as u32);
-        let n = self.h().read_with_buffer_source_and_options(&a, &opfs_at(self.pos)).map_err(opfs_err)? as usize;
+        let n = timed(|| self.h().read_with_buffer_source_and_options(&a, &opfs_at(self.pos))).map_err(opfs_err)? as usize;
         a.subarray(0, n as u32).copy_to(&mut buf[..n]);
         self.pos += n as f64;
         Ok(n)

@@ -98,7 +98,7 @@ async function byTiles(data, dir, spill, fh) {
   } finally {
     for (const h of outs) h.close();
   }
-  step("quack by tiles 2: the tile cut");
+  step(`quack by tiles 2: the tile cut (${(pkg.quack_storage_ms() / 1000).toFixed(1)} s of it waiting for the file or the browser storage)`);
   // the largest tiles first, so the small ones fill the end and no worker waits for one large tile
   const todo = [];
   counts.forEach((n, i) => { if (n > 0) todo.push(i); });
