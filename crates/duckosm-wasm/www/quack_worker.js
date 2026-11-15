@@ -46,7 +46,7 @@ onmessage = async ({ data }) => {
       pkg = await import(isolated ? "./pkg-threads/duckosm_wasm.js" : "./pkg/duckosm_wasm.js");
       wasm = await pkg.default();
       if (isolated) {
-        threads = Math.min(data.workers || navigator.hardwareConcurrency || 4, 32);
+        threads = Math.min(data.workers || navigator.hardwareConcurrency || 4, 64);
         await pkg.initThreadPool(threads);
       }
     }
@@ -102,7 +102,7 @@ async function byTiles(data, dir, spill, fh) {
   const todo = [];
   counts.forEach((n, i) => { if (n > 0) todo.push(i); });
   todo.sort((a, b) => counts[b] - counts[a]);
-  const workers = Math.max(1, Math.min(data.workers || navigator.hardwareConcurrency || 4, 32, todo.length));
+  const workers = Math.max(1, Math.min(data.workers || navigator.hardwareConcurrency || 4, 64, todo.length));
   const totals = { nodes: 0, ways: 0, relations: 0 };
   await new Promise((resolve, reject) => {
     const pool = [];
