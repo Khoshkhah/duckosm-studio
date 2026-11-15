@@ -221,7 +221,7 @@
 
   // the memory of the main module (its limit is 4 GiB), and the memory of the tile workers (each has its own 4 GiB)
   // one bar for each tile worker (each has its own WebAssembly memory, up to 4 GiB)
-  let workerTiles = null;
+  let workerTiles = null, cutParts = [];
   // the facts of a run to the log of serve.py (a GET that it logs; the 404 is the answer): the start, the end or the
   // error, with the time of each step, so a run on another computer can be read from the log
   const report = (event, facts) => {
@@ -398,6 +398,7 @@
     }, 100);
     // a new worker for each run: the memory of a WebAssembly module never shrinks
     workerTiles = null;
+    cutParts = [];
     worker = new Worker(new URL("./quack_worker.js", import.meta.url), { type: "module" });
     let last = 0;
     // an error that the worker cannot catch (a panic in a thread, no memory left) ends the run too
@@ -428,6 +429,8 @@
       }
       // tile by tile: the steps of the cut and of each tile show in the step that runs; the step of the tiles is done
       // with its last tile
+      // the parts of the cut, with the time since the start, for the report
+      if (data.step && data.step.startsWith("tile cut")) cutParts.push(`${data.step.split(":")[0].slice(9)} ${(data.ms / 1000).toFixed(1)}`);
       if (data.step && tiles && tileStep(data.step) !== "quack 5: the sort") {
         const step = tileStep(data.step);
         const tile = tileOf(data.step);
@@ -466,7 +469,7 @@
       }
       end();
       if (data.error) {
-        report("error", { error: data.error.slice(0, 600), steps: stepTimes() });
+        report("error", { error: data.error.slice(0, 600), steps: stepTimes(), facts: $("facts").textContent, cut: cutParts.join(", ") });
         status(`Error: ${data.error}`, "error");
         return;
       }
@@ -523,7 +526,8 @@
           `${((long.end - long.start) / 1000).toFixed(1)} s. The workers started in ${(ready / 1000).toFixed(1)} s.`;
       }
       report("end", { seconds: data.seconds, threads: data.threads, mib: data.mib, workersMib: data.workersMib,
-        storageMib: data.storageMib, steps: stepTimes(), tiles: $("timeline-text").textContent });
+        storageMib: data.storageMib, steps: stepTimes(), tiles: $("timeline-text").textContent,
+        facts: $("facts").textContent, cut: cutParts.join(", ") });
       const a = $("download");
       if (a.href) URL.revokeObjectURL(a.href);
       // the file is in OPFS (not in the memory of the tab) until the next run
