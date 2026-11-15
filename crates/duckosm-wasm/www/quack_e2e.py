@@ -22,6 +22,7 @@ a.add_argument("out", nargs="?", default="out-quack")
 a.add_argument("--pbf", default=str(ROOT / "tests/data/monaco.osm.pbf"))
 a.add_argument("--tiles", action="store_true", help="make the table tile by tile")
 a.add_argument("--zoom", help="tile by tile with the map tiles of this zoom (with --tiles)")
+a.add_argument("--sort", choices=["both", "yes", "no"], default="both", help="the runs: sorted, not sorted, or both")
 args = a.parse_args()
 out = pathlib.Path(args.out)
 out.mkdir(parents=True, exist_ok=True)
@@ -47,18 +48,18 @@ with sync_playwright() as p:
     if args.tiles and monaco:
         # small tiles, so that ways and multipolygons cross the edges of the tiles
         page.evaluate("document.getElementById('run').dataset.tileNodes = 2000")
-    for sort in (True, False):
+    for sort in {"both": (True, False), "yes": (True,), "no": (False,)}[args.sort]:
         page.set_checked("#sort", sort)
         page.click("#run")
         # the status and the memory each 15 s, so a long run shows where it is
-        for _ in range(80):
+        for _ in range(240):
             try:
                 page.wait_for_function("/Done|Error/.test(document.getElementById('status').textContent)", timeout=15000)
                 break
             except PlaywrightTimeout:
                 print("  ", page.text_content("#clock"), page.text_content("#status"), "|", page.text_content("#mem-text"), flush=True)
         else:
-            raise AssertionError("no end after 20 minutes: " + page.text_content("#status"))
+            raise AssertionError("no end after 60 minutes: " + page.text_content("#status"))
         status = page.text_content("#status")
         assert status == "Done.", status
         got = {k: page.text_content(f"#{k}") for k in ("nodes", "ways", "relations", "seconds", "threads", "mib", "size")}
@@ -75,8 +76,12 @@ with sync_playwright() as p:
             page.click("#download")
         f = out / (("sorted_" if sort else "") + d.value.suggested_filename)
         d.value.save_as(f)
-        data = f.read_bytes()
-        assert data[:4] == b"PAR1" and data[-4:] == b"PAR1", f"{f} is not a Parquet file"
+        with open(f, "rb") as h:
+            head = h.read(4)
+            h.seek(-4, 2)
+            assert head == b"PAR1" and h.read(4) == b"PAR1", f"{f} is not a Parquet file"
+        if not monaco:
+            f.unlink()  # a large file: the check is enough
         # the .duckdb file, made by DuckDB in the browser in its memory: a small table only
         if not monaco:
             continue
