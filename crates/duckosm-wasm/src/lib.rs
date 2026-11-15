@@ -330,10 +330,10 @@ pub fn quack_cut(pbf: Blob, tiles: Array, outs: Array, spill: Array, memory: Opt
     })));
     let open = || -> Result<_, String> { Ok(io::BufReader::with_capacity(1 << 20, BlobRead::new(pbf.clone())?)) };
     let world = Boundary::parse(duckosm_core::quack::WORLD).map_err(|e| JsError::new(&e))?;
-    // a file of at most 1.2 GB: the parts of the tiles in memory (compressed, each piece by itself), not in OPFS, so the
-    // threads of the cut do not wait for the storage
-    // (`memory`: the choice of the page, for a test: quack.html?memory=0 or 1)
-    let memory = memory.unwrap_or(pbf.size() <= 1.2e9);
+    // the parts of the tiles in OPFS with no zlib: faster than in memory, where each part is compressed to fit (Sweden in
+    // Chromium: the cut 33.3 s in memory, 26.5 s in OPFS, half the memory). `memory`: the choice of the page, for a test
+    // (quack.html?memory=1)
+    let memory = memory.unwrap_or(false);
     let res = duckosm_core::tilecut::cut_to_sink(open, &world, &list, &["multipolygon", "boundary"], memory, &mut |t, b| {
         files[t as usize].write_all(b).map_err(|e| e.to_string())
     });

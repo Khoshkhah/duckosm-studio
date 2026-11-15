@@ -568,7 +568,7 @@
     report("start", { file: `${file.name} ${(file.size / 2 ** 20).toFixed(0)} MB`, cores: navigator.hardwareConcurrency,
       browser: navigator.userAgent, tiles: tiles ? zoom || tileNodes : "no", sort, cutThreads, workers, joinThreads,
       memory: new URLSearchParams(location.search).get("memory") ?? "auto" });
-    // a test of the cut: quack.html?memory=0 keeps the parts of the cut in OPFS, ?memory=1 in memory (else: by the size)
+    // a test of the cut: quack.html?memory=1 keeps the parts of the cut in memory (else in OPFS)
     const memoryOpt = new URLSearchParams(location.search).get("memory");
     const inMemory = memoryOpt === null ? undefined : memoryOpt !== "0";
     worker.postMessage({ pbf: file, sort, tiles: tiles ? tileNodes : null, zoom, workers, cutThreads, joinThreads, memory: inMemory });
