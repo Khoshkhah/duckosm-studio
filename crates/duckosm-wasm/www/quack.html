@@ -457,7 +457,7 @@
       $("seconds").textContent = `${data.seconds.toFixed(2)} s`;
       $("threads").textContent = data.threads;
       $("mib").textContent = `${fmt(data.mib)} MiB` + (data.workersMib ? ` + ${fmt(data.workersMib)} MiB (tile workers)` : "");
-      $("size").textContent = `${(data.file.size / 2 ** 20).toFixed(1)} MB`;
+      $("size").textContent = `${(data.file.size / 2 ** 20).toFixed(1)} MB` + (data.storageMib ? ` (the run used at most ${fmt(data.storageMib)} MB of browser storage)` : "");
       let at = 0;
       // tile by tile: the steps of the page, and the parts of the cut (the last tile ends step 3)
       const steps = !tiles ? data.steps : data.steps.filter((s) => {

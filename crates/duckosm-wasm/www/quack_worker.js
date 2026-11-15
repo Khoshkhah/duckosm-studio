@@ -64,7 +64,7 @@ onmessage = async ({ data }) => {
     const mib = Math.round(wasm.memory.buffer.byteLength / 2 ** 20);   // the WebAssembly memory at the end (it never shrinks)
     out.close();
     out = null;
-    postMessage({ nodes: r.nodes, ways: r.ways, relations: r.relations, steps: r.steps, file: await fh.getFile(), seconds, threads, mib });
+    postMessage({ nodes: r.nodes, ways: r.ways, relations: r.relations, steps: r.steps, file: await fh.getFile(), seconds, storageMib: Math.round(storageMax() / 2 ** 20), threads, mib });
   } catch (e) {
     postMessage({ error: String((e && e.message) || e) });
   } finally {
@@ -83,6 +83,18 @@ async function byTiles(data, dir, spill, fh) {
   const mib = () => Math.round(wasm.memory.buffer.byteLength / 2 ** 20);
   // the memory of each tile worker (its own WebAssembly memory), added to the memory of this module
   const workerMib = new Map();
+  // the most browser storage that the run used (each 0.5 s, while this worker waits; the cut is one call, so after it)
+  let storage = 0;
+  const poll = () => navigator.storage.estimate().then((e) => { storage = Math.max(storage, e.usage); });
+  const timer = setInterval(poll, 500);
+  try {
+    return await byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, () => storage, poll);
+  } finally {
+    clearInterval(timer);
+  }
+}
+
+async function byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, storageMax, poll) {
   const step = (name) => {
     const s = {
       step: name,
@@ -91,6 +103,7 @@ async function byTiles(data, dir, spill, fh) {
       workersMib: [...workerMib.values()].reduce((a, b) => a + b, 0),
       // the memory of each tile worker, in the order of the workers
       workerMibs: [...workerMib.entries()].sort((a, b) => a[0] - b[0]).map((e) => e[1]),
+      storageMib: Math.round(storageMax() / 2 ** 20),
     };
     steps.push(s);
     postMessage(s);
@@ -107,6 +120,7 @@ async function byTiles(data, dir, spill, fh) {
   } finally {
     for (const h of outs) h.close();
   }
+  await poll();
   step(`quack by tiles 2: the tile cut (${(pkg.quack_storage_ms() / 1000).toFixed(1)} s of it waiting for the file or the browser storage)`);
   // the largest tiles first, so the small ones fill the end and no worker waits for one large tile
   const todo = [];
@@ -140,7 +154,7 @@ async function byTiles(data, dir, spill, fh) {
           stop();
           // a full storage: say how full, from the browser's own numbers
           navigator.storage.estimate().then(({ usage, quota }) => {
-            const full = /Quota|space/i.test(r.error) ? ` (browser storage ${(usage / 2 ** 20).toFixed(0)} of ${(quota / 2 ** 20).toFixed(0)} MB)` : "";
+            const full = /Quota|space/i.test(r.error) ? ` (browser storage ${(usage / 2 ** 20).toFixed(0)} of ${(quota / 2 ** 20).toFixed(0)} MB, at most ${(storageMax() / 2 ** 20).toFixed(0)} MB in this run)` : "";
             reject(new Error(`tile ${tiles[r.i].join("/")}${full}: ${r.error}`));
           });
           return;
@@ -191,5 +205,5 @@ async function byTiles(data, dir, spill, fh) {
   for (const i of todo) await dir.removeEntry(`part-${i}.parquet`).catch(() => {});
   const seconds = (performance.now() - t0) / 1000;
   const workersMib = [...workerMib.values()].reduce((a, b) => a + b, 0);
-  postMessage({ ...totals, steps, timeline, workers, workersMib, file: await fh.getFile(), seconds, threads: `cut ${threads}, ${workers} tile workers, join ${joinThreads}`, mib: mib() });
+  postMessage({ ...totals, steps, timeline, workers, workersMib, file: await fh.getFile(), seconds, storageMib: Math.round(storageMax() / 2 ** 20), threads: `cut ${threads}, ${workers} tile workers, join ${joinThreads}`, mib: mib() });
 }

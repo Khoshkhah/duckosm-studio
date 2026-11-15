@@ -22,6 +22,7 @@ a.add_argument("out", nargs="?", default="out-quack")
 a.add_argument("--pbf", default=str(ROOT / "tests/data/monaco.osm.pbf"))
 a.add_argument("--tiles", action="store_true", help="make the table tile by tile")
 a.add_argument("--zoom", help="tile by tile with the map tiles of this zoom (with --tiles)")
+a.add_argument("--threads", help="with --tiles: the threads of the cut, the tile workers and the threads of the join")
 a.add_argument("--sort", choices=["both", "yes", "no"], default="both", help="the runs: sorted, not sorted, or both")
 args = a.parse_args()
 out = pathlib.Path(args.out)
@@ -45,11 +46,19 @@ with sync_playwright() as p:
     page.set_checked("#tiles", args.tiles)
     if args.tiles and args.zoom:
         page.select_option("#zoom", args.zoom)
+    if args.tiles and args.threads:
+        for i in ("#cut-threads", "#workers", "#join-threads"):
+            page.fill(i, args.threads)
     if args.tiles and monaco:
         # small tiles, so that ways and multipolygons cross the edges of the tiles
         page.evaluate("document.getElementById('run').dataset.tileNodes = 2000")
     for sort in {"both": (True, False), "yes": (True,), "no": (False,)}[args.sort]:
         page.set_checked("#sort", sort)
+        # each status with its time, so that the sub-steps of the cut show their times
+        page.evaluate("""() => { const t0 = performance.now(); window.statusLog = [];
+            new MutationObserver(() => statusLog.push(((performance.now() - t0) / 1000).toFixed(1) + " s " +
+              document.getElementById("status").textContent.slice(0, 140))).observe(document.getElementById("status"),
+              { childList: true, characterData: true, subtree: true }); }""")
         page.click("#run")
         # the status and the memory each 15 s, so a long run shows where it is
         for _ in range(240):
@@ -70,6 +79,7 @@ with sync_playwright() as p:
         assert done == len(steps), (done, steps)
         print("sorted" if sort else "not sorted", got)
         print("   " + "\n   ".join(steps))
+        print("   " + "\n   ".join(l for l in page.evaluate("statusLog") if "tile cut" in l or "tiles 2" in l))
         if monaco:
             assert (got["nodes"], got["ways"], got["relations"]) == ("3,957", "5,573", "56"), got
         with page.expect_download() as d:
