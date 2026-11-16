@@ -1,0 +1,39 @@
+<!doctype html><meta charset="utf-8"><title>Storage probe</title>
+<body style="font:16px system-ui;background:#111;color:#eee;padding:16px">
+<p>Writes files of 64 MiB pieces into the browser storage until the browser refuses, then removes them.</p>
+<pre id="out"></pre>
+<script>
+const src = `onmessage = async ({ data: files }) => {
+  const root = await navigator.storage.getDirectory();
+  const dir = await root.getDirectoryHandle("probe", { create: true });
+  const hs = [];
+  for (let i = 0; i < files; i++) hs.push(await (await dir.getFileHandle("p" + i, { create: true })).createSyncAccessHandle());
+  const buf = new Uint8Array(64 << 20).fill(7);
+  let total = 0, err = "";
+  try {
+    for (let k = 0; total < 12 * 2 ** 30; k++) {
+      const h = hs[k % files];
+      if (h.write(buf, { at: h.getSize() }) !== buf.length) throw new Error("short write");
+      total += buf.length;
+      if (k % 8 == 7) postMessage({ progress: total });
+    }
+  } catch (e) { err = String(e).slice(0, 120); }
+  const est = await navigator.storage.estimate();
+  for (const h of hs) h.close();
+  await root.removeEntry("probe", { recursive: true });
+  postMessage({ files, total, err, usage: est.usage, quota: est.quota });
+};`;
+const out = document.getElementById("out");
+const mb = (b) => (b / 2 ** 20).toFixed(0) + " MB";
+(async () => {
+  for (const files of [1, 16]) {
+    const r = await new Promise((ok) => {
+      const w = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+      w.onmessage = ({ data }) => { if (data.progress === undefined) { w.terminate(); ok(data); } else document.title = mb(data.progress); };
+      w.postMessage(files);
+    });
+    out.textContent += `${r.files} file(s): wrote ${mb(r.total)}; usage ${mb(r.usage)} of ${mb(r.quota)}; ${r.err || "no error"}\n`;
+  }
+  out.textContent += "done";
+})();
+</script>

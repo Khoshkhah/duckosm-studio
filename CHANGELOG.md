@@ -17,12 +17,38 @@ All versions are on the GitHub Releases page of `Khoshkhah/duckosm-rust`. There 
 
 ### Changed
 
+- **`quack.html` tile by tile: a worker for each tile** (Kaveh, 2026-11-14: "every thing is parallel but you run one thread"). The cut writes each
+  tile into its own OPFS file (`quack_plan`, `quack_cut`); a pool of tile workers (`quack_tile_worker.js`, one for each core, each with its own
+  module, memory and files) makes the rows of the tiles, the largest first (`quack_tile`); the join puts the parts into one GeoParquet file
+  (`quack_join`). Every tile file is complete (each multipolygon and boundary in each tile with a member). Chromium on the Mac mini, not sorted:
+  Île-de-France 41.4 s to 16.1 s; Sweden (975 MB, tiles of at most 4 million nodes) 153.3 s. Kentucky on a 20-core PC: about 4 times faster.
+  The duckOSM pin moves to `d3a20f8` (branch `kaveh/quack-tiles-raw`, duckOSM PR 179).
+- **`quack.html`: a tile size, at most 4 million nodes or one zoom** (Kaveh, 2026-11-14). With tile by tile on, the page offers the map tiles
+  of one zoom (6 to 12) in place of the tiles of at most 4 million nodes (`quack(..., tile_nodes, tile_zoom)`, duckOSM PR 176). Île-de-France
+  in Chromium: zoom 8 (13 tiles) 42.5 s and 474 MiB, zoom 9 (32 tiles) 41.7 s and 467 MiB. `quack_e2e.py --tiles --zoom Z` tests it.
+- **`quack.html`: tile by tile, for a large file** (2026-11-14). A new option makes the table tile by tile (duckOSM's `quack --tiles`,
+  `quack(pbf, sort, spill, out, tile_nodes)` of the module): the file is cut into tiles of at most 4 million nodes, and each tile gives its
+  rows, so the memory follows the size of a tile, not of the file. The page selects it for a file larger than 150 MB, and shows the tile that
+  runs. The duckOSM pin moves to `3b409a4` (duckOSM PR 174): it also has the levels without threads of their own in the browser
+  (duckOSM PR 173), so the build of the main page works again. `quack_e2e.py --tiles` checks the mode; the test removes its browser
+  profile at the end. Île-de-France (338 MB) in Chromium: 41.4 s and 429 MiB (45.6 s and 586 MiB sorted), the same 8 833 620 rows as
+  the native run; in one run it needs more than 4 GiB.
+- **The duckOSM pin moves to `4388db4`** (duckOSM PRs 159, 163, 165, 168 and 169; before `b61eccb`). `quack.html` gets the cut fix (an empty tag
+  value moved the tags of a cut file), the design for large areas (each table in temporary files), the sort with the rows on disk, and passes 3
+  and 4 with no reader thread in WebAssembly. The temporary files of `quack` now go to a pool of 192 OPFS files, and the GeoParquet file to an
+  OPFS file (`quack(pbf, sort, spill, out)`), so neither is in the WebAssembly memory. The download link gives the OPFS file; the next run
+  removes it.
 - **The duckOSM pin moves to `b61eccb`** (duckOSM PR 157; before `d7841f3`). It brings `duckosm_core::quack` and `duckosm_build::quack_to`
   (the table of QuackOSM, docs/rust/quack.md of duckOSM) and the work on the build by tiles of duckOSM PRs 152 to 156.
 - **The roadstyle pin moves to `9df3ceda`** (roadstyle PR 171; before `426f5914`). It brings the adapters of the four ways (`dashboard/ways.js`), the
   pan with the 3D terrain on with no lag (PR 167), the blank base map on a phone after a late base map (PR 169) and the way D parts.
 
 ### Fixed
+
+- **The allocator of the module with threads gives its extra free blocks back** (`alloc.rs`). Each thread kept every small block that it
+  freed, so the threads that make data always took new memory while the thread that frees it kept the old blocks: quack tile by tile of
+  Île-de-France grew to 4 GiB in 15 of its 28 tiles. Now a thread keeps at most 256 free blocks of a size, and the extra blocks go, 64 at a
+  time, to a shared pool that the other threads take from before they ask for new memory. Île-de-France: 429 MiB.
 
 - **A theme in card 9 keeps the tiles again.** Since the area became the hidden `boundary` source of each roads style (the Mapillary change below), the style on the map has the layer `boundary-area`, but the style of a new look on the same tiles (`setDesignLook`) did not have it. roadstyle's `rs.restyle` then saw other layers and refused, and each theme change drew a new map. A new map after a theme left the area's fill in another state until the next change of the design, so `design_e2e.py` (Show these layers) found the water in place of the buildings. Now `setDesignLook` adds the boundary (`withBoundary`) as `showStyle` does. `restyle_e2e.py` and `design_e2e.py` pass again.
 - **`phone_e2e.py` and `e2e.py` follow the page again** (test change only). Both checked a page from before 2026-11-04. After the draw, the page opens step 8 and folds card 5 (as `panel_e2e.py` checks), so `e2e.py` opens card 5 before its downloads (the click on `.osm.pbf` failed when the draw ended first), and `phone_e2e.py` checks that card 8 is in view. `phone_e2e.py` also has the note "This device draws at most 10,000 roads" (`d1fef84`), no footer (`f144a60`), the whole of the short card 8 in view (`7c38fed`), and roadstyle's list of changes in the level editor: the slider puts the two heads of the road in the list, and Apply draws them.

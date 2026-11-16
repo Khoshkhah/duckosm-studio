@@ -128,9 +128,9 @@ impl Read for BlobRead {
                 .blob
                 .slice_with_f64_and_f64(self.pos as f64, end as f64)
                 .map_err(js)?;
-            self.buf =
-                Uint8Array::new(&self.reader.read_as_array_buffer(&part).map_err(js)?.into())
-                    .to_vec();
+            self.buf = timed(|| self.reader.read_as_array_buffer(&part))
+                .map(|b| Uint8Array::new(&b.into()).to_vec())
+                .map_err(js)?;
             self.buf_at = self.pos;
         }
         let from = (self.pos - self.buf_at) as usize;
@@ -210,23 +210,250 @@ pub fn cut_area(region: Blob, boundary: &str, out: web_sys::FileSystemSyncAccess
 }
 
 /// duckOSM's `quack` (docs/rust/quack.md of duckOSM): the features table of QuackOSM (`feature_id`, `tags`,
-/// `geometry`) of the `.osm.pbf` file `pbf` (a `File` or a `Blob`, read piece by piece), as a GeoParquet file in
-/// memory. With `sort` (the default, as QuackOSM) the rows are in QuackOSM's order (Sort-Tile-Recursive). Gives
-/// `{nodes, ways, relations, parquet}`: the rows of each kind and the file. Like [`BlobRead`] in step 0, the reader
-/// stays on this thread; only the read blocks go to rayon.
-// ponytail: the GeoParquet file is in memory (Kentucky: 320 MB); an OPFS file keeps it out when a larger area needs it
+/// `geometry`) of the `.osm.pbf` file `pbf` (a `File` or a `Blob`, read twice, piece by piece), written as a GeoParquet
+/// file through `out`, an open file in OPFS (`FileSystemSyncAccessHandle`). With `sort` (the default, as QuackOSM) the
+/// rows are in QuackOSM's order (Sort-Tile-Recursive). `spill` is a pool of open files in OPFS for the temporary files
+/// (the node buckets alone can be about 100 at once), so neither they nor the result are in the WebAssembly memory.
+/// With `tile_nodes`, the table is made tile by tile, at most that many nodes in a tile (`quack_tiles_to` of duckOSM),
+/// so the memory follows the size of a tile, not of the file: the mode for a large file (Île-de-France, 338 MB). With
+/// `tile_zoom` (0 to 14), the tiles are the map tiles of that zoom.
+/// Gives `{nodes, ways, relations, steps}`: the rows of each kind, and for each step its time since the start (ms)
+/// and the WebAssembly memory (MiB) at its end.
 #[wasm_bindgen]
-pub fn quack(pbf: Blob, sort: Option<bool>) -> Result<Object, JsError> {
-    let r = io::BufReader::with_capacity(1 << 20, BlobRead::new(pbf).map_err(|e| JsError::new(&e))?);
-    let mut out = Vec::new();
-    let n = duckosm_build::quack_to(r, &mut out, duckosm_core::pbf::threads(), sort.unwrap_or(true)).map_err(|e| JsError::new(&e))?;
+pub fn quack(
+    pbf: Blob,
+    sort: Option<bool>,
+    spill: Array,
+    out: web_sys::FileSystemSyncAccessHandle,
+    tile_nodes: Option<f64>,
+    tile_zoom: Option<u8>,
+) -> Result<Object, JsError> {
+    use duckosm_build::TileSize;
+    let tiles = match (tile_zoom, tile_nodes) {
+        (Some(z), _) if z <= 14 => Some(TileSize::Zoom(z)),
+        (Some(z), _) => return Err(JsError::new(&format!("tile zoom {z}: use 0 to 14"))),
+        (None, n) => n.map(|n| TileSize::Nodes(n as usize)),
+    };
+    QUACK_STEPS.with(|s| s.borrow_mut().clear());
+    let _ = duckosm_core::util::STEP_HOOK.set(quack_step);
+    QUACK_START.with(|t| t.set(js_sys::Date::now()));
+    let pool = std::rc::Rc::new(OpfsPool {
+        free: std::cell::RefCell::new(spill.iter().map(|h| h.unchecked_into()).collect()),
+    });
+    duckosm_core::spill::set_temp_store(Some(std::rc::Rc::new(move || {
+        Box::new(OpfsStore(pool.clone())) as Box<dyn duckosm_core::spill::Store>
+    })));
+    let failed = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let file = BufWriter::with_capacity(1 << 20, OpfsOut { f: OpfsFile { h: out, at: 0.0 }, failed: failed.clone() });
+    // the file is read twice (by tiles: more times): each read tells the page how far it is (`{read, size, pass}`)
+    let (size, pass) = (pbf.size(), std::cell::Cell::new(0u32));
+    let open = || -> Result<_, String> {
+        pass.set(pass.get() + 1);
+        let r = Counted { r: BlobRead::new(pbf.clone())?, read: 0, next: 0, size, pass: pass.get() };
+        Ok(io::BufReader::with_capacity(1 << 20, r))
+    };
+    let res = match tiles {
+        Some(size) => duckosm_build::quack_tiles_to(open, file, sort.unwrap_or(true), size),
+        None => duckosm_build::quack_to(open, file, sort.unwrap_or(true)),
+    };
+    duckosm_core::spill::set_temp_store(None);
+    // a writer that is dropped does not give its error: the first one is kept here
+    if let Some(e) = failed.lock().expect("one thread").take() {
+        return Err(JsError::new(&e));
+    }
+    let n = res.map_err(|e| JsError::new(&e))?;
     let o = Object::new();
     let set = |k: &str, v: JsValue| Reflect::set(&o, &k.into(), &v).map(|_| ()).map_err(|_| JsError::new(k));
     set("nodes", (n.nodes as f64).into())?;
     set("ways", (n.ways as f64).into())?;
     set("relations", (n.relations as f64).into())?;
-    set("parquet", Uint8Array::from(&out[..]).into())?;
+    let steps = Array::new();
+    QUACK_STEPS.with(|s| {
+        for (name, ms, mib) in s.borrow().iter() {
+            let step = Object::new();
+            let _ = Reflect::set(&step, &"step".into(), &name.into());
+            let _ = Reflect::set(&step, &"ms".into(), &(*ms).into());
+            let _ = Reflect::set(&step, &"mib".into(), &(*mib).into());
+            steps.push(&step);
+        }
+    });
+    set("steps", steps.into())?;
     Ok(o)
+}
+
+/// Quack by tiles with a worker for each tile (`quack_worker.js` and `quack_tile_worker.js`), step 1: the tiles of the
+/// `.osm.pbf` file `pbf` (tiles of at most `tile_nodes` nodes, or of zoom `tile_zoom`), as an array of `[z, x, y]`.
+#[wasm_bindgen]
+pub fn quack_plan(pbf: Blob, tile_nodes: Option<f64>, tile_zoom: Option<u8>) -> Result<Array, JsError> {
+    use duckosm_build::TileSize;
+    // the steps of the cut go to the page as they come (`quack_step`)
+    let _ = duckosm_core::util::STEP_HOOK.set(quack_step);
+    QUACK_START.with(|t| t.set(js_sys::Date::now()));
+    let size = match tile_zoom {
+        Some(z) if z <= 14 => TileSize::Zoom(z),
+        Some(z) => return Err(JsError::new(&format!("tile zoom {z}: use 0 to 14"))),
+        None => TileSize::Nodes(tile_nodes.unwrap_or(4_000_000.0) as usize),
+    };
+    let open = || -> Result<_, String> { Ok(io::BufReader::with_capacity(1 << 20, BlobRead::new(pbf.clone())?)) };
+    let tiles = duckosm_core::quack::tiles_of_file(&open, size).map_err(|e| JsError::new(&e))?;
+    let out = Array::new();
+    for t in tiles {
+        out.push(&Array::of3(&t.z.into(), &t.x.into(), &t.y.into()));
+    }
+    Ok(out)
+}
+
+/// Step 2: cut `pbf` to the tiles of [`quack_plan`] (`tiles`), each tile into its own open file in OPFS (`outs`, one for
+/// each tile), with each multipolygon and boundary whole in each tile with a member (each tile file complete), so each tile
+/// can run alone in a worker. `spill`: a pool of open files in OPFS for the temporary files of the cut. Gives the number of nodes of each
+/// tile (a tile with 0 has no file).
+#[wasm_bindgen]
+pub fn quack_cut(pbf: Blob, tiles: Array, outs: Array, spill: Array, memory: Option<bool>) -> Result<Array, JsError> {
+    let list: Vec<duckosm_core::tiles::Tile> = tiles
+        .iter()
+        .map(|t| {
+            let a: Array = t.unchecked_into();
+            duckosm_core::tiles::Tile {
+                z: a.get(0).as_f64().unwrap_or(0.0) as u8,
+                x: a.get(1).as_f64().unwrap_or(0.0) as u32,
+                y: a.get(2).as_f64().unwrap_or(0.0) as u32,
+            }
+        })
+        .collect();
+    let mut files: Vec<OpfsFile> = outs.iter().map(|h| OpfsFile { h: h.unchecked_into(), at: 0.0 }).collect();
+    if files.len() != list.len() {
+        return Err(JsError::new("quack_cut: one open file for each tile"));
+    }
+    let pool = std::rc::Rc::new(OpfsPool { free: std::cell::RefCell::new(spill.iter().map(|h| h.unchecked_into()).collect()) });
+    duckosm_core::spill::set_temp_store(Some(std::rc::Rc::new(move || {
+        Box::new(OpfsStore(pool.clone())) as Box<dyn duckosm_core::spill::Store>
+    })));
+    let open = || -> Result<_, String> { Ok(io::BufReader::with_capacity(1 << 20, BlobRead::new(pbf.clone())?)) };
+    let world = Boundary::parse(duckosm_core::quack::WORLD).map_err(|e| JsError::new(&e))?;
+    // the parts of the tiles in OPFS with no zlib: faster than in memory, where each part is compressed to fit (Sweden in
+    // Chromium: the cut 33.3 s in memory, 26.5 s in OPFS, half the memory). `memory`: the choice of the page, for a test
+    // (quack.html?memory=1)
+    let memory = memory.unwrap_or(false);
+    let res = duckosm_core::tilecut::cut_to_sink(open, &world, &list, &["multipolygon", "boundary"], memory, &mut |t, b| {
+        files[t as usize].write_all(b).map_err(|e| e.to_string())
+    });
+    duckosm_core::spill::set_temp_store(None);
+    let counts = res.map_err(|e| JsError::new(&e))?;
+    for f in &files {
+        f.h.flush().map_err(|e| JsError::new(&format!("OPFS: {e:?}")))?;
+    }
+    Ok(counts.iter().map(|c| JsValue::from(c.nodes as f64)).collect())
+}
+
+/// Step 3, in a worker for each tile: the rows that tile `[z, x, y]` owns, from its own file `tile` (a file of
+/// [`quack_cut`]), as a GeoParquet part through `out` (an open file in OPFS). The temporary files are in the memory of
+/// this worker. Gives `{nodes, ways, relations}`.
+#[wasm_bindgen]
+pub fn quack_tile(tile: Blob, z: u8, x: u32, y: u32, out: web_sys::FileSystemSyncAccessHandle, spill: Array) -> Result<Object, JsError> {
+    // the temporary files of the tile in OPFS, not in the memory of this worker (the Paris tile of France at zoom 6
+    // stopped at 4 GiB with them in memory)
+    let pool = std::rc::Rc::new(OpfsPool { free: std::cell::RefCell::new(spill.iter().map(|h| h.unchecked_into()).collect()) });
+    duckosm_core::spill::set_temp_store(Some(std::rc::Rc::new(move || {
+        Box::new(OpfsStore(pool.clone())) as Box<dyn duckosm_core::spill::Store>
+    })));
+    // each pass of quack tells the page the memory of this worker (`{step, mib}` to quack_worker.js)
+    let _ = duckosm_core::util::STEP_HOOK.set(quack_step);
+    QUACK_START.with(|t| t.set(js_sys::Date::now()));
+    let failed = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let file = BufWriter::with_capacity(1 << 20, OpfsOut { f: OpfsFile { h: out, at: 0.0 }, failed: failed.clone() });
+    let open = || -> Result<_, String> { Ok(io::BufReader::with_capacity(1 << 20, BlobRead::new(tile.clone())?)) };
+    let res = duckosm_build::quack_tile_to(open, duckosm_core::tiles::Tile { z, x, y }, file);
+    duckosm_core::spill::set_temp_store(None);
+    if let Some(e) = failed.lock().expect("one thread").take() {
+        return Err(JsError::new(&e));
+    }
+    let n = res.map_err(|e| JsError::new(&e))?;
+    let o = Object::new();
+    let set = |k: &str, v: f64| Reflect::set(&o, &k.into(), &v.into()).map(|_| ()).map_err(|_| JsError::new(k));
+    set("nodes", n.nodes as f64)?;
+    set("ways", n.ways as f64)?;
+    set("relations", n.relations as f64)?;
+    Ok(o)
+}
+
+/// Step 4: the join of the parts of [`quack_tile`] (`parts`, files) into one GeoParquet file through `out`; with `sort`,
+/// in QuackOSM's order (the rows wait in the temporary files of `spill`). Gives the number of rows.
+#[wasm_bindgen]
+pub fn quack_join(parts: Array, sort: bool, spill: Array, out: web_sys::FileSystemSyncAccessHandle) -> Result<f64, JsError> {
+    let pool = std::rc::Rc::new(OpfsPool { free: std::cell::RefCell::new(spill.iter().map(|h| h.unchecked_into()).collect()) });
+    duckosm_core::spill::set_temp_store(Some(std::rc::Rc::new(move || {
+        Box::new(OpfsStore(pool.clone())) as Box<dyn duckosm_core::spill::Store>
+    })));
+    let failed = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let file = BufWriter::with_capacity(1 << 20, OpfsOut { f: OpfsFile { h: out, at: 0.0 }, failed: failed.clone() });
+    let blobs: Vec<Blob> = parts.iter().map(|p| p.unchecked_into()).collect();
+    let bytes = blobs.into_iter().map(|b| -> Result<Vec<u8>, String> {
+        let mut v = Vec::with_capacity(b.size() as usize);
+        BlobRead::new(b)?.read_to_end(&mut v).map_err(|e| e.to_string())?;
+        Ok(v)
+    });
+    let res = duckosm_build::quack_join_to(bytes, file, sort);
+    duckosm_core::spill::set_temp_store(None);
+    if let Some(e) = failed.lock().expect("one thread").take() {
+        return Err(JsError::new(&e));
+    }
+    Ok(res.map_err(|e| JsError::new(&e))? as f64)
+}
+
+thread_local! {
+    /// The steps of [`quack`]: the name, the time since the start (ms) and the WebAssembly memory (MiB) at its end.
+    static QUACK_STEPS: std::cell::RefCell<Vec<(String, f64, f64)>> = const { std::cell::RefCell::new(Vec::new()) };
+    static QUACK_START: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
+}
+
+/// The step hook of `duckosm_core::util::step` in [`quack`] (the steps run on the calling thread).
+/// Each step also goes to the page at once (`postMessage` of the worker, `{step, ms, mib}`), so a long run shows where it is.
+fn quack_step(name: &str) {
+    let (ms, mib) = (js_sys::Date::now() - QUACK_START.with(|t| t.get()), memory_mib());
+    QUACK_STEPS.with(|s| s.borrow_mut().push((name.to_string(), ms, mib)));
+    post(&[("step", name.into()), ("ms", ms.into()), ("mib", mib.into())]);
+}
+
+/// `postMessage` of the worker with an object of `fields`.
+fn post(fields: &[(&str, JsValue)]) {
+    let global = js_sys::global();
+    if let Ok(post) = Reflect::get(&global, &"postMessage".into()).and_then(|f| f.dyn_into::<js_sys::Function>()) {
+        let o = Object::new();
+        for (k, v) in fields {
+            let _ = Reflect::set(&o, &(*k).into(), v);
+        }
+        let _ = post.call1(&global, &o);
+    }
+}
+
+/// A reader of the PBF file that tells the page how far it is, each 64 MB (`{read, size, pass}`, `pass` 1 or 2).
+struct Counted {
+    r: BlobRead,
+    read: u64,
+    next: u64,
+    size: f64,
+    pass: u32,
+}
+
+impl Read for Counted {
+    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+        let n = self.r.read(out)?;
+        self.read += n as u64;
+        if self.read >= self.next {
+            self.next = self.read + (64 << 20);
+            post(&[("read", (self.read as f64).into()), ("size", self.size.into()), ("pass", self.pass.into())]);
+        }
+        Ok(n)
+    }
+}
+
+impl Seek for Counted {
+    fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
+        let at = self.r.seek(to)?;
+        self.read = at;
+        self.next = at + (64 << 20);
+        Ok(at)
+    }
 }
 
 /// Build duckOSM's tables of an area from its area file (`area`: the file of [`cut_area`], as a `File`). `spill` is a
@@ -316,7 +543,31 @@ fn opfs_at(at: f64) -> web_sys::FileSystemReadWriteOptions {
 
 /// Write `b` at `at`. The bytes are copied out of the WebAssembly memory first: the browser does not write from a view
 /// of the shared memory of the build with threads. A full storage quota gives a short count (Chromium: -8).
+thread_local! {
+    /// The milliseconds that this thread waited for the reads and writes of OPFS and for the reads of the input file
+    /// ([`quack_storage_ms`]).
+    static STORAGE_MS: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
+}
+
+/// Count the time of an OPFS call in [`STORAGE_MS`].
+fn timed<T>(f: impl FnOnce() -> T) -> T {
+    let t = js_sys::Date::now();
+    let r = f();
+    STORAGE_MS.with(|s| s.set(s.get() + js_sys::Date::now() - t));
+    r
+}
+
+/// The milliseconds that this thread waited for OPFS since the last call (the page shows the storage time of the cut).
+#[wasm_bindgen]
+pub fn quack_storage_ms() -> f64 {
+    STORAGE_MS.with(|s| s.replace(0.0))
+}
+
 fn opfs_write(h: &web_sys::FileSystemSyncAccessHandle, at: f64, b: &[u8]) -> io::Result<usize> {
+    timed(|| opfs_write_now(h, at, b))
+}
+
+fn opfs_write_now(h: &web_sys::FileSystemSyncAccessHandle, at: f64, b: &[u8]) -> io::Result<usize> {
     let a = Uint8Array::new_with_length(b.len() as u32);
     a.copy_from(b);
     let n = h.write_with_buffer_source_and_options(&a, &opfs_at(at)).map_err(opfs_err)?;
@@ -397,7 +648,7 @@ impl OpfsBlob {
 impl Read for OpfsBlob {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let a = Uint8Array::new_with_length(buf.len() as u32);
-        let n = self.h().read_with_buffer_source_and_options(&a, &opfs_at(self.pos)).map_err(opfs_err)? as usize;
+        let n = timed(|| self.h().read_with_buffer_source_and_options(&a, &opfs_at(self.pos))).map_err(opfs_err)? as usize;
         a.subarray(0, n as u32).copy_to(&mut buf[..n]);
         self.pos += n as f64;
         Ok(n)
