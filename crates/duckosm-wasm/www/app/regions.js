@@ -29,8 +29,12 @@ export async function kept() {
 // place in the stored file (one request is slow on some paths of the relay). Without that, one stream, as before. A part that is
 // done takes the second half of the part with the most bytes left: one slow part (its first byte came after 9 s on Kentucky) does
 // not decide the end. More, smaller parts from the start are slower: each request through the relay waits before its first byte.
-const PARTS = 8, TRIES = 4, MIN_PART = 4 << 20, AGAIN_MS = 2000;
-export async function download(x, onProgress, signal) {
+// A file in the cache of the relay comes faster in one connection (Estonia, 119 MiB, a Windows laptop: 2.1 s, against 4.4 s in 8
+// parts): a request for its first byte tells (X-Relay-Cache: HIT ...). One stream writes in blocks of BLOCK bytes: a write for each
+// piece of the stream (about 64 KB) was the slower half of the download (Estonia from the cache: 3.5 s with pieces, 1.8-2.5 s).
+// `to` (a FileSystemFileHandle from a save dialog): the file goes there (Download), not into the storage of the site (Get).
+const PARTS = 8, TRIES = 4, MIN_PART = 4 << 20, AGAIN_MS = 2000, BLOCK = 8 << 20;
+export async function download(x, onProgress, signal, to = null) {
   const ctl = new AbortController();     // the page's signal, and the stop of all parts when one part fails
   signal?.addEventListener("abort", () => ctl.abort());
   const get = (url, init) => fetch(`${relay}?url=${encodeURIComponent(url)}`, { signal: ctl.signal, ...init });
@@ -52,10 +56,16 @@ export async function download(x, onProgress, signal) {
   const total = Number(head.headers.get("Content-Length")) || 0;
   const url = head.headers.get("Content-Location");           // the dated file: all parts are of one version
   const etag = head.headers.get("ETag");
-  const parts = head.headers.get("Accept-Ranges") === "bytes" && url ? Math.min(PARTS, Math.floor(total / MIN_PART)) : 0;
-  const dir = await folder();
-  await dir.removeEntry(key(x.id) + ".json").catch(() => {});      // the old file is not complete from now on
-  const out = await (await dir.getFileHandle(key(x.id) + ".osm.pbf", { create: true })).createWritable();
+  let cached = false;
+  if (url) {
+    const probe = await get(url, { headers: { Range: "bytes=0-0" } }).catch(() => null);
+    cached = /^HIT/.test(probe?.headers.get("X-Relay-Cache") ?? "");
+    await probe?.body?.cancel().catch(() => {});
+  }
+  const parts = !cached && head.headers.get("Accept-Ranges") === "bytes" && url ? Math.min(PARTS, Math.floor(total / MIN_PART)) : 0;
+  const dir = to ? null : await folder();
+  await dir?.removeEntry(key(x.id) + ".json").catch(() => {});      // the old file is not complete from now on
+  const out = await (to ?? await dir.getFileHandle(key(x.id) + ".osm.pbf", { create: true })).createWritable();
   let got = 0;
   // The answer of a range request; when it has not come in AGAIN_MS, the same request goes again, and the first answer is taken (a
   // request through the relay sometimes waits 9 s for its first byte, and the same request again does not)
@@ -121,16 +131,28 @@ export async function download(x, onProgress, signal) {
   try {
     if (parts) await Promise.all(ranges.slice().map((rg) => part(rg).catch((e) => { ctl.abort(); throw e; })));
     else {
-      const r = await get(x.pbf);
+      const r = await get(url || x.pbf);
       if (!r.ok) throw await bad(r);
       const reader = r.body.getReader();
+      let buf = [], held = 0;
+      const flush = async () => {
+        if (!held) return;
+        const b = new Uint8Array(held);
+        let o = 0;
+        for (const c of buf) { b.set(c, o); o += c.length; }
+        buf = []; held = 0;
+        await out.write(b);
+        got += b.length;
+        onProgress(got, total);
+      };
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        await out.write(value);
-        got += value.length;
-        onProgress(got, total);
+        buf.push(value);
+        held += value.length;
+        if (held >= BLOCK) await flush();
       }
+      await flush();
     }
     await out.close();
   } catch (e) {
@@ -139,6 +161,7 @@ export async function download(x, onProgress, signal) {
   }
   if (total && got !== total) throw new Error(`the download stopped after ${got} of ${total} bytes`);
   const meta = { id: x.id, name: x.name, pbf: x.pbf, size: got, modified: head.headers.get("Last-Modified") };
+  if (to) return meta;                    // Download: the file is on the computer, not kept in this browser
   const w = await (await dir.getFileHandle(key(x.id) + ".json", { create: true })).createWritable();
   await w.write(JSON.stringify(meta));
   await w.close();
