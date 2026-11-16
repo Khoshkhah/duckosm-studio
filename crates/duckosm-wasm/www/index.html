@@ -1310,7 +1310,7 @@ function renderExtracts() {
       : regions.relay ? `<button type="button" data-get="${i}"${getting ? " disabled" : ""}>Get</button>` : "";
     return `<label class="rs-opt"><input type="radio" name="extract" value="${i}"${i === shown ? " checked" : ""} aria-label="Show ${esc(x.name)} on the map">` +
       `<span><b>${esc(x.name)}</b><small>${k ? `kept · ${mb(k.size)} MB · ${day(k.modified)}` : `${esc(x.id)} · ${num(Math.round(x.km2))} km²`}</small>${prog}</span>${what}` +
-      `<button type="button" class="ex-dl" data-dl="${esc(x.pbf)}" title="Download ${esc(x.name)} (.osm.pbf) to this computer" aria-label="Download ${esc(x.name)}">${icon("download")}</button></label>`;
+      `<button type="button" class="ex-dl" data-dl="${i}"${getting ? " disabled" : ""} title="Download ${esc(x.name)} (.osm.pbf) to this computer" aria-label="Download ${esc(x.name)}">${icon("download")}</button></label>`;
   }).join("") : `<p class="small muted">No Geofabrik file covers the area. Use the Overpass tab or the planet file.</p>`;
   dlBar = $("dlbar") ? rs.progress($("dlbar"), { label: "Download" }) : null;
 }
@@ -1325,7 +1325,9 @@ async function refreshKept() {
   renderExtracts();
   renderSavedAreasList();          // the size of Studio's files in this browser (the row of Delete all)
 }
-async function get(x) {
+// Get (the file into this browser), or Download with `to` (a file from the save dialog: the file goes to the computer, the same fast
+// way through the relay, and is not kept here)
+async function get(x, to = null) {
   const abort = new AbortController();
   getting = { id: x.id, abort };
   renderExtracts();
@@ -1335,8 +1337,9 @@ async function get(x) {
       if (performance.now() - last < 150 || !dlBar) return;
       last = performance.now();
       dlBar.set(total ? got / total : null, total ? `${Math.floor((100 * got) / total)} % · ${mb(got)} of ${mb(total)} MB` : `${mb(got)} MB`);
-    }, abort.signal);
+    }, abort.signal, to);
     getting = null;
+    if (to) { renderExtracts(); status(`${x.name} is saved as ${to.name}.`); return; }
     await refreshKept();
     useKept(keptRegions.find((r) => r.id === k.id) ?? k);
     status(`${x.name} is kept in this browser.`);
@@ -1353,8 +1356,17 @@ $("extracts").addEventListener("click", (ev) => {
   if (b.hasAttribute("data-cancel")) getting?.abort.abort();
   else if (b.dataset.use) useKept(keptRegions.find((r) => r.id === cover[Number(b.dataset.use)].id));
   else if (b.dataset.get) get(cover[Number(b.dataset.get)]);
-  else if (b.dataset.dl) Object.assign(document.createElement("a"), { href: b.dataset.dl }).click();     // the .osm.pbf file of Geofabrik, to this computer
+  else if (b.dataset.dl) saveRegion(cover[Number(b.dataset.dl)]);
 });
+// Download: with a relay and a save dialog (Chrome, Edge), the place that the person picks gets the file through the relay; else the
+// plain link to the .osm.pbf file of Geofabrik (one connection, slow)
+async function saveRegion(x) {
+  if (!regions.relay || !window.showSaveFilePicker) { Object.assign(document.createElement("a"), { href: x.pbf }).click(); return; }
+  let to;
+  try { to = await showSaveFilePicker({ suggestedName: x.pbf.split("/").pop(), types: [{ description: "OSM PBF", accept: { "application/octet-stream": [".pbf"] } }] }); }
+  catch { return; }                                // the dialog was closed
+  get(x, to);
+}
 $("kept").onclick = async (ev) => {
   const id = ev.target.closest("button[data-del]")?.dataset.del;
   if (!id || !await rs.confirm({ title: "Delete the file?", text: `${esc(keptRegions.find((k) => k.id === id)?.name ?? id)} goes from this browser. Get it again to use it.`, ok: "Delete", danger: true })) return;

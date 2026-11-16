@@ -79,6 +79,17 @@ the file in parts:
 When the relay gives no `Accept-Ranges: bytes` and no `Content-Location` (an old deploy), or the file is smaller than
 8 MB, the page reads the file in one stream, as before.
 
+Before the parts, the page asks for the first byte of the dated file. When the relay answers `X-Relay-Cache: HIT`, the
+file is in the cache, and the page reads it in one stream: from the cache, one connection is about two times faster
+than 8 parts (Estonia, 119 MiB, a Windows laptop in Chrome: 2.1 s against 4.4 s). One stream writes in blocks of
+8 MiB, not one write for each piece of the network stream (Estonia from the cache in headless Chromium: 3.5 s with
+pieces, 1.8 to 2.5 s with blocks).
+
+**Download** (the download icon of a region in step 3) uses the same `download()`. In Chrome and Edge, a save dialog asks
+where the file goes, and the page writes it there through the relay: the file does not go into the storage of the site,
+and the page keeps no copy. Other browsers, or a page with no relay, get the plain link to the file of Geofabrik (one
+connection, slow).
+
 ## The cache
 
 Geofabrik gives a file at about 2 to 4 MB/s, also with 8 parts at the same time. The relay therefore keeps the dated
