@@ -6,8 +6,10 @@ import worker from "./worker.js";
 
 const env = { ALLOWED_ORIGINS: "https://khoshkhah.github.io" };
 const MONACO = "https://download.geofabrik.de/europe/monaco-latest.osm.pbf";
+const pending = [];     // the background work of the Worker (the fill of the cache)
+const ctx = { waitUntil: (p) => pending.push(p) };
 const ask = (url, origin, method = "GET", extra = {}) =>
-  worker.fetch(new Request(`https://relay.example/?url=${encodeURIComponent(url)}`, { method, headers: { ...(origin ? { Origin: origin } : {}), ...extra } }), env);
+  worker.fetch(new Request(`https://relay.example/?url=${encodeURIComponent(url)}`, { method, headers: { ...(origin ? { Origin: origin } : {}), ...extra } }), env, ctx);
 
 assert.equal((await ask(MONACO, "https://evil.example")).status, 403, "another page");
 assert.equal((await ask(MONACO, null)).status, 403, "no Origin (not a browser page)");
@@ -42,4 +44,7 @@ assert.equal(p1.headers.get("Content-Range"), `bytes 0-${half - 1}/${size}`);
 assert.equal(p1.headers.get("ETag"), head.headers.get("ETag"), "the same version");
 const joined = Buffer.concat([Buffer.from(await p1.arrayBuffer()), Buffer.from(await p2.arrayBuffer())]);
 assert.ok(joined.equals(Buffer.from(bytes)), "the parts equal the whole file");
+// the cache: Node has no cache of Cloudflare, so the answer says that the file was not in it, and the file is complete
+assert.equal(r.headers.get("X-Relay-Cache"), "MISS-direct");
+await Promise.all(pending);
 console.log(`relay: ok (Monaco ${size} bytes, ${r.headers.get("Last-Modified")})`);

@@ -45,7 +45,7 @@ The relay is not an open proxy:
   `http://127.0.0.1` (a development server). A request without an `Origin` header (for example `curl` without
   `-H Origin`) gets 403.
 - It accepts only `GET`, `HEAD` and the CORS preflight (`OPTIONS`).
-- It streams the file and keeps nothing. It uses almost no CPU time, so the free plan is enough.
+- It streams the file. It uses almost no CPU time, so the free plan is enough. It keeps files of up to 220 MB in the edge cache of Cloudflare (see "The cache").
 - It sends `Cross-Origin-Resource-Policy: cross-origin`, because the page is cross-origin isolated (the headers
   for the WebAssembly threads).
 - It identifies itself to Geofabrik with the `User-Agent` `duckosm-relay (+https://github.com/Khoshkhah/duckOSM)`.
@@ -78,6 +78,27 @@ the file in parts:
 
 When the relay gives no `Accept-Ranges: bytes` and no `Content-Location` (an old deploy), or the file is smaller than
 8 MB, the page reads the file in one stream, as before.
+
+## The cache
+
+Geofabrik gives a file at about 2 to 4 MB/s, also with 8 parts at the same time. The relay therefore keeps the dated
+files of up to 220 MB in the edge cache of Cloudflare. The cache does not change any byte: the cached file and the
+file of Geofabrik have the same SHA-256.
+
+- A file that is in the cache comes from it. A repeat download of Luxembourg (48 MB) takes 0.5 s, against 12 s from
+  Geofabrik. A file of 214 MB takes 2.3 s, against 15 s.
+- A file that is not in the cache goes to Geofabrik at once, as before: the first download is not slower (measured:
+  33 MB 3.9 s, 98 MB 7.2 s, 214 MB 17 s). The part that starts at byte 0 reads the file one time through the cache,
+  in the background, and so fills it.
+- An entry is used only when its age is at least 1 s plus the size of the file at 2 MB/s. A younger entry can still be
+  in its fill, and a request that joins it runs at the speed of that one read.
+- A file of more than 220 MB is not kept. Cloudflare keeps an object of up to 512 MB, but a cold download of a file of
+  300 MB through the cache took 179 s, against 34 s without it. The cause is not known. Do not raise the limit
+  without a new measurement of the first download.
+- The header `X-Relay-Cache` of an answer says `HIT age=<s>` or `MISS-direct`.
+- `CACHE = "off"` in `wrangler.toml` turns the cache off.
+- The cache does not work on `*.workers.dev` with the Cache API, so the relay uses `cf.cacheEverything` on its request
+  to Geofabrik. The cache key is the dated file, so a new day gives a new entry.
 
 ## The page
 
@@ -128,8 +149,8 @@ To change the allowed pages later, change `ALLOWED_ORIGINS` and run `npx wrangle
 ## Limits and costs
 
 - The Cloudflare free plan has 100,000 requests each day. One download is one request, so this is enough.
-- The bytes go through Cloudflare. A large region (British Columbia is about 300 MB, Germany about 4 GB) takes
-  the same time as a direct download. Before a public launch, read Cloudflare's current terms about large
+- The bytes go through Cloudflare. A large region (British Columbia is about 300 MB, Germany about 4 GB) is not in
+  the cache and takes the same time as a direct download. Before a public launch, read Cloudflare's current terms about large
   downloads through Workers.
 - Geofabrik serves the files free. The kept files make sure that the page does not download the same region
   again for each area. Do not use the relay for automatic or repeated downloads.
