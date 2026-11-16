@@ -104,8 +104,10 @@ async function buildArea(data, fixes, levels, pre, mib) {
     }
     pre.push({ step: "cut to the boundary", ms: performance.now() - t, mib: mib() });
     postMessage({ step: "building the networks" });
-    // ponytail: 32 files; Kentucky needs at most 11 at once
-    for (let i = 0; i < 32; i++) spill.push(await (await dir.getFileHandle(`t${i}`, { create: true })).createSyncAccessHandle());
+    // the temporary files of the build: the join of the way nodes of raw.* has a bucket file for each 2^27 node ids in
+    // use (OSM node ids reach about 13 billion: about 100 files, also for Monaco), as quack (quack_worker.js); with 32,
+    // the build stopped: "all files of the pool for the temporary files are in use"
+    for (let i = 0; i < 192; i++) spill.push(await (await dir.getFileHandle(`t${i}`, { create: true })).createSyncAccessHandle());
     // ponytail: 64 files of the result; all modes with the layers and a DEM make about 45
     for (let i = 0; i < 64; i++) outs.push(await (await dir.getFileHandle(`o${i}`, { create: true })).createSyncAccessHandle());
     res = pkg.build_area_file(await fh.getFile(), data.boundary, data.modes, fixes, !!data.raw, levels, spill, outs);
