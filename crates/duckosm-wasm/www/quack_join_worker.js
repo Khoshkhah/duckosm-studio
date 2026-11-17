@@ -1,8 +1,8 @@
 // The join of quack by tiles in a Web Worker of its own, so it has its own pool of threads (the setting "join" of the
 // page; the cut and the tile workers have their own settings). In: {dir: the folder of the run in OPFS, parts: the names
 // of the parts of the tiles, sort: true or false (true: the parts are sorted, and the join merges them), threads}. It
-// writes quack.parquet. Out: {merged, total} (the rows of the merge, while it runs), then {rows, ms, mib: the memory of
-// this worker} or {error}.
+// writes quack.parquet. Out: {merged, total} (the rows of the merge, while it runs), {done: i} (all rows of part i are
+// read: its file can go), then {rows, ms, mib: the memory of this worker} or {error}.
 
 // the temporary files of the sort (a strip of QuackOSM's order that is larger than the budget)
 const SPILL = 8;
