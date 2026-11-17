@@ -1,175 +1,461 @@
 <!doctype html>
 <!-- duckOSM's quack in the browser (docs/rust/quack.md of duckOSM): the features table of QuackOSM of a .osm.pbf file,
-     made by the Rust engine in WebAssembly, as a GeoParquet file. quack_e2e.py tests it. -->
+     made by the Rust engine in WebAssembly, as a GeoParquet file. quack_e2e.py tests it. The look is the look of pbfcut's
+     online page (pbfcut web/www/index.html). -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>duckOSM quack</title>
+<script src="coi-serviceworker.js"></script>   <!-- the COOP and COEP headers on GitHub Pages, for threads -->
+<script>try { const t = localStorage.getItem("duckosm.theme"); if (t) document.documentElement.dataset.theme = t; } catch {}</script>
 <style>
-  :root { --bg: #f6f7f9; --card: #fff; --fg: #1d2330; --muted: #5b6475; --line: #e1e4ea; --accent: #1f6feb;
-    --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e; --soft: #eef3fd; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #0d1117; --card: #161b22; --fg: #e6e9ef; --muted: #9aa3b2;
-    --line: #2b3240; --accent: #58a6ff; --ok: #3fb950; --warn: #d29922; --bad: #f85149; --soft: #182235; } }
+  :root { --bg: #f6f7f9; --card: #fff; --text: #16181d; --muted: #6b7280; --line: #e5e7eb; --field: #f3f4f6;
+          --accent: #2563eb; --accent-soft: #dbe7fe; --ok: #16a34a; --warn: #b45309; --bad: #dc2626; color-scheme: light; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme=light]) { --bg: #0f1115; --card: #171a21; --text: #e6e8ec; --muted: #8b93a1; --line: #262a33; --field: #1f232b;
+            --accent: #6ea0ff; --accent-soft: #1d2a45; --ok: #4ade80; --warn: #fbbf24; --bad: #f87171; color-scheme: dark; }
+  }
+  :root[data-theme=dark] { --bg: #0f1115; --card: #171a21; --text: #e6e8ec; --muted: #8b93a1; --line: #262a33; --field: #1f232b;
+            --accent: #6ea0ff; --accent-soft: #1d2a45; --ok: #4ade80; --warn: #fbbf24; --bad: #f87171; color-scheme: dark; }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, sans-serif; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
   main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
-  header h1 { font-size: 1.5rem; margin: 0; }
-  header p { color: var(--muted); margin: 4px 0 20px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
-  .card h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; }
-  #drop { display: block; border: 2px dashed var(--line); border-radius: 10px; padding: 22px 16px; text-align: center;
-    cursor: pointer; transition: border-color .15s, background .15s; }
-  #drop:hover, #drop.over { border-color: var(--accent); background: var(--soft); }
-  #drop strong { display: block; font-size: 1.05rem; }
-  #drop span { color: var(--muted); font-size: .9rem; overflow-wrap: anywhere; }
-  #file { position: absolute; width: 1px; height: 1px; opacity: 0; }
-  .opt { display: flex; gap: 10px; align-items: flex-start; margin: 14px 0 4px; cursor: pointer; }
-  .opt input { margin-top: 4px; }
-  .opt small { display: block; color: var(--muted); }
-  .opt select { font: inherit; margin-left: 6px; max-width: 100%; }
-  .threads .nums { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 4px 0 2px; }
-  .threads .nums input { width: 4.5em; margin-left: 4px; font: inherit; }
-  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
-  button, a.button { font: inherit; font-weight: 600; padding: 9px 18px; border-radius: 8px; border: 1px solid var(--accent);
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  h1 { font-size: 1.35rem; margin: 0; letter-spacing: -.01em; }
+  h1 span { color: var(--muted); font-weight: 400; }
+  nav a { color: var(--muted); text-decoration: none; margin-left: 14px; font-size: .9rem; }
+  nav a:hover, #theme:hover { color: var(--accent); }
+  #theme { background: none; border: 0; padding: 0 0 0 14px; color: var(--muted); font-size: 1rem; line-height: 1; cursor: pointer; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 12px; }
+  .card.over { border-color: var(--accent); background: var(--accent-soft); }
+  h2 { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+  h2.sub { margin-top: 18px; }
+  a { color: var(--accent); }
+  label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: 4px; }
+  input[type=number], #region, select { width: 100%; padding: 9px 11px; font: inherit; color: var(--text); background: var(--field);
+    border: 1px solid transparent; border-radius: 9px; outline: none; }
+  input[type=number]:focus, #region:focus, select:focus { border-color: var(--accent); background: var(--card); }
+  input[type=file] { font: inherit; font-size: .85rem; color: var(--muted); max-width: 100%; }
+  input[type=file]::file-selector-button { font: inherit; font-size: .85rem; padding: 6px 12px; margin-right: 10px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--field); color: var(--text); cursor: pointer; }
+  .switch { display: inline-flex; background: var(--field); border-radius: 10px; padding: 3px; margin-bottom: 14px; }
+  .switch input { position: absolute; opacity: 0; pointer-events: none; }
+  .switch label { margin: 0; padding: 6px 14px; border-radius: 8px; font-size: .88rem; color: var(--muted); cursor: pointer; }
+  .switch input:checked + label { background: var(--card); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+  .switch input:focus-visible + label { outline: 2px solid var(--accent); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+  button, a.button { font: inherit; font-size: .92rem; font-weight: 500; padding: 9px 18px; border-radius: 9px; border: 1px solid var(--accent);
     background: var(--accent); color: #fff; cursor: pointer; text-decoration: none; display: inline-block; }
-  button.secondary { background: transparent; color: var(--bad); border-color: var(--bad); }
-  button.outline { background: transparent; color: var(--accent); }
-  button:disabled { opacity: .45; cursor: default; }
-  #status { min-height: 1.5em; font-weight: 600; }
-  #status.error { color: var(--bad); }
+  button.secondary, a.button.secondary { background: transparent; color: var(--accent); }
+  a.button.disabled { opacity: .45; pointer-events: none; }
+  button:disabled { opacity: .4; cursor: default; }
+  #run { min-width: 150px; }
+  .hint { color: var(--muted); font-size: .82rem; margin: 8px 0 0; }
+  .hint:empty { display: none; }
+  progress { width: 100%; height: 6px; margin-top: 10px; appearance: none; border: 0; border-radius: 3px; background: var(--field); overflow: hidden; }
+  progress::-webkit-progress-bar { background: var(--field); }
+  progress::-webkit-progress-value { background: var(--accent); }
+  label.check { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; font-size: .88rem; color: var(--text); cursor: pointer; }
+  label.check input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+  /* the progress */
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .stats.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .stats div { background: var(--field); border-radius: 10px; padding: 8px 10px; min-width: 0; }
+  .stats span { display: block; font-size: .72rem; color: var(--muted); }
+  .stats b { display: block; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar { height: 4px; background: var(--field); border-radius: 2px; overflow: hidden; margin-bottom: 8px; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+  .bar i.high { background: var(--warn); }
+  #status { font-size: .9rem; font-weight: 500; margin: 0 0 10px; min-height: 1.3em; overflow-wrap: anywhere; }
+  #status.error { color: var(--bad); white-space: pre-wrap; }
   #status.done { color: var(--ok); }
-  .run-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-  #clock { font-variant-numeric: tabular-nums; color: var(--muted); }
-  ol.steps { list-style: none; padding: 0; margin: 12px 0 0; }
-  ol.steps li { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center; padding: 6px 0;
-    border-bottom: 1px solid var(--line); color: var(--muted); }
-  ol.steps li:last-child { border-bottom: 0; }
-  ol.steps li .dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line); justify-self: center; }
-  ol.steps li.now { color: var(--fg); font-weight: 600; }
-  ol.steps li.now .dot { border-color: var(--accent); border-top-color: transparent; animation: spin .8s linear infinite; }
-  ol.steps li.done { color: var(--fg); }
-  ol.steps li.done .dot { background: var(--ok); border-color: var(--ok); }
-  ol.steps li .t { font-variant-numeric: tabular-nums; font-size: .9rem; color: var(--muted); text-align: right; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .mem { margin-top: 14px; }
-  .mem .bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
-  .mem .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
-  .mem .bar i.high { background: var(--warn); }
-  .mem small { color: var(--muted); font-variant-numeric: tabular-nums; }
-  .mem.workers { display: grid; grid-template-columns: auto 1fr auto; gap: 3px 8px; align-items: center; font-size: .8rem; }
-  .mem.workers .bar { height: 6px; }
-  .mem.workers small { text-align: right; }
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-  .stat { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
-  .stat small { display: block; color: var(--muted); font-size: .8rem; }
-  .stat b { font-size: 1.25rem; font-variant-numeric: tabular-nums; }
-  table { border-collapse: collapse; width: 100%; margin-top: 14px; font-size: .92rem; }
-  th, td { padding: 6px 4px; border-bottom: 1px solid var(--line); text-align: left; }
-  th { color: var(--muted); font-weight: 600; font-size: .8rem; }
-  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .note { color: var(--muted); font-size: .88rem; margin: 12px 0 0; }
+  ol.steps { list-style: none; padding: 0; margin: 0; font-size: .88rem; }
+  ol.steps li { display: grid; grid-template-columns: 2.2em 1fr auto; gap: 8px; padding: 5px 0; color: var(--muted);
+    font-variant-numeric: tabular-nums; }
+  ol.steps li > span:first-child { font-family: ui-monospace, monospace; font-size: .8rem; padding-top: 1px; }
+  ol.steps li b { font-weight: 400; }
+  ol.steps li small.io { display: block; font-size: .75rem; color: var(--muted); font-weight: 400; }
+  ol.steps li small.io:empty { display: none; }
+  ol.steps li.done { color: var(--text); }
+  ol.steps li.done > span:first-child { color: var(--ok); }
+  ol.steps li.run { color: var(--accent); }
+  ol.steps li.run b { font-weight: 600; }
+  .mem { display: grid; grid-template-columns: auto 1fr auto; gap: 3px 8px; align-items: center; font-size: .75rem; color: var(--muted);
+    font-variant-numeric: tabular-nums; margin-top: 12px; }
+  .mem .bar { margin: 0; }
+  .mem small { text-align: right; font-size: inherit; }
+  /* the result */
+  .table { overflow: auto; max-height: 380px; margin-top: 14px; border-top: 1px solid var(--line); }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: .85rem; }
+  th { position: sticky; top: 0; background: var(--card); color: var(--muted); font-weight: 500; font-size: .75rem; }
+  th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; padding-left: 0; white-space: normal; }
+  #timeline-svg { display: block; background: var(--field); border-radius: 8px; }
+  code { font-size: .8rem; overflow-wrap: anywhere; }
+  /* the help popups (the buttons "?") */
+  button.help { width: 18px; height: 18px; padding: 0; margin-left: 4px; border-radius: 50%; border: 1px solid var(--line);
+    background: var(--field); color: var(--muted); font-size: .7rem; font-weight: 600; line-height: 16px; vertical-align: 1px; }
+  button.help:hover { color: var(--accent); border-color: var(--accent); }
+  dialog { max-width: min(440px, calc(100vw - 32px)); border: 1px solid var(--line); border-radius: 14px; padding: 20px;
+    background: var(--card); color: var(--text); box-shadow: 0 10px 40px rgb(0 0 0 / .25); }
+  dialog::backdrop { background: rgb(0 0 0 / .35); }
+  dialog h3 { margin: 0 0 14px; font-size: 1.05rem; }
+  dialog dl { margin: 0; }
+  dialog dt { font-weight: 600; font-size: .88rem; padding-top: 10px; border-top: 1px solid var(--line); }
+  dialog dt:first-child { border-top: 0; padding-top: 0; }
+  dialog dd { margin: 2px 0 10px; font-size: .86rem; color: var(--muted); }
+  dialog form { text-align: right; margin-top: 6px; }
+  /* the matches of the region search */
+  .combo { position: relative; }
+  #region-list { position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; list-style: none;
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgb(0 0 0 / .14); }
+  #region-list li { padding: 7px 10px; border-radius: 7px; cursor: pointer; display: flex; justify-content: space-between; gap: 12px; }
+  #region-list li span { color: var(--muted); font-size: .82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #region-list li[aria-selected=true] { background: var(--accent-soft); }
+  #region-list li.none { color: var(--muted); cursor: default; }
   [hidden] { display: none !important; }
+  @media (max-width: 560px) {
+    .grid, .stats, .stats.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #run { flex: 1; }
+    nav a { margin: 0 14px 0 0; }
+  }
 </style>
 </head>
 <body>
 <main>
-  <header>
-    <h1>duckOSM quack</h1>
-    <p>The features table of QuackOSM (<code>feature_id</code>, <code>tags</code>, <code>geometry</code>) of an
-      <code>.osm.pbf</code> file, made in this browser by duckOSM's Rust engine. The file stays on your computer.</p>
-  </header>
+<header>
+  <h1>duckOSM <span>quack</span></h1>
+  <nav><a href="./">Studio</a><a href="manual/">Manual</a><a href="https://github.com/Khoshkhah/duckosm-studio">GitHub</a><button id="theme" type="button" title="Light or dark" aria-label="Light or dark">◐</button></nav>
+</header>
 
-  <section class="card">
-    <h2>1. The file</h2>
-    <label id="drop" for="file">
-      <strong id="drop-title">Choose an .osm.pbf file, or drop it here</strong>
-      <span id="drop-info">The browser has at most 4 GiB of memory. For a file larger than about 150 MB, make the table tile by tile.</span>
-    </label>
-    <input id="file" type="file" accept=".pbf">
-    <label class="opt"><input id="tiles" type="checkbox">
-      <span>Make the table tile by tile
-        <small>The file is cut into tiles of at most 4 million nodes, and each tile gives its rows. The memory then follows
-          the size of a tile, not of the file: for a large file (Île-de-France, 338 MB). Each tile runs in a worker of its own,
-          one for each core. The same rows.</small></span>
-    </label>
-    <label class="opt" id="zoom-opt" hidden><span>Tile size
-        <select id="zoom">
-          <option value="8" selected>map tiles of zoom 8 (the default)</option>
-          <option value="">at most 4 million nodes (each tile)</option>
-          <option value="6">map tiles of zoom 6</option>
-          <option value="7">map tiles of zoom 7</option>
-          <option value="9">map tiles of zoom 9</option>
-          <option value="10">map tiles of zoom 10</option>
-          <option value="11">map tiles of zoom 11</option>
-          <option value="12">map tiles of zoom 12</option>
-        </select>
-        <small>With a zoom, all tiles are of that zoom: a dense city then gives a large tile. Zoom 8 is the tile zoom of all parts of duckOSM (the fastest in the browser for Sweden).</small></span>
-    </label>
-    <div class="opt threads"><span>Threads
-        <span class="nums">
-          <label>cut <input id="cut-threads" type="number" min="1" max="64" step="1"></label>
-          <label>tile workers <input id="workers" type="number" min="1" max="64" step="1"></label>
-          <label>join <input id="join-threads" type="number" min="1" max="64" step="1"></label>
-        </span>
-        <small>A setting for each part: the threads of the cut, the tile workers that make the rows of the tiles (each
-          with one thread), and the threads of the join of the parts. A number larger than the cores can help when the
-          threads wait for the browser storage. The default is 8, or the cores that the browser reports when it is more
-          (at most 16). In one run (not tile by tile), the threads of the cut are the threads of the run.</small></span>
+<section class="card" id="input">
+  <h2>Input <button type="button" class="help" data-help="input" aria-label="Help">?</button></h2>
+  <div class="switch">
+    <input type="radio" name="src" value="region" id="src-r" checked><label for="src-r">Geofabrik region</label>
+    <input type="radio" name="src" value="file" id="src-f"><label for="src-f">Local file</label>
+  </div>
+  <div id="src-region">
+    <div class="combo">
+      <input id="region" placeholder="Search a region, for example Monaco" autocomplete="off" aria-label="Region"
+             role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="region-list">
+      <ul id="region-list" role="listbox" hidden></ul>
     </div>
-    <label class="opt"><input id="sort" type="checkbox" checked>
-      <span>Sort the rows as QuackOSM does
-        <small>Each row group of the file then holds a small area. The sort takes more time and memory: in one run, clear it for a large file.</small></span>
-    </label>
-    <div class="actions">
-      <button id="run" disabled>Make the table</button>
-      <button id="stop" class="secondary" hidden>Stop</button>
+    <div id="region-actions" hidden>
+      <div class="row">
+        <button id="get" type="button">Get</button>
+        <a id="link" class="button secondary" href="#">Download</a>
+        <button id="get-cancel" type="button" class="secondary" hidden>Cancel</button>
+      </div>
+      <p id="get-text" class="hint"></p>
+      <progress id="get-bar" max="1" value="0" hidden></progress>
     </div>
-    <p class="note"><span id="storage"></span> <button id="clear" class="outline" hidden>Clear</button></p>
-  </section>
+  </div>
+  <div id="src-file" hidden>
+    <input id="file" type="file" accept=".pbf" aria-label="File">
+  </div>
+  <p id="input-text" class="hint"></p>
+</section>
 
-  <section class="card" id="run-card" hidden>
-    <div class="run-head"><h2>2. The run</h2><span id="clock"></span></div>
-    <p class="note" id="facts"></p>
-    <div id="status" role="status"></div>
-    <ol class="steps" id="progress"></ol>
-    <div class="mem"><div class="bar"><i id="mem-bar"></i></div><small id="mem-text"></small></div>
-    <div class="mem workers" id="worker-mem" hidden></div>
-  </section>
+<section class="card">
+  <h2>Settings <button type="button" class="help" data-help="settings" aria-label="Help">?</button></h2>
+  <label class="check"><input id="tiles" type="checkbox"> Tile by tile</label>
+  <label class="check"><input id="sort" type="checkbox" checked> Sort the rows as QuackOSM</label>
+  <div class="grid">
+    <div data-tiles><label for="zoom">Tile size</label><select id="zoom"></select></div>
+    <div><label for="cut-threads" id="cut-label">Threads</label><input id="cut-threads" type="number" min="1" max="64" step="1"></div>
+    <div data-tiles><label for="workers">Tile workers</label><input id="workers" type="number" min="1" max="64" step="1"></div>
+    <div data-tiles><label for="join-threads">Join threads</label><input id="join-threads" type="number" min="1" max="64" step="1"></div>
+  </div>
+  <div class="row">
+    <button id="run" type="button" disabled>Make the table</button>
+    <button id="stop" type="button" class="secondary" disabled>Stop</button>
+  </div>
+</section>
 
-  <section class="card" id="result" hidden>
-    <h2>3. The result</h2>
-    <div class="stats">
-      <div class="stat"><small>Nodes</small><b id="nodes"></b></div>
-      <div class="stat"><small>Ways</small><b id="ways"></b></div>
-      <div class="stat"><small>Relations</small><b id="relations"></b></div>
-      <div class="stat"><small>Time</small><b id="seconds"></b></div>
-      <div class="stat"><small>Peak WebAssembly memory</small><b id="mib"></b></div>
-      <div class="stat"><small>GeoParquet file</small><b id="size"></b></div>
-    </div>
-    <div id="timeline" hidden>
-      <h2 style="margin-top:16px">Step 3: the tiles of each worker</h2>
-      <svg id="timeline-svg" width="100%" role="img" aria-label="the tiles of each worker in time"></svg>
-      <p class="note" id="timeline-text"></p>
-    </div>
-    <table>
-      <thead><tr><th>Step</th><th class="n">Time</th><th class="n">At</th><th class="n">Memory</th></tr></thead>
-      <tbody id="steps"></tbody>
-    </table>
-    <div class="actions">
-      <a id="download" class="button" hidden>Download the GeoParquet file</a>
-      <button id="duckdb" class="outline" title="DuckDB in the browser writes the file into the browser storage">Make the .duckdb file</button>
-      <a id="duckdb-download" class="button" hidden>Download the .duckdb file</a>
-    </div>
-    <p class="note" id="duckdb-status"></p>
-    <p class="note"><span id="threads"></span> threads. The same table on a computer, with no memory limit:
-      <code>duckosm-rust quack file.osm.pbf -o out -f geoparquet</code> (tile by tile with the map tiles of zoom 8, as this page: add <code>--tile-zoom 8</code>)</p>
-  </section>
+<section class="card" id="progress" hidden>
+  <h2>Progress <button type="button" class="help" data-help="progress" aria-label="Help">?</button></h2>
+  <div class="stats">
+    <div><span>Time</span><b id="clock">0.0 s</b></div>
+    <div><span>Step</span><b id="stage">-</b></div>
+    <div><span>Memory</span><b id="memory">-</b></div>
+    <div><span>Storage</span><b id="storage">-</b></div>
+  </div>
+  <div class="bar"><i id="bar"></i></div>
+  <p id="status" role="status"></p>
+  <ol class="steps" id="steplist"></ol>
+  <p class="hint" id="mem-text"></p>
+  <div class="mem" id="worker-mem" hidden></div>
+  <p class="hint" id="facts"></p>
+</section>
+
+<section class="card" id="result" hidden>
+  <h2>Result <button type="button" class="help" data-help="result" aria-label="Help">?</button></h2>
+  <div class="stats three">
+    <div><span>Nodes</span><b id="nodes"></b></div>
+    <div><span>Ways</span><b id="ways"></b></div>
+    <div><span>Relations</span><b id="relations"></b></div>
+    <div><span>Time</span><b id="seconds"></b></div>
+    <div><span>Peak memory</span><b id="mib"></b></div>
+    <div><span>GeoParquet file</span><b id="size"></b></div>
+  </div>
+  <div class="row">
+    <a id="download" class="button" hidden>Download GeoParquet</a>
+    <button id="duckdb" type="button" class="secondary">Make the .duckdb file</button>
+    <a id="duckdb-download" class="button" hidden>Download .duckdb</a>
+    <button id="clear" type="button" class="secondary">Clear</button>
+  </div>
+  <p class="hint" id="duckdb-status"></p>
+  <progress id="duckdb-bar" hidden></progress>
+  <div id="timeline" hidden>
+    <h2 class="sub">Tiles of each worker</h2>
+    <svg id="timeline-svg" width="100%" role="img" aria-label="the tiles of each worker in time"></svg>
+    <p class="hint" id="timeline-text"></p>
+  </div>
+  <div class="table"><table>
+    <thead><tr><th>Step</th><th>Time</th><th>At</th><th>Memory</th></tr></thead>
+    <tbody id="steps"></tbody>
+  </table></div>
+  <p class="hint"><span id="threads"></span>. On a computer: <code id="command"></code></p>
+</section>
 </main>
+<dialog id="help-box"><h3 id="help-title"></h3><dl id="help-text"></dl>
+  <form method="dialog"><button>Close</button></form></dialog>
 <script type="module">
+  import * as regions from "./app/regions.js";
   const $ = (id) => document.getElementById(id);
   const fmt = (n) => n.toLocaleString("en-US");
+  const mb = (b) => `${(b / 2 ** 20).toFixed(1)} MB`;
   const LIMIT = 4096;   // MiB: the most memory of WebAssembly (32 bit)
+  const LARGE = 150 * 2 ** 20;   // a file larger than this is made tile by tile
+
+  // ---- light or dark: the choice of the person (the same key as Studio), else the setting of the system
+  $("theme").onclick = () => {
+    const root = document.documentElement;
+    const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    root.dataset.theme = dark ? "light" : "dark";
+    try { localStorage.setItem("duckosm.theme", root.dataset.theme); } catch {}
+  };
+
+  // ---- the help popups (the buttons "?"): a title and its items [term, text]
+  const HELP = {
+    input: ["Input", [
+      ["Geofabrik region", "Geofabrik (download.geofabrik.de) gives free OpenStreetMap files of the countries and regions of the world. Search a region, then click Get or Download."],
+      ["Get", "Puts the file into the storage of this site, through a relay (Geofabrik does not let web pages read its files). The file stays there for the next visit."],
+      ["Download", "Saves the file on your computer, at the place that you choose, as fast as Get (Chrome and Edge). Other browsers download it directly from Geofabrik, which is slower. Then select it as a local file."],
+      ["Local file", "A .osm.pbf file on this computer. You can also drop it on this card. The page does not upload it."],
+    ]],
+    settings: ["Settings", [
+      ["Tile by tile", "The file is cut into tiles, and each tile gives its rows. The memory then follows the size of a tile, not of the file. Use it for a file larger than about 150 MB: the browser has at most 4 GiB of memory. The rows are the same."],
+      ["Tile size", "Map tiles of one zoom (zoom 8 is the default, the tile zoom of all parts of duckOSM), or tiles of at most 4 million nodes. With a zoom, a dense city gives a large tile."],
+      ["Sort the rows as QuackOSM", "Each row group of the file then holds a small area. The sort takes more time and memory: in one run, clear it for a large file."],
+      ["Threads", "In one run: the threads of the run. Tile by tile: the threads of the cut."],
+      ["Tile workers", "The workers that make the rows of the tiles, one tile in each worker, each with one thread."],
+      ["Join threads", "The threads of the join of the parts of the tiles."],
+      ["Default", "8, or the cores that the browser reports when it is more (at most 16). A number larger than the cores can help when the threads wait for the browser storage."],
+    ]],
+    progress: ["Progress", [
+      ["Memory", "The WebAssembly memory of the run (at most 4 GiB). Tile by tile, each tile worker has its own memory: a bar for each."],
+      ["Storage", "The files of this site: the kept region files, the temporary files and the result."],
+      ["Steps", "Each step gets its time when it ends. The time of the running step counts up."],
+      ["No news", "A thread of the browser that has no memory left stops with no message. After 60 s with no news, the page tells you. Then click Stop."],
+    ]],
+    result: ["Result", [
+      ["Download GeoParquet", "The features table of QuackOSM (feature_id, tags, geometry) as a GeoParquet file."],
+      ["Make the .duckdb file", "DuckDB in the browser loads the GeoParquet file into the table main.quackosm of a .duckdb file, in the browser storage. Then download it."],
+      ["Tiles of each worker", "One row for each worker, one bar for each tile: it shows whether the workers ran at the same time. Move the pointer on a bar to see its tile."],
+      ["Clear", "Removes the files of the run from the browser storage. The next run and a new open of the page also remove them. The kept region files stay."],
+    ]],
+  };
+  for (const b of document.querySelectorAll("button.help")) b.onclick = (e) => {
+    e.preventDefault();
+    const [title, items] = HELP[b.dataset.help];
+    $("help-title").textContent = title;
+    $("help-text").replaceChildren(...items.flatMap(([term, text]) => [
+      Object.assign(document.createElement("dt"), { textContent: term }),
+      Object.assign(document.createElement("dd"), { textContent: text }),
+    ]));
+    $("help-box").showModal();
+  };
+
+  // ---- the input: a Geofabrik region (its file kept in the storage of the site, app/regions.js) or a local file
+  let file = null, region = null, regionFile = null;
+  const source = () => document.querySelector("input[name=src]:checked").value;
+  // the input of the run; a large file is made tile by tile
+  function setInput() {
+    const f = source() === "file" ? $("file").files[0] ?? null : regionFile;
+    if (f && f !== file) $("tiles").checked = f.size > LARGE;
+    file = f;
+    $("input-text").textContent = !file ? "" : `Input: ${file.name}, ${mb(file.size)}` +
+      (source() === "region" ? " (in the storage of this site)" : "") + (file.size > LARGE ? ". A large file: tile by tile." : "");
+    showTiles();
+    $("run").disabled = !file || !!worker;
+  }
+  for (const r of document.querySelectorAll("input[name=src]")) r.onchange = () => {
+    $("src-region").hidden = source() !== "region";
+    $("src-file").hidden = source() !== "file";
+    setInput();
+  };
+  $("file").onchange = setInput;
+  const useLocal = (f) => {
+    const dt = new DataTransfer();
+    dt.items.add(f);
+    $("file").files = dt.files;
+    $("src-f").checked = true;
+    $("src-f").onchange();
+  };
+  const card = $("input");
+  card.ondragover = (e) => { e.preventDefault(); card.classList.add("over"); };
+  card.ondragleave = () => card.classList.remove("over");
+  card.ondrop = (e) => { e.preventDefault(); card.classList.remove("over"); if (e.dataTransfer.files[0]) useLocal(e.dataTransfer.files[0]); };
+
+  // the region search (as pbfcut's page): each word must be in the path of the region ("europe / monaco"); a name that
+  // starts with the first word comes first, then a name that has it, then a path that has it; shorter paths first. One
+  // match is chosen at once. Enter or Tab takes the active one, the arrows move, Esc closes the list.
+  let list = [];
+  fetch("geofabrik.json").then((r) => r.json()).then(({ extracts }) => {
+    const byId = new Map(extracts.map((x) => [x.id, x]));
+    const path = (x) => (x.parent && byId.has(x.parent) ? path(byId.get(x.parent)) + " / " : "") + x.name;
+    list = extracts.map((x) => {
+      const label = path(x);
+      return { ...x, label, where: label.slice(0, -x.name.length - 3), key: label.toLowerCase() };
+    }).sort((a, b) => a.label.localeCompare(b.label));
+    if ($("region").value) findRegions();
+  });
+  const MAX_MATCHES = 8;
+  const rank = (x, words) => { const n = x.name.toLowerCase(); return n.startsWith(words[0]) ? 0 : n.includes(words[0]) ? 1 : 2; };
+  let matches = [], active = 0;
+  function findRegions() {
+    const q = $("region").value.trim().toLowerCase();
+    const exact = list.find((x) => x.key === q);
+    if (exact) return pickRegion(exact);
+    const words = q.split(/[\s/,]+/).filter(Boolean);
+    matches = !words.length ? [] : list.filter((x) => words.every((w) => x.key.includes(w)))
+      .sort((a, b) => rank(a, words) - rank(b, words) || a.label.length - b.label.length);
+    active = 0;
+    if (matches.length === 1) { if (region !== matches[0]) setRegion(matches[0]); }
+    else if (region) setRegion(null);
+    showMatches(q !== "");
+  }
+  function showMatches(open) {
+    const ul = $("region-list");
+    ul.replaceChildren(...(matches.length ? matches.slice(0, MAX_MATCHES).map((x, i) => {
+      const li = Object.assign(document.createElement("li"), { role: "option", id: `region-${i}` });
+      li.setAttribute("aria-selected", i === active);
+      li.append(x.name, Object.assign(document.createElement("span"), { textContent: x.where }));
+      li.onmousedown = (e) => { e.preventDefault(); pickRegion(x); };
+      return li;
+    }) : [Object.assign(document.createElement("li"), { className: "none", textContent: "No region has these words." })]));
+    ul.hidden = !open;
+    $("region").setAttribute("aria-expanded", String(open));
+    $("region").setAttribute("aria-activedescendant", open && matches.length ? `region-${active}` : "");
+  }
+  function pickRegion(x) {
+    $("region").value = x.label;
+    matches = [];
+    showMatches(false);
+    if (region !== x) setRegion(x);
+  }
+  $("region").oninput = findRegions;
+  $("region").onkeydown = (e) => {
+    const n = Math.min(matches.length, MAX_MATCHES);
+    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && n) {
+      e.preventDefault();
+      active = (active + (e.key === "ArrowDown" ? 1 : -1) + n) % n;
+      showMatches(true);
+    } else if ((e.key === "Enter" || e.key === "Tab") && !$("region-list").hidden && n) {
+      if (e.key === "Enter") e.preventDefault();
+      pickRegion(matches[active]);
+    } else if (e.key === "Escape") showMatches(false);
+  };
+  $("region").onblur = () => { if (region) $("region").value = region.label; showMatches(false); };
+  // the chosen region: Get and Download, and its kept file
+  async function setRegion(x) {
+    region = x;
+    regionFile = null;
+    $("region-actions").hidden = !x;
+    $("get-text").textContent = "";
+    if (x) {
+      $("link").href = x.pbf;
+      $("link").title = x.pbf.split("/").pop();
+      $("get").disabled = !regions.relay;
+      $("get").textContent = "Get";
+      const k = (await regions.kept().catch(() => [])).find((m) => m.id === x.id);
+      if (k && region === x) { regionFile = k.file; $("get").textContent = "Get it again"; }
+    }
+    setInput();
+  }
+  // Cancel: the download of Get or Download stops
+  let getStop = null;
+  $("get-cancel").onclick = () => getStop?.abort();
+  async function fetchRegion(to, what) {
+    const x = region, start = performance.now();
+    getStop = new AbortController();
+    $("get-cancel").hidden = $("get-bar").hidden = false;
+    $("get").disabled = true;
+    $("link").classList.add("disabled");
+    try {
+      const got = await regions.download(x, (n, total) => {
+        $("get-bar").value = total ? n / total : 0;
+        $("get-text").textContent = `${what}: ${mb(n)}${total ? " of " + mb(total) : ""}, ${((performance.now() - start) / 1000).toFixed(1)} s`;
+      }, getStop.signal, to);
+      return { got, s: ((performance.now() - start) / 1000).toFixed(1) };
+    } catch (e) {
+      $("get-text").textContent = getStop.signal.aborted ? "The download is canceled." : `The download stopped: ${e.message}`;
+      return null;
+    } finally {
+      getStop = null;
+      $("get-cancel").hidden = $("get-bar").hidden = true;
+      $("get").disabled = !regions.relay;
+      $("link").classList.remove("disabled");
+    }
+  }
+  $("get").onclick = async () => {
+    const x = region, r = await fetchRegion(null, "Get");
+    if (!r || region !== x) return;
+    regionFile = r.got.file;
+    $("get").textContent = "Get it again";
+    $("get-text").textContent = `The file is in the storage of this site (${mb(r.got.size)}, ${r.s} s).`;
+    setInput();
+  };
+  // Download: with a save dialog (Chrome, Edge), through the relay to the place that the person picks; then that file is
+  // the input. Other browsers: the plain link to Geofabrik.
+  $("link").onclick = async (e) => {
+    if (!region || !regions.relay || !window.showSaveFilePicker) {
+      $("get-text").textContent = "The browser downloads the file from Geofabrik: its list of downloads shows the progress. Then choose it under Local file.";
+      return;
+    }
+    e.preventDefault();
+    let to;
+    try { to = await showSaveFilePicker({ suggestedName: region.pbf.split("/").pop(), types: [{ description: "OSM PBF", accept: { "application/octet-stream": [".pbf"] } }] }); }
+    catch { return; }
+    const r = await fetchRegion(to, "Download");
+    if (!r) return;
+    useLocal(await to.getFile());
+    $("get-text").textContent = `The file is saved as ${to.name} (${mb(r.got.size)}, ${r.s} s).`;
+  };
+
+  // ---- the settings
+  // the zooms with the size of their tiles at the equator, as on pbfcut's page; "" gives tiles of at most 4 million nodes
+  for (let z = 6; z <= 12; z++) {
+    const km = 40075 / 2 ** z, w = km >= 10 ? `${Math.round(km)} km` : `${km.toFixed(1)} km`;
+    $("zoom").append(new Option(`zoom ${z}, ${w}`, z, false, z === 8));
+  }
+  $("zoom").append(new Option("4 million nodes", ""));
+  const showTiles = () => {
+    for (const e of document.querySelectorAll("[data-tiles]")) e.hidden = !$("tiles").checked;
+    $("cut-label").textContent = $("tiles").checked ? "Cut threads" : "Threads";
+  };
+  $("tiles").onchange = showTiles;
+  showTiles();
+  // at least 8 threads and tile workers, not only what the browser reports: Brave reports fewer cores than the computer
+  // has (a page with 4 threads on 8 cores used 50 % of the CPU). Many more threads than cores make the cut slower
+  // (Chromium, 12 cores: 16 threads 21.5 s, 12 threads 16.1 s for Île-de-France).
+  const DEFAULT_WORKERS = Math.max(8, Math.min(16, navigator.hardwareConcurrency || 8));
+  for (const id of ["cut-threads", "workers", "join-threads"]) $(id).value = DEFAULT_WORKERS;
+
+  // ---- the steps
   // the steps of duckosm_core::quack, in their order (the sort only with the sort)
   const STEPS = ["quack 1: the ways and the relations", "quack 2: the nodes and the points", "quack 3: the ways",
     "quack 4a: the lines of the relations", "quack 4b: the relations", "quack 5: the sort"];
@@ -189,47 +475,26 @@
   const TILE_LABELS = {
     "tiles 1": "1. Count the nodes and choose the tiles",
     "tiles 2": "2. Cut the file into tiles (one file for each tile)",
-    "tiles 3": "3. Make the rows of each tile (a worker for each core)",
+    "tiles 3": "3. Make the rows of each tile (one worker for each tile)",
     "tiles 4": "4. Join the parts of the tiles",
     "quack 5: the sort": "4. Join the parts and sort the rows as QuackOSM",
   };
   const tileStep = (name) => name.match(/^quack by (tiles \d)/)?.[1] ?? (name.startsWith("quack 5") ? name : null);
   // "quack by tiles 3: tile 3 of 20 (...)" gives [3, 20]
   const tileOf = (name) => name.match(/tile (\d+) of (\d+)/)?.slice(1).map(Number);
-  let worker = null, clock = null, file = null;
+  let worker = null, clock = null, storageClock = null;
 
-  const choose = (f) => {
-    file = f || null;
-    $("run").disabled = !file;
-    $("drop-title").textContent = file ? file.name : "Choose an .osm.pbf file, or drop it here";
-    if (file) $("drop-info").textContent = `${(file.size / 2 ** 20).toFixed(1)} MB` +
-      (file.size > 150 * 2 ** 20 ? ": a large file, so the table is made tile by tile." : "");
-    if (file) $("tiles").checked = file.size > 150 * 2 ** 20;
-    $("zoom-opt").hidden = !$("tiles").checked;
-  };
-  $("file").onchange = () => choose($("file").files[0]);
-  // at least 8 threads and tile workers, not only what the browser reports: Brave reports fewer cores than the computer
-  // has (a page with 4 threads on 8 cores used 50 % of the CPU). Many more threads than cores make the cut slower
-  // (Chromium, 12 cores: 16 threads 21.5 s, 12 threads 16.1 s for Île-de-France).
-  const DEFAULT_WORKERS = Math.max(8, Math.min(16, navigator.hardwareConcurrency || 8));
-  for (const id of ["cut-threads", "workers", "join-threads"]) $(id).value = DEFAULT_WORKERS;
-  $("tiles").onchange = () => { $("zoom-opt").hidden = !$("tiles").checked; };
-  const drop = $("drop");
-  drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
-  drop.ondragleave = () => drop.classList.remove("over");
-  drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); choose(e.dataTransfer.files[0]); };
-
-  // the memory of the main module (its limit is 4 GiB), and the memory of the tile workers (each has its own 4 GiB)
-  // one bar for each tile worker (each has its own WebAssembly memory, up to 4 GiB)
-  let workerTiles = null, cutParts = [];
   // the facts of a run to the log of serve.py (a GET that it logs; the 404 is the answer): the start, the end or the
   // error, with the time of each step, so a run on another computer can be read from the log
   const report = (event, facts) => {
     const q = new URLSearchParams({ event, ...Object.fromEntries(Object.entries(facts).map(([k, v]) => [k, String(v)])) });
     fetch(`./__report?${q}`).catch(() => {});
   };
-  const stepTimes = () => [...$("progress").querySelectorAll("li")]
-    .map((li) => `${li.dataset.step || li.textContent.slice(0, 30)}: ${li.querySelector(".t")?.textContent || ""}`).join("; ");
+  const stepTimes = () => [...$("steplist").querySelectorAll("li")]
+    .map((li) => `${li.dataset.step}: ${li.querySelector(".t").textContent}`).join("; ");
+
+  // the memory: the main module (its limit is 4 GiB), and one bar for each tile worker (each has its own 4 GiB)
+  let workerTiles = null, cutParts = [];
   const workerBars = (mibs, tiles = workerTiles) => {
     workerTiles = tiles;
     const box = $("worker-mem");
@@ -237,41 +502,62 @@
     if (box.hidden) return;
     if (box.children.length !== 3 * mibs.length) {
       box.replaceChildren(...mibs.flatMap((_, k) => {
-        const name = document.createElement("small");
-        name.textContent = `worker ${k + 1}`;
-        const bar = document.createElement("div");
-        bar.className = "bar";
+        const bar = Object.assign(document.createElement("div"), { className: "bar" });
         bar.append(document.createElement("i"));
-        return [name, bar, document.createElement("small")];
+        return [Object.assign(document.createElement("span"), { textContent: `worker ${k + 1}` }), bar, document.createElement("small")];
       }));
     }
     mibs.forEach((m, k) => {
       const bar = box.children[3 * k + 1].firstChild;
       bar.style.width = `${Math.min(100, (100 * m) / LIMIT)}%`;
-      box.children[3 * k + 2].textContent = `${fmt(m)} MiB` + (tiles ? (tiles[k] ? `, tile ${tiles[k]}` : ", no tile") : "");
+      bar.classList.toggle("high", m > 0.75 * LIMIT);
+      box.children[3 * k + 2].textContent = `${fmt(m)} MiB` + (tiles ? (tiles[k] ? `, ${tiles[k]}` : ", idle") : "");
     });
   };
   const memory = (mib, workersMib = 0, mibs = null) => {
     if (mibs) workerBars(mibs);
-    $("mem-bar").style.width = `${Math.min(100, (100 * mib) / LIMIT)}%`;
-    $("mem-bar").classList.toggle("high", mib > 0.75 * LIMIT);
+    $("memory").textContent = `${fmt(Math.round(mib))} MiB`;
+    $("memory").style.color = mib > 0.75 * LIMIT ? "var(--warn)" : "";
     $("mem-text").textContent = `WebAssembly memory ${fmt(Math.round(mib))} of ${fmt(LIMIT)} MiB` +
       (workersMib ? `, and ${fmt(Math.round(workersMib))} MiB in the tile workers` : "");
   };
   const status = (text, kind = "") => { $("status").textContent = text; $("status").className = kind; };
+  const showStorage = async () => {
+    const { usage, quota } = await navigator.storage.estimate();
+    $("storage").textContent = mb(usage);
+    $("storage").title = `${mb(usage)} of ${mb(quota)}`;
+  };
+  // the running step: its detail (tile, read) under its name
+  const runIo = (text) => { const io = $("steplist").querySelector("li.run .io"); if (io) io.textContent = text; };
+  // the step that ends: done, with its time; the next one runs
+  let stepStart = 0;
+  const finish = (li, text) => {
+    li.className = "done";
+    li.querySelector(".t").textContent = text;
+    li.querySelector(".io").textContent = "";
+    const next = li.nextElementSibling;
+    next?.classList.add("run");
+    stepStart = performance.now();
+    const all = $("steplist").children.length, done = $("steplist").querySelectorAll(".done").length;
+    $("bar").style.width = `${(100 * done) / all}%`;
+    $("stage").textContent = next ? `${done + 1} of ${all}` : "end";
+  };
   const end = () => {
     worker.terminate();
     worker = null;
     clearInterval(clock);
+    clearInterval(storageClock);
     $("run").disabled = !file;
-    $("stop").hidden = true;
-    $("progress").querySelectorAll("li.now").forEach((li) => li.classList.remove("now"));
+    $("stop").disabled = true;
+    $("steplist").querySelectorAll("li.run").forEach((li) => li.classList.remove("run"));
     showStorage();
   };
-  $("stop").onclick = () => { end(); status("Stopped."); };
+  $("stop").onclick = () => { end(); $("stage").textContent = "stopped"; status("Stopped."); };
 
   // The files of quack in the storage of the browser (OPFS): the folder of a run (quack-*) and the .duckdb file. They stay
   // for the download until the next run; the page removes them when it opens and before each run, and Clear removes them.
+  // The kept region files (regions/) stay.
+  let parquet = null;
   async function clearStorage() {
     const root = await navigator.storage.getDirectory();
     for await (const name of root.keys()) {
@@ -284,15 +570,7 @@
     parquet = null;
     await showStorage();
   }
-  async function showStorage() {
-    const { usage, quota } = await navigator.storage.estimate();
-    $("storage").textContent = `Browser storage of this page: ${(usage / 2 ** 20).toFixed(0)} MB of ${(quota / 2 ** 20).toFixed(0)} MB that the browser gives.`;
-    $("clear").hidden = usage < 2 ** 20 || !!worker;
-  }
-  $("clear").onclick = async () => {
-    await clearStorage();
-    $("result").hidden = true;
-  };
+  $("clear").onclick = async () => { await clearStorage(); $("result").hidden = true; };
   // closing or reloading the tab stops the run (its files go at the next open of the page)
   addEventListener("pagehide", () => worker?.terminate());
   clearStorage();
@@ -310,10 +588,10 @@
   // main.quackosm, with the SQL of the native writer (duckOSM's crates/duckosm-duckdb, write_quack). DuckDB writes the file
   // into OPFS through a file handle (BROWSER_FSACCESS), so the file is not in the memory of DuckDB or of the page: made in
   // the memory of DuckDB's worker, the file of Sweden stopped with "Allocation failure". The memory limit and no insertion
-  // order let DuckDB write each row group when it is full.
+  // order let DuckDB write each row group when it is full. `phase(text)` tells the page the part that runs.
   const DUCKDB = "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.33.1-dev57.0/+esm";
-  let parquet = null;
-  async function duckdbFile(name) {
+  async function duckdbFile(name, phase) {
+    phase("Start DuckDB");
     const duckdb = await import(DUCKDB);
     const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
     const url = URL.createObjectURL(new Blob([`importScripts("${bundle.mainWorker}");`], { type: "text/javascript" }));
@@ -344,8 +622,10 @@
       await c.query("SET enable_geoparquet_conversion = false");
       await db.registerFileHandle("quack.parquet", parquet, duckdb.DuckDBDataProtocol.BROWSER_FILEREADER, true);
       await c.query(`ATTACH '${name}' AS out`);
+      phase("Load the rows into main.quackosm");
       await c.query("CREATE TABLE out.main.quackosm AS SELECT feature_id, tags, ST_GeomFromWKB(geometry) AS geometry FROM read_parquet('quack.parquet')");
       rows = Number((await c.query("SELECT count(*) AS n FROM out.main.quackosm")).toArray()[0].n);
+      phase("Write the file");
       await c.query("CHECKPOINT out");
       await c.query("DETACH out");
       await c.close();
@@ -361,11 +641,15 @@
   $("duckdb").onclick = async () => {
     const name = file.name.replace(/\.osm\.pbf$|\.pbf$/, "") + "_quack.duckdb";
     $("duckdb").disabled = true;
-    $("duckdb-status").textContent = "Making the .duckdb file with DuckDB in the browser ...";
+    $("duckdb-bar").hidden = false;
+    // the part that runs and its time count up: a long load (France) does not look frozen
     const t = performance.now();
+    let part = "";
+    const tick = () => { $("duckdb-status").textContent = `${part} … ${((performance.now() - t) / 1000).toFixed(0)} s`; };
+    const timer = setInterval(tick, 500);
     try {
       // in OPFS under a name that starts with "quack", so Clear and the next run remove it
-      const { blob, rows } = await duckdbFile(`quack_${name}`);
+      const { blob, rows } = await duckdbFile(`quack_${name}`, (p) => { part = p; tick(); });
       const a = $("duckdb-download");
       if (a.href) URL.revokeObjectURL(a.href);
       a.href = URL.createObjectURL(blob);
@@ -377,9 +661,13 @@
     } catch (e) {
       $("duckdb-status").textContent = `Error: ${(e && e.message) || e}`;
       $("duckdb").disabled = false;
+    } finally {
+      clearInterval(timer);
+      $("duckdb-bar").hidden = true;
     }
   };
 
+  // ---- the run
   $("run").onclick = async () => {
     const tiles = $("tiles").checked;
     if (!tiles && file.size > 300 * 2 ** 20 && !confirm(`${file.name} is ${(file.size / 2 ** 20).toFixed(0)} MB. The browser ` +
@@ -388,34 +676,43 @@
     const sort = $("sort").checked;
     const name = (s) => (tiles ? TILE_LABELS[s] : label(s));
     $("run").disabled = true;
-    $("stop").hidden = false;
+    $("stop").disabled = false;
     $("result").hidden = $("download").hidden = $("duckdb-download").hidden = true;
     $("duckdb").hidden = $("duckdb").disabled = false;
     $("duckdb-status").textContent = "";
-    $("run-card").hidden = false;
+    $("progress").hidden = false;
+    $("bar").style.width = "0";
+    $("worker-mem").hidden = true;
     status(`Making the table of ${file.name} ...`);
     memory(0);
     await clearStorage();
-    // all steps of the run, the first one running
-    // tile by tile: the join is step 4, or with the sort, the sort
+    // all steps of the run, the first one running; tile by tile: the join is step 4, or with the sort, the sort
     const shown = (s) => (sort ? !(tiles && s === "tiles 4") : !s.startsWith("quack 5"));
-    $("progress").replaceChildren(...(tiles ? TILE_STEPS : STEPS).filter(shown).map((s, i) => {
+    $("steplist").replaceChildren(...(tiles ? TILE_STEPS : STEPS).filter(shown).map((s, i) => {
       const li = document.createElement("li");
       li.dataset.step = s;
-      li.className = i ? "" : "now";
-      li.innerHTML = `<i class="dot"></i><span></span><span class="t"></span>`;
-      li.children[1].textContent = name(s);
+      li.className = i ? "" : "run";
+      li.innerHTML = `<span></span><b></b><span class="t"></span>`;
+      const [code, text] = name(s).split(/\.\s(.*)/);
+      li.children[0].textContent = code;
+      li.children[1].append(text, Object.assign(document.createElement("small"), { className: "io" }));
       return li;
     }));
+    $("stage").textContent = `1 of ${$("steplist").children.length}`;
     const t0 = performance.now();
     let heard = t0;
-    // a thread of the browser that runs out of memory stops with no message: after 60 s with no news, the page says so
+    stepStart = t0;
+    // the time of the run and of the running step count up; a thread of the browser that runs out of memory stops with
+    // no message: after 60 s with no news, the page says so
     clock = setInterval(() => {
       const now = performance.now();
       $("clock").textContent = `${((now - t0) / 1000).toFixed(1)} s`;
+      const run = $("steplist").querySelector("li.run .t");
+      if (run) run.textContent = `${((now - stepStart) / 1000).toFixed(0)} s`;
       if (now - heard > 60000 && !$("status").textContent.includes("no news"))
         status(`${$("status").textContent} (no news for 60 s: the browser may be out of memory; click Stop)`);
-    }, 100);
+    }, 200);
+    storageClock = setInterval(showStorage, 2000);
     // a new worker for each run: the memory of a WebAssembly module never shrinks
     workerTiles = null;
     cutParts = [];
@@ -432,8 +729,7 @@
       // the read of the file (twice: pass 1 for the ways and the relations, pass 2 for the nodes)
       if (data.read !== undefined) {
         const gb = (b) => (b / 2 ** 30).toFixed(2);
-        const li = $("progress").querySelector("li.now");
-        if (li) li.querySelector(".t").textContent = `read ${gb(data.read)} of ${gb(data.size)} GB`;
+        runIo(`read ${gb(data.read)} of ${gb(data.size)} GB`);
         status(`Making the table of ${file.name}: reading the file, ` +
           (tiles ? "" : `pass ${data.pass} of 2, `) + `${Math.floor((100 * data.read) / data.size)} %`);
         return;
@@ -442,47 +738,35 @@
       if (data.live) {
         memory(data.mib, data.workersMib);
         workerBars(data.workerMibs, data.workerTiles);
-        const busy = data.workerTiles.filter(Boolean).length;
-        const now = $("progress").querySelector("li.now");
-        if (now) now.querySelector(".t").textContent = `tile ${data.done} of ${data.total}, ${busy} workers busy`;
+        runIo(`tile ${data.done} of ${data.total}, ${data.workerTiles.filter(Boolean).length} workers busy`);
         return;
       }
       // tile by tile: the steps of the cut and of each tile show in the step that runs; the step of the tiles is done
-      // with its last tile
-      // the parts of the cut, with the time since the start, for the report
+      // with its last tile. The parts of the cut, with the time since the start, for the report.
       if (data.step && data.step.startsWith("tile cut")) cutParts.push(`${data.step.split(":")[0].slice(9)} ${(data.ms / 1000).toFixed(1)}`);
       if (data.step && tiles && tileStep(data.step) !== "quack 5: the sort") {
         const step = tileStep(data.step);
         const tile = tileOf(data.step);
-        const now = $("progress").querySelector("li.now");
         memory(data.mib, data.workersMib, data.workerMibs);
         if (!step || (tile && tile[0] < tile[1])) {
           status(`Making the table of ${file.name}: ${tile ? `tile ${tile[0]} of ${tile[1]} done` : data.step}`);
-          if (now && tile) now.querySelector(".t").textContent = `tile ${tile[0]} of ${tile[1]}`;
+          if (tile) runIo(`tile ${tile[0]} of ${tile[1]}`);
           return;
         }
         status(`Making the table of ${file.name} ...`);
         // the waiting of the cut for the file and the storage, on the page
         const wait = data.step.match(/\(([\d.]+ s of it waiting[^)]*)\)/);
         if (wait) $("facts").textContent += ` The cut: ${wait[1]}.`;
-        const li = $("progress").querySelector(`li[data-step="${step}"]`);
-        if (li) {
-          li.className = "done";
-          li.querySelector(".t").textContent = `${((data.ms - last) / 1000).toFixed(1)} s` + (tile ? `, ${tile[1]} tiles` : "");
-          li.nextElementSibling?.classList.add("now");
-        }
+        const li = $("steplist").querySelector(`li[data-step="${step}"]`);
+        if (li) finish(li, `${((data.ms - last) / 1000).toFixed(1)} s` + (tile ? `, ${tile[1]} tiles` : ""));
         last = data.ms;
         return;
       }
       // a step that is done: marked at once, and the next one runs
       if (data.step) {
         status(`Making the table of ${file.name} ...`);
-        const li = $("progress").querySelector(`li[data-step="${data.step}"]`);
-        if (li) {
-          li.className = "done";
-          li.querySelector(".t").textContent = `${((data.ms - last) / 1000).toFixed(1)} s`;
-          li.nextElementSibling?.classList.add("now");
-        }
+        const li = $("steplist").querySelector(`li[data-step="${data.step}"]`);
+        if (li) finish(li, `${((data.ms - last) / 1000).toFixed(1)} s`);
         last = data.ms;
         memory(data.mib, data.workersMib, data.workerMibs);
         return;
@@ -490,18 +774,25 @@
       end();
       if (data.error) {
         report("error", { error: data.error.slice(0, 600), steps: stepTimes(), facts: $("facts").textContent, cut: cutParts.join(", ") });
+        $("stage").textContent = "error";
         status(`Error: ${data.error}`, "error");
         return;
       }
+      $("stage").textContent = "done";
+      $("bar").style.width = "100%";
+      $("clock").textContent = `${data.seconds.toFixed(1)} s`;
       status("Done.", "done");
       memory(data.mib, data.workersMib, data.workerMibs);
       $("nodes").textContent = fmt(data.nodes);
       $("ways").textContent = fmt(data.ways);
       $("relations").textContent = fmt(data.relations);
       $("seconds").textContent = `${data.seconds.toFixed(2)} s`;
-      $("threads").textContent = data.threads;
-      $("mib").textContent = `${fmt(data.mib)} MiB` + (data.workersMib ? ` + ${fmt(data.workersMib)} MiB (tile workers)` : "");
-      $("size").textContent = `${(data.file.size / 2 ** 20).toFixed(1)} MB` + (data.storageMib ? ` (the run used at most ${fmt(data.storageMib)} MB of browser storage)` : "");
+      $("threads").textContent = `Threads: ${data.threads}`;
+      $("mib").textContent = `${fmt(data.mib)} MiB` + (data.workersMib ? ` + ${fmt(data.workersMib)}` : "");
+      $("mib").title = data.workersMib ? `${fmt(data.mib)} MiB in the main module, ${fmt(data.workersMib)} MiB in the tile workers` : "";
+      $("size").textContent = mb(data.file.size);
+      $("size").title = data.storageMib ? `The run used at most ${fmt(data.storageMib)} MB of browser storage` : "";
+      $("command").textContent = `duckosm-rust quack ${file.name} -o out -f geoparquet` + (tiles && $("zoom").value ? ` --tile-zoom ${$("zoom").value}` : "");
       let at = 0;
       // tile by tile: the steps of the page, and the parts of the cut (the last tile ends step 3)
       const steps = !tiles ? data.steps : data.steps.filter((s) => {
@@ -510,12 +801,8 @@
       }).map((s) => ({ ...s, step: tileStep(s.step) ?? s.step }));
       $("steps").replaceChildren(...steps.map((s) => {
         const tr = document.createElement("tr");
-        for (const [text, n] of [[name(s.step), false], [`${((s.ms - at) / 1000).toFixed(1)} s`, true],
-          [`${(s.ms / 1000).toFixed(1)} s`, true], [`${fmt(Math.round(s.mib))} MiB`, true]]) {
-          const td = document.createElement("td");
-          td.textContent = text;
-          if (n) td.className = "n";
-          tr.append(td);
+        for (const text of [name(s.step), `${((s.ms - at) / 1000).toFixed(1)} s`, `${(s.ms / 1000).toFixed(1)} s`, `${fmt(Math.round(s.mib))} MiB`]) {
+          tr.append(Object.assign(document.createElement("td"), { textContent: text }));
         }
         at = s.ms;
         return tr;
@@ -525,6 +812,7 @@
       window.lastResult = data;
       const tl = data.timeline || [];
       $("timeline").hidden = !tl.length;
+      $("timeline-text").textContent = "";
       if (tl.length) {
         const t0 = Math.min(...tl.map((x) => x.start)), t1 = Math.max(...tl.map((x) => x.end));
         const rows = data.workers, row = 10, W = 1000;
@@ -535,7 +823,7 @@
         svg.innerHTML = tl.map((x) => {
           const xa = (W * (x.start - t0)) / (t1 - t0 || 1), xb = (W * (x.end - t0)) / (t1 - t0 || 1);
           return `<rect x="${xa.toFixed(1)}" y="${x.worker * row + 1}" width="${Math.max(1, xb - xa).toFixed(1)}" height="${row - 2}"` +
-            ` fill="var(--accent)" opacity="0.8"><title>${x.tile}: ${((x.end - x.start) / 1000).toFixed(1)} s, ${fmt(x.nodes)} nodes</title></rect>`;
+            ` rx="2" fill="var(--accent)" opacity="0.85"><title>${x.tile}: ${((x.end - x.start) / 1000).toFixed(1)} s, ${fmt(x.nodes)} nodes</title></rect>`;
         }).join("");
         const busy = tl.reduce((a, x) => a + x.end - x.start, 0) / (t1 - t0 || 1);
         const long = tl.reduce((a, x) => (x.end - x.start > a.end - a.start ? x : a), tl[0]);
