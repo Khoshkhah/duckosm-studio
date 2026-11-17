@@ -97,6 +97,8 @@ struct BlobRead {
     pos: u64,
     buf: Vec<u8>,
     buf_at: u64,
+    /// the bytes that a read takes from the file at least (4 MB; 0: only the bytes asked for)
+    chunk: u64,
 }
 
 impl BlobRead {
@@ -107,7 +109,13 @@ impl BlobRead {
             pos: 0,
             buf: Vec::new(),
             buf_at: 0,
+            chunk: 4 << 20,
         })
+    }
+
+    /// A reader that takes only the bytes asked for: no 4 MB buffer (the join opens all parts at the same time).
+    fn exact(blob: Blob) -> Result<BlobRead, String> {
+        Ok(BlobRead { chunk: 0, ..BlobRead::new(blob)? })
     }
 }
 
@@ -122,7 +130,7 @@ impl Read for BlobRead {
             return Ok(0);
         }
         if self.pos < self.buf_at || self.pos >= self.buf_at + self.buf.len() as u64 {
-            let end = (self.pos + (4 << 20)).min(size);
+            let end = (self.pos + self.chunk.max(out.len() as u64)).min(size);
             let js = |e: JsValue| io::Error::other(format!("{e:?}"));
             let part = self
                 .blob
@@ -346,10 +354,10 @@ pub fn quack_cut(pbf: Blob, tiles: Array, outs: Array, spill: Array, memory: Opt
 }
 
 /// Step 3, in a worker for each tile: the rows that tile `[z, x, y]` owns, from its own file `tile` (a file of
-/// [`quack_cut`]), as a GeoParquet part through `out` (an open file in OPFS). The temporary files are in the memory of
-/// this worker. Gives `{nodes, ways, relations}`.
+/// [`quack_cut`]), as a GeoParquet part through `out` (an open file in OPFS). With `sort`, the part is sorted for the
+/// merge of [`quack_join`]. The temporary files are in `spill`. Gives `{nodes, ways, relations}`.
 #[wasm_bindgen]
-pub fn quack_tile(tile: Blob, z: u8, x: u32, y: u32, out: web_sys::FileSystemSyncAccessHandle, spill: Array) -> Result<Object, JsError> {
+pub fn quack_tile(tile: Blob, z: u8, x: u32, y: u32, out: web_sys::FileSystemSyncAccessHandle, spill: Array, sort: bool) -> Result<Object, JsError> {
     // the temporary files of the tile in OPFS, not in the memory of this worker (the Paris tile of France at zoom 6
     // stopped at 4 GiB with them in memory)
     let pool = std::rc::Rc::new(OpfsPool { free: std::cell::RefCell::new(spill.iter().map(|h| h.unchecked_into()).collect()) });
@@ -362,7 +370,7 @@ pub fn quack_tile(tile: Blob, z: u8, x: u32, y: u32, out: web_sys::FileSystemSyn
     let failed = std::sync::Arc::new(std::sync::Mutex::new(None));
     let file = BufWriter::with_capacity(1 << 20, OpfsOut { f: OpfsFile { h: out, at: 0.0 }, failed: failed.clone() });
     let open = || -> Result<_, String> { Ok(io::BufReader::with_capacity(1 << 20, BlobRead::new(tile.clone())?)) };
-    let res = duckosm_build::quack_tile_to(open, duckosm_core::tiles::Tile { z, x, y }, file);
+    let res = duckosm_build::quack_tile_to(open, duckosm_core::tiles::Tile { z, x, y }, file, sort);
     duckosm_core::spill::set_temp_store(None);
     if let Some(e) = failed.lock().expect("one thread").take() {
         return Err(JsError::new(&e));
@@ -376,8 +384,9 @@ pub fn quack_tile(tile: Blob, z: u8, x: u32, y: u32, out: web_sys::FileSystemSyn
     Ok(o)
 }
 
-/// Step 4: the join of the parts of [`quack_tile`] (`parts`, files) into one GeoParquet file through `out`; with `sort`,
-/// in QuackOSM's order (the rows wait in the temporary files of `spill`). Gives the number of rows.
+/// Step 4: the join of the parts of [`quack_tile`] (`parts`, files) into one GeoParquet file through `out`; with `sort`
+/// (parts made with `sort`), a merge of the parts in QuackOSM's order (a large strip waits in the temporary files of
+/// `spill`). The merge tells the page its progress (`{merged, total}` rows). Gives the number of rows.
 #[wasm_bindgen]
 pub fn quack_join(parts: Array, sort: bool, spill: Array, out: web_sys::FileSystemSyncAccessHandle) -> Result<f64, JsError> {
     let pool = std::rc::Rc::new(OpfsPool { free: std::cell::RefCell::new(spill.iter().map(|h| h.unchecked_into()).collect()) });
@@ -386,13 +395,9 @@ pub fn quack_join(parts: Array, sort: bool, spill: Array, out: web_sys::FileSyst
     })));
     let failed = std::sync::Arc::new(std::sync::Mutex::new(None));
     let file = BufWriter::with_capacity(1 << 20, OpfsOut { f: OpfsFile { h: out, at: 0.0 }, failed: failed.clone() });
-    let blobs: Vec<Blob> = parts.iter().map(|p| p.unchecked_into()).collect();
-    let bytes = blobs.into_iter().map(|b| -> Result<Vec<u8>, String> {
-        let mut v = Vec::with_capacity(b.size() as usize);
-        BlobRead::new(b)?.read_to_end(&mut v).map_err(|e| e.to_string())?;
-        Ok(v)
-    });
-    let res = duckosm_build::quack_join_to(bytes, file, sort);
+    let readers = parts.iter().map(|p| BlobRead::exact(p.unchecked_into())).collect::<Result<Vec<_>, _>>().map_err(|e| JsError::new(&e))?;
+    let mut progress = |merged: usize, total: usize| post(&[("merged", (merged as f64).into()), ("total", (total as f64).into())]);
+    let res = duckosm_build::quack_join_to(readers, file, sort, &mut progress);
     duckosm_core::spill::set_temp_store(None);
     if let Some(e) = failed.lock().expect("one thread").take() {
         return Err(JsError::new(&e));

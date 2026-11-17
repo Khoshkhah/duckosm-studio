@@ -249,7 +249,7 @@
     settings: ["Settings", [
       ["Tile by tile", "The file is cut into tiles, and each tile gives its rows. The memory then follows the size of a tile, not of the file. Use it for a file larger than about 150 MB: the browser has at most 4 GiB of memory. The rows are the same."],
       ["Tile size", "Map tiles of one zoom (zoom 8 is the default, the tile zoom of all parts of duckOSM), or tiles of at most 4 million nodes. With a zoom, a dense city gives a large tile."],
-      ["Sort the rows by place, as QuackOSM", "The same rows, in the order of QuackOSM: rows that are near on the map are near in the file, so a query of one area reads less of the file. Without the sort, the file is the same table in another order. The sort is the last step and shows no progress; on a large file it takes minutes. Off by default for a large file."],
+      ["Sort the rows by place, as QuackOSM", "The same rows, in the order of QuackOSM: rows that are near on the map are near in the file, so a query of one area reads less of the file. Without the sort, the file is the same table in another order. Tile by tile, each tile worker sorts its own rows, and the last step merges the sorted parts and shows its progress. In one piece, the sort is the last step and shows no progress. Off by default for a large file."],
       ["Threads", "In one run: the threads of the run. Tile by tile: the threads of the cut."],
       ["Tile workers", "The workers that make the rows of the tiles, one tile in each worker, each with one thread."],
       ["Join threads", "The threads of the join of the parts of the tiles."],
@@ -532,14 +532,17 @@
   const runIo = (text) => { const io = $("steplist").querySelector("li.run .io"); if (io) io.textContent = text; };
   // the step that ends: done, with its time; the next one runs
   let stepStart = 0;
+  // the run now is tile by tile
+  let runByTiles = false;
   const finish = (li, text) => {
     li.className = "done";
     li.querySelector(".t").textContent = text;
     li.querySelector(".io").textContent = "";
     const next = li.nextElementSibling;
     next?.classList.add("run");
-    // the sort sends no progress: say so, so a long sort does not look frozen
-    if (next?.dataset.step === "quack 5: the sort") next.querySelector(".io").textContent = "no progress in this step: a large file takes some minutes";
+    // the sort in one piece sends no progress: say so, so a long sort does not look frozen (tile by tile, the merge
+    // sends its progress)
+    if (next?.dataset.step === "quack 5: the sort" && !runByTiles) next.querySelector(".io").textContent = "no progress in this step: a large file takes some minutes";
     stepStart = performance.now();
     const all = $("steplist").children.length, done = $("steplist").querySelectorAll(".done").length;
     $("bar").style.width = `${(100 * done) / all}%`;
@@ -673,6 +676,7 @@
   // ---- the run
   $("run").onclick = async () => {
     const tiles = $("tiles").checked;
+    runByTiles = tiles;
     if (!tiles && file.size > 300 * 2 ** 20 && !confirm(`${file.name} is ${(file.size / 2 ** 20).toFixed(0)} MB. The browser ` +
       "has at most 4 GiB of memory, and Île-de-France (338 MB) needs more in one run. Make the table tile by tile, or the " +
       "run most likely stops with an error. Run in one run anyway?")) return;
@@ -735,6 +739,12 @@
         runIo(`read ${gb(data.read)} of ${gb(data.size)} GB`);
         status(`Making the table of ${file.name}: reading the file, ` +
           (tiles ? "" : `pass ${data.pass} of 2, `) + `${Math.floor((100 * data.read) / data.size)} %`);
+        return;
+      }
+      // the merge of the sorted parts (the last step tile by tile, with the sort): the rows merged
+      if (data.merged !== undefined) {
+        runIo(`${fmt(data.merged)} of ${fmt(data.total)} rows merged`);
+        status(`Making the table of ${file.name}: merging the sorted parts, ${Math.floor((100 * data.merged) / Math.max(1, data.total))} %`);
         return;
       }
       // the tile workers while they run: the tile and the memory of each one
