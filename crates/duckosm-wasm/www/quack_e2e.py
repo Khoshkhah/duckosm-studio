@@ -89,6 +89,7 @@ with sync_playwright() as p:
         print("   " + "\n   ".join(steps))
         if args.tiles:
             print("  ", page.text_content("#timeline-text"))
+            print("   the WebAssembly memory of the join worker:", page.evaluate("(window.lastResult || {}).joinMib"), "MiB")
             # the passes of the longest tile (window.lastResult: the result of the run)
             print("   " + "\n   ".join(page.evaluate("""() => { const r = window.lastResult || {}; const tl = r.timeline || [];
                 if (!tl.length) return [];
@@ -97,6 +98,11 @@ with sync_playwright() as p:
                 return (r.tileSteps || []).filter((s) => s.tile === long).map((s) => `${long} ${(s.ms / 1000).toFixed(1)} s ${s.step}`)
                   .concat([`${long}: ${((io || 0) / 1000).toFixed(1)} s waiting for the file and the storage`]); }""")))
         print("   " + "\n   ".join(l for l in page.evaluate("statusLog") if "tile cut" in l or "tiles 2" in l))
+        if args.tiles and sort:
+            # the merge of the sorted parts tells the page its progress
+            merging = [l for l in page.evaluate("statusLog") if "merging the sorted parts" in l]
+            assert merging and merging[-1].endswith("100 %"), merging[-3:]
+            print("  ", merging[-1])
         if monaco:
             assert (got["nodes"], got["ways"], got["relations"]) == ("3,957", "5,573", "56"), got
         with page.expect_download() as d:

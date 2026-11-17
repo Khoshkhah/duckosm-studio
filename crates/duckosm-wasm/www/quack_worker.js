@@ -160,7 +160,7 @@ async function byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, stora
       if (i !== null) {
         started.set(i, [k, performance.now() - t0]);
         working[k] = i;
-        w.postMessage({ dir, i, tile: tiles[i], module, threads: 1 });
+        w.postMessage({ dir, i, tile: tiles[i], module, threads: 1, sort: data.sort !== false });
       }
       live();       // the page shows the new tile of the worker, or "no tile" at the end
     };
@@ -222,12 +222,21 @@ async function byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, stora
   for (let i = 0; i < tiles.length; i++) await dir.removeEntry(`tile-${i}.pbf`).catch(() => {});
   // the join in a worker of its own, with its own pool of threads (the setting "join")
   const joinThreads = Math.max(1, Math.min(data.joinThreads || threads, 64));
+  let joinMib = 0;
   await new Promise((resolve, reject) => {
     const w = new Worker(new URL("./quack_join_worker.js", import.meta.url), { type: "module" });
     w.onmessage = ({ data: r }) => {
+      // the progress of the merge of the sorted parts, to the page
+      if (r.merged !== undefined) {
+        postMessage({ merged: r.merged, total: r.total, mib: mib() });
+        return;
+      }
       w.terminate();
       if (r.error) reject(new Error(`the join: ${r.error}`));
-      else resolve();
+      else {
+        joinMib = r.mib;
+        resolve();
+      }
     };
     w.onerror = (e) => {
       e.preventDefault();
@@ -236,10 +245,10 @@ async function byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, stora
     };
     w.postMessage({ dir, parts: todo.map((i) => `part-${i}.parquet`), sort: data.sort !== false, threads: joinThreads });
   });
-  // with the sort, the join is the sort
+  // with the sort, the join is the sort: a merge of the sorted parts
   step(data.sort !== false ? "quack 5: the sort" : "quack by tiles 4: the join of the parts");
   for (const i of todo) await dir.removeEntry(`part-${i}.parquet`).catch(() => {});
   const seconds = (performance.now() - t0) / 1000;
   const workersMib = [...workerMib.values()].reduce((a, b) => a + b, 0);
-  postMessage({ ...totals, steps, timeline, tileSteps, workers, workersMib, file: await fh.getFile(), seconds, storageMib: Math.round(storageMax() / 2 ** 20), threads: `cut ${threads}, ${workers} tile workers, join ${joinThreads}`, mib: mib() });
+  postMessage({ ...totals, steps, timeline, tileSteps, workers, workersMib, joinMib, file: await fh.getFile(), seconds, storageMib: Math.round(storageMax() / 2 ** 20), threads: `cut ${threads}, ${workers} tile workers, join ${joinThreads}`, mib: mib() });
 }
