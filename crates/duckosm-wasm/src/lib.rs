@@ -395,7 +395,12 @@ pub fn quack_join(parts: Array, sort: bool, spill: Array, out: web_sys::FileSyst
     })));
     let failed = std::sync::Arc::new(std::sync::Mutex::new(None));
     let file = BufWriter::with_capacity(1 << 20, OpfsOut { f: OpfsFile { h: out, at: 0.0 }, failed: failed.clone() });
-    let readers = parts.iter().map(|p| BlobRead::exact(p.unchecked_into())).collect::<Result<Vec<_>, _>>().map_err(|e| JsError::new(&e))?;
+    let readers = parts
+        .iter()
+        .enumerate()
+        .map(|(i, p)| Ok(Part { r: BlobRead::exact(p.unchecked_into())?, i }))
+        .collect::<Result<Vec<_>, String>>()
+        .map_err(|e| JsError::new(&e))?;
     let mut progress = |merged: usize, total: usize| post(&[("merged", (merged as f64).into()), ("total", (total as f64).into())]);
     let res = duckosm_build::quack_join_to(readers, file, sort, &mut progress);
     duckosm_core::spill::set_temp_store(None);
@@ -403,6 +408,31 @@ pub fn quack_join(parts: Array, sort: bool, spill: Array, out: web_sys::FileSyst
         return Err(JsError::new(&e));
     }
     Ok(res.map_err(|e| JsError::new(&e))? as f64)
+}
+
+/// A part of [`quack_join`]. The join drops it when it has read all its rows: the drop tells the page `{done: i}`, and
+/// the page deletes the file of the part, so the parts and the joined file are not on the disk at the same time.
+struct Part {
+    r: BlobRead,
+    i: usize,
+}
+
+impl Read for Part {
+    fn read(&mut self, b: &mut [u8]) -> io::Result<usize> {
+        self.r.read(b)
+    }
+}
+
+impl Seek for Part {
+    fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
+        self.r.seek(to)
+    }
+}
+
+impl Drop for Part {
+    fn drop(&mut self) {
+        post(&[("done", (self.i as f64).into())]);
+    }
 }
 
 thread_local! {

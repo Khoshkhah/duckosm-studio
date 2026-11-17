@@ -226,6 +226,11 @@ async function byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, stora
   await new Promise((resolve, reject) => {
     const w = new Worker(new URL("./quack_join_worker.js", import.meta.url), { type: "module" });
     w.onmessage = ({ data: r }) => {
+      // the join has read all rows of a part: delete its file at once
+      if (r.done !== undefined) {
+        dir.removeEntry(`part-${todo[r.done]}.parquet`).catch(() => {});
+        return;
+      }
       // the progress of the merge of the sorted parts, to the page
       if (r.merged !== undefined) {
         postMessage({ merged: r.merged, total: r.total, mib: mib() });
