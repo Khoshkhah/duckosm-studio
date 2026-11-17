@@ -17,6 +17,12 @@ All versions are on the GitHub Releases page of `Khoshkhah/duckosm-rust`. There 
 
 ### Changed
 
+- **Quack page: one worker for each tile, with one thread** (PR 170). "Tile workers" is the number of workers; before, it
+  was a budget of threads, and 16 tile workers at zoom 6 on France became 6 workers. **France works on the quack page**
+  (zoom 8, not sorted, `france-261113.osm.pbf`): 378.6 s in Edge on a Windows laptop with 8 cores (the cut 163.6 s, the
+  rows of the 241 tiles 165.0 s with 7.9 of 8 workers busy, the join 35.2 s), 310.4 s in headless Chromium on WSL. Memory:
+  1,132 MiB in the page and 4,034 MiB in the 8 workers; at most 34 GB of browser storage; 12.3 GB of GeoParquet. The
+  details are in duckOSM's docs/design/build_by_tiles.md, "After the switch to pbfcut".
 - **The duckOSM pin moves to `85284ac`** (duckOSM PR 204; before `e6425bc`). It brings pbfcut `8e565be` (pbfcut PR 46): step 3d of the
   tile cut reads only the ways that it needs, with no tags. France at zoom 8, the cut natively: 76.4-80.8 s to 72.2 s, step 3d 4.3 s to
   2.0 s; the tile files have the same elements.
