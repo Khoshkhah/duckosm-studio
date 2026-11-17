@@ -130,22 +130,10 @@ async function byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, stora
   const todo = [];
   counts.forEach((n, i) => { if (n > 0) todo.push(i); });
   todo.sort((a, b) => counts[b] - counts[a]);
-  // the threads of the tile workers (the setting "tile workers"). A tile with more than its share of the nodes gets a
-  // worker with a pool of threads, its share of the threads: one large tile on one thread was the end of step 3 (Sweden
-  // at zoom 6: 6/34/19 alone for 24 s). The other tiles go to workers with one thread each.
-  const budget = Math.max(1, Math.min(data.workers || navigator.hardwareConcurrency || 4, 64));
-  const sum = todo.reduce((a, i) => a + counts[i], 0) || 1;
-  const big = [];
-  let left = budget;
-  for (const i of todo) {
-    const t = Math.min(Math.round((budget * counts[i]) / sum), left - 1);
-    if (t < 2 || !self.crossOriginIsolated) break;
-    big.push([i, t]);
-    left -= t;
-  }
-  const queue = todo.slice(big.length);
-  const workers = big.length + Math.max(big.length ? 0 : 1, Math.min(left, queue.length));
-  const threadsOf = (k) => (k < big.length ? big[k][1] : 1);
+  // one worker for each tile at a time, with one thread: the setting "tile workers" is the number of workers. At zoom 8 the
+  // tiles are small, and all workers stay busy (France on 8 cores: 7.9 of 8 on average); the largest tiles go first.
+  const queue = todo;
+  const workers = Math.max(1, Math.min(data.workers || navigator.hardwareConcurrency || 4, 64, todo.length));
   const totals = { nodes: 0, ways: 0, relations: 0 };
   // the timeline of step 3: for each tile, its worker, the time it went to the worker and the time it came back (ms)
   const timeline = [];
@@ -163,17 +151,18 @@ async function byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, stora
       live: true, mib: mib(), done, total: todo.length,
       workersMib: [...workerMib.values()].reduce((a, b) => a + b, 0),
       workerMibs: working.map((_, k) => workerMib.get(k) || 0),
-      workerTiles: working.map((i, k) => (i === null ? null : tiles[i].join("/") + (threadsOf(k) > 1 ? ` on ${threadsOf(k)} threads` : ""))),
+      workerTiles: working.map((i) => (i === null ? null : tiles[i].join("/"))),
     });
-    // a worker of a large tile takes that tile first; then each worker takes the next tile of the queue
+    // each worker takes the next tile of the queue
     const give = (w, k) => {
       working[k] = null;
-      const i = k < big.length && !started.has(big[k][0]) ? big[k][0] : next < queue.length ? queue[next++] : null;
+      const i = next < queue.length ? queue[next++] : null;
       if (i !== null) {
         started.set(i, [k, performance.now() - t0]);
         working[k] = i;
-        w.postMessage({ dir, i, tile: tiles[i], module, threads: threadsOf(k) });
+        w.postMessage({ dir, i, tile: tiles[i], module, threads: 1 });
       }
+      live();       // the page shows the new tile of the worker, or "no tile" at the end
     };
     for (let k = 0; k < workers; k++) workerMib.set(k, 0);
     for (let k = 0; k < workers; k++) {
@@ -252,5 +241,5 @@ async function byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, stora
   for (const i of todo) await dir.removeEntry(`part-${i}.parquet`).catch(() => {});
   const seconds = (performance.now() - t0) / 1000;
   const workersMib = [...workerMib.values()].reduce((a, b) => a + b, 0);
-  postMessage({ ...totals, steps, timeline, tileSteps, workers, workersMib, file: await fh.getFile(), seconds, storageMib: Math.round(storageMax() / 2 ** 20), threads: `cut ${threads}, ${workers} tile workers` + (big.length ? ` (the largest ${big.length === 1 ? "tile" : `${big.length} tiles`} on ${big.map((b) => b[1]).join(", ")} threads)` : "") + `, join ${joinThreads}`, mib: mib() });
+  postMessage({ ...totals, steps, timeline, tileSteps, workers, workersMib, file: await fh.getFile(), seconds, storageMib: Math.round(storageMax() / 2 ** 20), threads: `cut ${threads}, ${workers} tile workers, join ${joinThreads}`, mib: mib() });
 }
