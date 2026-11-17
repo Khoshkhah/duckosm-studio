@@ -47,6 +47,7 @@ with sync_playwright() as p:
     page.on("pageerror", lambda e: errs.append(str(e)))
     page.goto(url)
     assert page.evaluate("crossOriginIsolated"), "the page is not cross-origin isolated (serve.py sends COOP and COEP)"
+    page.click("label[for=src-f]")  # the input card: Local file
     page.set_input_files("#file", args.pbf)
     page.set_checked("#tiles", args.tiles)
     if args.tiles and args.zoom:
