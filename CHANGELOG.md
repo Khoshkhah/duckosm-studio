@@ -17,6 +17,9 @@ All versions are on the GitHub Releases page of `Khoshkhah/duckosm-rust`. There 
 
 ### Changed
 
+- **The duckOSM pin moves to `85284ac`** (duckOSM PR 204; before `e6425bc`). It brings pbfcut `8e565be` (pbfcut PR 46): step 3d of the
+  tile cut reads only the ways that it needs, with no tags. France at zoom 8, the cut natively: 76.4-80.8 s to 72.2 s, step 3d 4.3 s to
+  2.0 s; the tile files have the same elements.
 - **`quack.html` tile by tile: a worker for each tile** (Kaveh, 2026-11-14: "every thing is parallel but you run one thread"). The cut writes each
   tile into its own OPFS file (`quack_plan`, `quack_cut`); a pool of tile workers (`quack_tile_worker.js`, one for each core, each with its own
   module, memory and files) makes the rows of the tiles, the largest first (`quack_tile`); the join puts the parts into one GeoParquet file
