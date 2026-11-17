@@ -161,7 +161,7 @@
 <section class="card">
   <h2>Settings <button type="button" class="help" data-help="settings" aria-label="Help">?</button></h2>
   <label class="check"><input id="tiles" type="checkbox"> Tile by tile</label>
-  <label class="check"><input id="sort" type="checkbox" checked> Sort the rows as QuackOSM</label>
+  <label class="check"><input id="sort" type="checkbox" checked> Sort the rows by place, as QuackOSM</label>
   <div class="grid">
     <div data-tiles><label for="zoom">Tile size</label><select id="zoom"></select></div>
     <div><label for="cut-threads" id="cut-label">Threads</label><input id="cut-threads" type="number" min="1" max="64" step="1"></div>
@@ -249,7 +249,7 @@
     settings: ["Settings", [
       ["Tile by tile", "The file is cut into tiles, and each tile gives its rows. The memory then follows the size of a tile, not of the file. Use it for a file larger than about 150 MB: the browser has at most 4 GiB of memory. The rows are the same."],
       ["Tile size", "Map tiles of one zoom (zoom 8 is the default, the tile zoom of all parts of duckOSM), or tiles of at most 4 million nodes. With a zoom, a dense city gives a large tile."],
-      ["Sort the rows as QuackOSM", "Each row group of the file then holds a small area. The sort takes more time and memory: in one run, clear it for a large file."],
+      ["Sort the rows by place, as QuackOSM", "The same rows, in the order of QuackOSM: rows that are near on the map are near in the file, so a query of one area reads less of the file. Without the sort, the file is the same table in another order. The sort is the last step and shows no progress; on a large file it takes minutes. Off by default for a large file."],
       ["Threads", "In one run: the threads of the run. Tile by tile: the threads of the cut."],
       ["Tile workers", "The workers that make the rows of the tiles, one tile in each worker, each with one thread."],
       ["Join threads", "The threads of the join of the parts of the tiles."],
@@ -285,10 +285,11 @@
   // the input of the run; a large file is made tile by tile
   function setInput() {
     const f = source() === "file" ? $("file").files[0] ?? null : regionFile;
-    if (f && f !== file) $("tiles").checked = f.size > LARGE;
+    // a large file: tile by tile, and no sort (the sort of a country takes minutes)
+    if (f && f !== file) $("tiles").checked = !($("sort").checked = f.size <= LARGE);
     file = f;
     $("input-text").textContent = !file ? "" : `Input: ${file.name}, ${mb(file.size)}` +
-      (source() === "region" ? " (in the storage of this site)" : "") + (file.size > LARGE ? ". A large file: tile by tile." : "");
+      (source() === "region" ? " (in the storage of this site)" : "") + (file.size > LARGE ? ". A large file: tile by tile, no sort." : "");
     showTiles();
     $("run").disabled = !file || !!worker;
   }
@@ -537,6 +538,8 @@
     li.querySelector(".io").textContent = "";
     const next = li.nextElementSibling;
     next?.classList.add("run");
+    // the sort sends no progress: say so, so a long sort does not look frozen
+    if (next?.dataset.step === "quack 5: the sort") next.querySelector(".io").textContent = "no progress in this step: a large file takes some minutes";
     stepStart = performance.now();
     const all = $("steplist").children.length, done = $("steplist").querySelectorAll(".done").length;
     $("bar").style.width = `${(100 * done) / all}%`;
@@ -709,7 +712,7 @@
       $("clock").textContent = `${((now - t0) / 1000).toFixed(1)} s`;
       const run = $("steplist").querySelector("li.run .t");
       if (run) run.textContent = `${((now - stepStart) / 1000).toFixed(0)} s`;
-      if (now - heard > 60000 && !$("status").textContent.includes("no news"))
+      if (now - heard > 60000 && !$("status").textContent.includes("no news") && !$("steplist").querySelector('li.run[data-step="quack 5: the sort"]'))
         status(`${$("status").textContent} (no news for 60 s: the browser may be out of memory; click Stop)`);
     }, 200);
     storageClock = setInterval(showStorage, 2000);
