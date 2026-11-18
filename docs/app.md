@@ -274,7 +274,10 @@ The traps that this work found:
 **The browser disk.** Each tab has its own folder `tables-<id>` in OPFS. A Web Lock with the same name lives as long as the
 tab. A new build removes the files of the build before it and the folders of closed tabs, so the disk keeps the tables of
 one area for each open tab. A browser with no OPFS that can write (some Safari and private windows) keeps each file as a
-`Blob`, and each table in memory, as before. The saved area (below) is a second copy on the disk.
+`Blob`, and each table in memory, as before. The save after a build moves the files of the build from `tables-<id>` into
+the folder of the saved area (below), so the disk keeps one copy (Kentucky, three modes: 2.5 GB after the build). The page then reads the
+tables from the saved area. Before **Delete** or **Delete all** removes the saved area of the open tables, their files move
+back into `tables-<id>`, so the tables still answer.
 
 Not done: the map worker's memory (roadstyle's engine: about 5 KB for each road, with the base map).
 

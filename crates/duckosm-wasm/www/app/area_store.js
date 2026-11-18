@@ -62,7 +62,8 @@ export async function loadDesign(slug) {
 
 // Save a built area and all its Parquet files into OPFS
 // `cut`: the bytes of cut.osm.pbf (the area as cut from the region file), kept as a file of the area so that its download is there after a restore
-export async function saveArea(slug, meta, tablesData, vizData = null, cut = null) {
+// `move(t, dir)`: puts the file of table `t` into `dir` with no copy and gives true (duck.moveTable), or gives false: then the file is copied.
+export async function saveArea(slug, meta, tablesData, vizData = null, cut = null, move = null) {
   const areasDir = await getAreasDir();
   if (!areasDir) return false;
 
@@ -82,10 +83,13 @@ export async function saveArea(slug, meta, tablesData, vizData = null, cut = nul
   if (Array.isArray(tablesData)) {
     for (const t of tablesData) {
       if (!t.name || !t.file) continue;
-      const fileHandle = await dir.getFileHandle(t.name, { create: true });
-      const writer = await fileHandle.createWritable();
-      await writer.write(t.file);
-      await writer.close();
+      // the files of the build move into the area (one copy in the browser's storage); the others are copied
+      if (!(move && await move(t, dir).catch(() => false))) {
+        const fileHandle = await dir.getFileHandle(t.name, { create: true });
+        const writer = await fileHandle.createWritable();
+        await writer.write(t.file);
+        await writer.close();
+      }
       totalBytes += t.file.size;
       savedTableDescriptors.push({
         mode: t.mode,
