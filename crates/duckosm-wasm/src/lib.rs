@@ -192,6 +192,7 @@ pub fn cut_area(region: Blob, boundary: &str, out: web_sys::FileSystemSyncAccess
 /// With `tile_nodes`, the table is made tile by tile, at most that many nodes in a tile (`quack_tiles_to` of duckOSM),
 /// so the memory follows the size of a tile, not of the file: the mode for a large file (Île-de-France, 338 MB). With
 /// `tile_zoom` (0 to 14), the tiles are the map tiles of that zoom.
+/// `fixes`: the text of an OSM fixes file (`duckosm quack --fixes`).
 /// Gives `{nodes, ways, relations, steps}`: the rows of each kind, and for each step its time since the start (ms)
 /// and the WebAssembly memory (MiB) at its end.
 #[wasm_bindgen]
@@ -202,6 +203,7 @@ pub fn quack(
     out: web_sys::FileSystemSyncAccessHandle,
     tile_nodes: Option<f64>,
     tile_zoom: Option<u8>,
+    fixes: Option<String>,
 ) -> Result<Object, JsError> {
     use duckosm_build::TileSize;
     let tiles = match (tile_zoom, tile_nodes) {
@@ -227,10 +229,13 @@ pub fn quack(
         let r = Counted { r: BlobRead::new(pbf.clone())?, read: 0, next: 0, size, pass: pass.get() };
         Ok(io::BufReader::with_capacity(1 << 20, r))
     };
-    let res = match tiles {
-        Some(size) => duckosm_build::quack_tiles_to(open, file, sort.unwrap_or(true), size),
-        None => duckosm_build::quack_to(open, file, sort.unwrap_or(true)),
-    };
+    let res = (|| {
+        let fixes = fixes.map(|t| quack_fixes_of(&t, &open)).transpose()?;
+        match tiles {
+            Some(size) => duckosm_build::quack_tiles_to(open, file, sort.unwrap_or(true), size, fixes),
+            None => duckosm_build::quack_to(open, file, sort.unwrap_or(true), fixes.as_ref()),
+        }
+    })();
     duckosm_core::spill::set_temp_store(None);
     // a writer that is dropped does not give its error: the first one is kept here
     if let Some(e) = failed.lock().expect("one thread").take() {
@@ -278,13 +283,15 @@ pub fn quack_plan(pbf: Blob, tile_nodes: Option<f64>, tile_zoom: Option<u8>) -> 
     Ok(out)
 }
 
-/// Step 2: cut `pbf` to the tiles of [`quack_plan`] (`tiles`), each tile into its own open file in OPFS (`outs`, one for
-/// each tile), with each multipolygon and boundary whole in each tile with a member (each tile file complete), so each tile
-/// can run alone in a worker. `spill`: a pool of open files in OPFS for the temporary files of the cut. Gives the number of nodes of each
-/// tile (a tile with 0 has no file).
-#[wasm_bindgen]
-pub fn quack_cut(pbf: Blob, tiles: Array, outs: Array, spill: Array, memory: Option<bool>) -> Result<Array, JsError> {
-    let list: Vec<duckosm_core::tiles::Tile> = tiles
+/// The OSM fixes of the text of a fixes file, for the `.osm.pbf` file that `open` opens.
+fn quack_fixes_of<R: io::Read + Send>(text: &str, open: impl Fn() -> Result<R, String>) -> Result<duckosm_core::quack::QuackFixes, String> {
+    let fixes = parse_osm_fixes(text, "the OSM fixes file")?;
+    duckosm_core::quack::QuackFixes::new(&fixes, open)
+}
+
+/// The tiles `[z, x, y]` of [`quack_plan`].
+fn tile_list(tiles: &Array) -> Vec<duckosm_core::tiles::Tile> {
+    tiles
         .iter()
         .map(|t| {
             let a: Array = t.unchecked_into();
@@ -294,7 +301,31 @@ pub fn quack_cut(pbf: Blob, tiles: Array, outs: Array, spill: Array, memory: Opt
                 y: a.get(2).as_f64().unwrap_or(0.0) as u32,
             }
         })
-        .collect();
+        .collect()
+}
+
+/// Quack by tiles, after [`quack_plan`]: the OSM fixes of the fixes file `text` for `pbf`, with each new way given to one
+/// of the `tiles`, as JSON for [`quack_tile`] and [`quack_gdal_tile`] (`duckosm quack --fixes`).
+#[wasm_bindgen]
+pub fn quack_fixes(pbf: Blob, text: &str, tiles: Array) -> Result<String, JsError> {
+    let open = || -> Result<_, String> { Ok(io::BufReader::with_capacity(1 << 20, BlobRead::new(pbf.clone())?)) };
+    let mut fixes = quack_fixes_of(text, open).map_err(|e| JsError::new(&e))?;
+    fixes.place(&tile_list(&tiles));
+    Ok(fixes.to_json())
+}
+
+/// The fixes of [`quack_fixes`] in a tile worker.
+fn fixes_of_json(json: Option<String>) -> Result<Option<duckosm_core::quack::QuackFixes>, JsError> {
+    json.map(|j| duckosm_core::quack::QuackFixes::from_json(&j)).transpose().map_err(|e| JsError::new(&e))
+}
+
+/// Step 2: cut `pbf` to the tiles of [`quack_plan`] (`tiles`), each tile into its own open file in OPFS (`outs`, one for
+/// each tile), with each multipolygon and boundary whole in each tile with a member (each tile file complete), so each tile
+/// can run alone in a worker. `spill`: a pool of open files in OPFS for the temporary files of the cut. Gives the number of nodes of each
+/// tile (a tile with 0 has no file).
+#[wasm_bindgen]
+pub fn quack_cut(pbf: Blob, tiles: Array, outs: Array, spill: Array, memory: Option<bool>) -> Result<Array, JsError> {
+    let list = tile_list(&tiles);
     let mut files: Vec<OpfsFile> = outs.iter().map(|h| OpfsFile { h: h.unchecked_into(), at: 0.0 }).collect();
     if files.len() != list.len() {
         return Err(JsError::new("quack_cut: one open file for each tile"));
@@ -322,9 +353,20 @@ pub fn quack_cut(pbf: Blob, tiles: Array, outs: Array, spill: Array, memory: Opt
 
 /// Step 3, in a worker for each tile: the rows that tile `[z, x, y]` owns, from its own file `tile` (a file of
 /// [`quack_cut`]), as a GeoParquet part through `out` (an open file in OPFS). With `sort`, the part is sorted for the
-/// merge of [`quack_join`]. The temporary files are in `spill`. Gives `{nodes, ways, relations}`.
+/// merge of [`quack_join`]. The temporary files are in `spill`. `fixes`: the JSON of [`quack_fixes`]. Gives `{nodes, ways,
+/// relations}`.
 #[wasm_bindgen]
-pub fn quack_tile(tile: Blob, z: u8, x: u32, y: u32, out: web_sys::FileSystemSyncAccessHandle, spill: Array, sort: bool) -> Result<Object, JsError> {
+pub fn quack_tile(
+    tile: Blob,
+    z: u8,
+    x: u32,
+    y: u32,
+    out: web_sys::FileSystemSyncAccessHandle,
+    spill: Array,
+    sort: bool,
+    fixes: Option<String>,
+) -> Result<Object, JsError> {
+    let fixes = fixes_of_json(fixes)?;
     // the temporary files of the tile in OPFS, not in the memory of this worker (the Paris tile of France at zoom 6
     // stopped at 4 GiB with them in memory)
     let pool = std::rc::Rc::new(OpfsPool { free: std::cell::RefCell::new(spill.iter().map(|h| h.unchecked_into()).collect()) });
@@ -337,7 +379,7 @@ pub fn quack_tile(tile: Blob, z: u8, x: u32, y: u32, out: web_sys::FileSystemSyn
     let failed = std::sync::Arc::new(std::sync::Mutex::new(None));
     let file = BufWriter::with_capacity(1 << 20, OpfsOut { f: OpfsFile { h: out, at: 0.0 }, failed: failed.clone() });
     let open = || -> Result<_, String> { Ok(io::BufReader::with_capacity(1 << 20, BlobRead::new(tile.clone())?)) };
-    let res = duckosm_build::quack_tile_to(open, duckosm_core::tiles::Tile { z, x, y }, file, sort);
+    let res = duckosm_build::quack_tile_to(open, duckosm_core::tiles::Tile { z, x, y }, file, sort, fixes.as_ref());
     duckosm_core::spill::set_temp_store(None);
     if let Some(e) = failed.lock().expect("one thread").take() {
         return Err(JsError::new(&e));
@@ -380,9 +422,19 @@ pub fn quack_join(parts: Array, sort: bool, spill: Array, out: web_sys::FileSyst
 /// quack --gdal, step 3 (GDAL's layers, duckOSM `docs/rust/quack.md`, "GDAL layers"): the rows of GDAL's layers that tile
 /// `[z, x, y]` owns, from its own file `tile` (a file of [`quack_cut`]), through `out` (an open file in OPFS) for
 /// [`quack_gdal_join`]. The temporary files are in `spill`. Gives `{points, lines, multilinestrings, multipolygons,
-/// other_relations}` (the members of the relations of the last two, one for each member).
+/// other_relations}` (the members of the relations of the last two, one for each member). `fixes`: the JSON of
+/// [`quack_fixes`].
 #[wasm_bindgen]
-pub fn quack_gdal_tile(tile: Blob, z: u8, x: u32, y: u32, out: web_sys::FileSystemSyncAccessHandle, spill: Array) -> Result<Object, JsError> {
+pub fn quack_gdal_tile(
+    tile: Blob,
+    z: u8,
+    x: u32,
+    y: u32,
+    out: web_sys::FileSystemSyncAccessHandle,
+    spill: Array,
+    fixes: Option<String>,
+) -> Result<Object, JsError> {
+    let fixes = fixes_of_json(fixes)?;
     let pool = std::rc::Rc::new(OpfsPool { free: std::cell::RefCell::new(spill.iter().map(|h| h.unchecked_into()).collect()) });
     duckosm_core::spill::set_temp_store(Some(std::rc::Rc::new(move || {
         Box::new(OpfsStore(pool.clone())) as Box<dyn duckosm_core::spill::Store>
@@ -392,7 +444,7 @@ pub fn quack_gdal_tile(tile: Blob, z: u8, x: u32, y: u32, out: web_sys::FileSyst
     let failed = std::sync::Arc::new(std::sync::Mutex::new(None));
     let file = BufWriter::with_capacity(1 << 20, OpfsOut { f: OpfsFile { h: out, at: 0.0 }, failed: failed.clone() });
     let open = || -> Result<_, String> { Ok(io::BufReader::with_capacity(1 << 20, BlobRead::new(tile.clone())?)) };
-    let res = duckosm_build::quack_gdal::quack_gdal_tile_to(open, duckosm_core::tiles::Tile { z, x, y }, file);
+    let res = duckosm_build::quack_gdal::quack_gdal_tile_to(open, duckosm_core::tiles::Tile { z, x, y }, file, fixes.as_ref());
     duckosm_core::spill::set_temp_store(None);
     if let Some(e) = failed.lock().expect("one thread").take() {
         return Err(JsError::new(&e));

@@ -4,7 +4,8 @@
 // the table tile by tile (a large file), or null; zoom: tile by tile with the map tiles of this zoom, or null; cutThreads:
 // the threads of the cut (and of one run); workers: the tile workers; joinThreads: the threads of the join (a worker of its
 // own, quack_join_worker.js); gdal: GDAL's five layers in place of the table, always tile by tile (zoom 8 when no tile size
-// is given); format: GDAL's layers as "geoparquet", "gpkg" (one GeoPackage) or "both"}. Out: {nodes, ways, relations, steps: for
+// is given); format: GDAL's layers as "geoparquet", "gpkg" (one GeoPackage) or "both"; fixes: the text of an OSM fixes
+// file (duckosm quack --fixes), or null}. Out: {nodes, ways, relations, steps: for
 // each step its time since the start (ms) and the WebAssembly memory (MiB), file: the GeoParquet file (a File in OPFS),
 // seconds, threads, mib} (gdal: files, the GeoParquet file of each layer, gpkg, the GeoPackage, and layers, the rows of
 // each layer) or {error}. The page makes a new worker for each run: the
@@ -63,7 +64,7 @@ onmessage = async ({ data }) => {
     }
     out = await fh.createSyncAccessHandle();
     const t = performance.now();
-    const r = pkg.quack(data.pbf, data.sort !== false, spill, out, data.tiles ?? undefined, data.zoom ?? undefined);
+    const r = pkg.quack(data.pbf, data.sort !== false, spill, out, data.tiles ?? undefined, data.zoom ?? undefined, data.fixes ?? undefined);
     const seconds = (performance.now() - t) / 1000;
     const mib = Math.round(wasm.memory.buffer.byteLength / 2 ** 20);   // the WebAssembly memory at the end (it never shrinks)
     out.close();
@@ -118,6 +119,8 @@ async function byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, stora
   };
   const tiles = pkg.quack_plan(data.pbf, data.tiles ?? undefined, data.zoom ?? undefined);
   step(`quack by tiles 1: ${tiles.length} tiles`);
+  // the OSM fixes, with each new way given to one tile, as JSON for each tile worker
+  const fixes = data.fixes ? pkg.quack_fixes(data.pbf, data.fixes, tiles) : undefined;
   const outs = [];
   for (let i = 0; i < tiles.length; i++) {
     outs.push(await (await dir.getFileHandle(`tile-${i}.pbf`, { create: true })).createSyncAccessHandle());
@@ -164,7 +167,7 @@ async function byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, stora
       if (i !== null) {
         started.set(i, [k, performance.now() - t0]);
         working[k] = i;
-        w.postMessage({ dir, i, tile: tiles[i], module, threads: 1, sort: data.sort !== false, gdal: !!data.gdal });
+        w.postMessage({ dir, i, tile: tiles[i], module, threads: 1, sort: data.sort !== false, gdal: !!data.gdal, fixes });
       }
       live();       // the page shows the new tile of the worker, or "no tile" at the end
     };

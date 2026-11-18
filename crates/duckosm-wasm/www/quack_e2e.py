@@ -3,9 +3,11 @@ of QuackOSM in the browser (duckOSM's quack, docs/rust/quack.md of duckOSM), and
 out folder. On Monaco (the default file), the rows of each kind must be QuackOSM's (3957 nodes, 5573 ways, 56
 relations), sorted and not sorted. With --tiles, the table is made tile by tile (the mode for a large file); on Monaco
 (the test sets tiles of at most 2000 nodes, so many ways cross a tile edge) the rows must be the same. Prints the rows, the
-time, the threads and the WebAssembly memory of each run. Build the page first (build.sh).
+time, the threads and the WebAssembly memory of each run. With --fixes FILE, a saved area of Studio has that OSM fixes
+file, and the page must use it (duckosm quack --fixes): on Monaco with tests/data/osm_fixes_quack.yaml of duckOSM, 5574
+ways. Build the page first (build.sh).
 
-    python crates/duckosm-wasm/www/quack_e2e.py [out folder] [--pbf file.osm.pbf] [--tiles]
+    python crates/duckosm-wasm/www/quack_e2e.py [out folder] [--pbf file.osm.pbf] [--tiles] [--fixes FILE]
 """
 import argparse
 import pathlib
@@ -15,6 +17,17 @@ import tempfile
 from playwright.sync_api import TimeoutError as PlaywrightTimeout, sync_playwright
 
 from serve import WWW, start
+
+def saved_area_fixes(page, fixes):
+    """A saved area of Studio with the fixes file `fixes` (its meta.json in OPFS): the page must select its fixes."""
+    page.evaluate("""async (text) => {
+        const areas = await (await navigator.storage.getDirectory()).getDirectoryHandle("areas", { create: true });
+        const dir = await areas.getDirectoryHandle("quack-test-1", { create: true });
+        const w = await (await dir.getFileHandle("meta.json", { create: true })).createWritable();
+        await w.write(JSON.stringify({ name: "Quack test", slug: "quack-test-1", fixesYaml: text }));
+        await w.close(); }""", pathlib.Path(fixes).read_text())
+    page.reload()
+    page.wait_for_function("document.getElementById('fixes-src').value === 'area:quack-test-1'")
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 a = argparse.ArgumentParser()
@@ -27,6 +40,7 @@ a.add_argument("--memory", choices=["0", "1"], help="with --tiles: the parts of 
 a.add_argument("--keep", action="store_true", help="keep the GeoParquet file of a large file (to compare it)")
 a.add_argument("--duckdb", action="store_true", help="also make the .duckdb file of a large file (always on Monaco)")
 a.add_argument("--sort", choices=["both", "yes", "no"], default="both", help="the runs: sorted, not sorted, or both")
+a.add_argument("--fixes", help="an OSM fixes file, kept with a saved area of Studio")
 args = a.parse_args()
 out = pathlib.Path(args.out)
 out.mkdir(parents=True, exist_ok=True)
@@ -47,6 +61,8 @@ with sync_playwright() as p:
     page.on("pageerror", lambda e: errs.append(str(e)))
     page.goto(url)
     assert page.evaluate("crossOriginIsolated"), "the page is not cross-origin isolated (serve.py sends COOP and COEP)"
+    if args.fixes:
+        saved_area_fixes(page, args.fixes)
     page.click("label[for=src-f]")  # the input card: Local file
     page.set_input_files("#file", args.pbf)
     page.set_checked("#tiles", args.tiles)
@@ -104,7 +120,10 @@ with sync_playwright() as p:
             assert merging and merging[-1].endswith("100 %"), merging[-3:]
             print("  ", merging[-1])
         if monaco:
-            assert (got["nodes"], got["ways"], got["relations"]) == ("3,957", "5,573", "56"), got
+            # the fixes file of the tests removes one way and adds two
+            assert (got["nodes"], got["ways"], got["relations"]) == ("3,957", "5,574" if args.fixes else "5,573", "56"), got
+        if args.fixes:
+            assert page.text_content("#command").endswith("--fixes osm_fixes.yaml"), page.text_content("#command")
         with page.expect_download() as d:
             page.click("#download")
         f = out / (("sorted_" if sort else "") + d.value.suggested_filename)
