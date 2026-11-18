@@ -329,7 +329,7 @@ dependencies = [
 [[package]]
 name = "duckosm-build"
 version = "0.7.0"
-source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=a905993b828521936a25684c7f703d6eb0355961#a905993b828521936a25684c7f703d6eb0355961"
+source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=430ed64849dd68f4cc9fabf35f1b354884846e00#430ed64849dd68f4cc9fabf35f1b354884846e00"
 dependencies = [
  "arrow-array",
  "duckosm-core",
@@ -348,7 +348,7 @@ dependencies = [
 [[package]]
 name = "duckosm-core"
 version = "0.7.0"
-source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=a905993b828521936a25684c7f703d6eb0355961#a905993b828521936a25684c7f703d6eb0355961"
+source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=430ed64849dd68f4cc9fabf35f1b354884846e00#430ed64849dd68f4cc9fabf35f1b354884846e00"
 dependencies = [
  "flate2",
  "geo",
@@ -366,7 +366,7 @@ dependencies = [
 [[package]]
 name = "duckosm-parquet"
 version = "0.7.0"
-source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=a905993b828521936a25684c7f703d6eb0355961#a905993b828521936a25684c7f703d6eb0355961"
+source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=430ed64849dd68f4cc9fabf35f1b354884846e00#430ed64849dd68f4cc9fabf35f1b354884846e00"
 dependencies = [
  "arrow-array",
  "arrow-schema",

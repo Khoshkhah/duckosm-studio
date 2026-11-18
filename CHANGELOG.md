@@ -7,6 +7,12 @@ All versions are on the GitHub Releases page of `Khoshkhah/duckosm-rust`. There 
 
 ### Added
 
+- **`quack.html`: GDAL's layers in the browser** (Kaveh, 2026-11-17). The setting **Output** has a second choice, **GDAL layers**:
+  the five layers of GDAL's OSM driver (`points`, `lines`, `multilinestrings`, `multipolygons`, `other_relations`), as `ogr2ogr` and
+  QGIS give them with GDAL's default `osmconf.ini`, made by duckOSM's `quack --gdal` engine in WebAssembly, always tile by tile. Each
+  tile worker writes the rows that its tile owns (`quack_gdal_tile`), and the join writes one GeoParquet file for each layer
+  (`quack_gdal_join`); the page gives five downloads. `quack_gdal_e2e.py` checks Monaco (small tiles, at phone size): each layer has
+  the rows of the native `duckosm-rust quack --gdal -f geoparquet`.
 - **The build by tiles, for every area** (Kaveh, 2026-11-17). The page builds a region file (or a `.osm.pbf` file with a boundary) with
   the steps of `duckosm-rust tiles`: the cut to map tiles of zoom 8, a worker for each tile, and the union with the bus routes, the levels,
   the walls of the buildings and the area tables (`src/tiles.rs`, `build_worker.js`, `build_tile_worker.js`; docs/app.md, "The build by
