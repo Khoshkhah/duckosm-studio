@@ -49,6 +49,7 @@ with sync_playwright() as p:
     assert page.evaluate("crossOriginIsolated"), "the page is not cross-origin isolated (serve.py sends COOP and COEP)"
     page.click("label[for=src-f]")  # the input card: Local file
     page.set_input_files("#file", args.pbf)
+    assert page.is_checked("#tiles"), "Tile by tile is on by default"
     page.set_checked("#tiles", args.tiles)
     if args.tiles and args.zoom:
         page.select_option("#zoom", args.zoom)
