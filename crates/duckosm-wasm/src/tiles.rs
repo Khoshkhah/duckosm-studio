@@ -27,6 +27,9 @@ enum Given {
 /// and its other files (in `blocks`).
 struct PageFs {
     given: RefCell<HashMap<PathBuf, Given>>,
+    /// the object of the page with the given files: a file that goes leaves it too, so the browser can free its storage (a `File`
+    /// keeps the storage of a deleted file while something points to it)
+    given_js: Object,
     own: RefCell<HashMap<PathBuf, usize>>,
     slots: Vec<web_sys::FileSystemSyncAccessHandle>,
     free: RefCell<Vec<usize>>,
@@ -94,6 +97,7 @@ impl PageFs {
         let slots: Vec<web_sys::FileSystemSyncAccessHandle> = slots.iter().map(|h| h.unchecked_into()).collect();
         Ok(PageFs {
             given: RefCell::new(g),
+            given_js: given.clone(),
             own: RefCell::new(HashMap::new()),
             free: RefCell::new((0..slots.len()).rev().collect()),
             slots,
@@ -120,7 +124,9 @@ impl PageFs {
     fn drop_given(&self, p: &Path) -> bool {
         let gone = self.given.borrow_mut().remove(p).is_some();
         if gone {
-            post(&[("remove", p.to_string_lossy().as_ref().into())]);
+            let name: JsValue = p.to_string_lossy().as_ref().into();
+            let _ = Reflect::delete_property(&self.given_js, &name);
+            post(&[("remove", name)]);
         }
         gone
     }
