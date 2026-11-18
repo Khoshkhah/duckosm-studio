@@ -30,6 +30,7 @@ jobs:
           v=$(ls /usr/bin/llvm-ar-* | sed 's/.*-//' | sort -n | tail -1)
           echo "CC_wasm32_unknown_unknown=clang-$v" >> "$GITHUB_ENV"
           echo "AR_wasm32_unknown_unknown=llvm-ar-$v" >> "$GITHUB_ENV"
+          echo "CFLAGS_wasm32_unknown_unknown=-nostdlibinc" >> "$GITHUB_ENV"
           clang-$v --version
       - name: The WebAssembly module builds, and its byte functions give the files of the path functions
         run: |

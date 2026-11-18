@@ -32,13 +32,15 @@ if [ -z "$CC_wasm32_unknown_unknown" ]; then
     fi
   done
 fi
+# no system headers: sqlite-wasm-rs has its own libc headers (Ubuntu's clang 15 takes /usr/include for wasm32 and fails)
+export CFLAGS_wasm32_unknown_unknown="${CFLAGS_wasm32_unknown_unknown:--nostdlibinc}"
 cargo build --release --target wasm32-unknown-unknown -p duckosm-wasm
 wasm-bindgen --target web --out-dir crates/duckosm-wasm/www/pkg target/wasm32-unknown-unknown/release/duckosm_wasm.wasm
 # the linker flags of wasm-bindgen's threads example: this nightly does not add them for +atomics
 RUSTFLAGS='-C target-feature=+atomics,+bulk-memory,+mutable-globals,+simd128 -C link-arg=--shared-memory
   -C link-arg=--max-memory=4294967296 -C link-arg=--import-memory -C link-arg=--export=__wasm_init_tls
   -C link-arg=--export=__tls_size -C link-arg=--export=__tls_align -C link-arg=--export=__tls_base' \
-  CFLAGS_wasm32_unknown_unknown='-matomics -mbulk-memory' \
+  CFLAGS_wasm32_unknown_unknown="$CFLAGS_wasm32_unknown_unknown -matomics -mbulk-memory" \
   cargo +$NIGHTLY build --release --target wasm32-unknown-unknown -p duckosm-wasm --features threads \
   --target-dir target/threads -Z build-std=panic_abort,std
 wasm-bindgen --target web --out-dir crates/duckosm-wasm/www/pkg-threads \

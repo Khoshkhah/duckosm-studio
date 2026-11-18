@@ -37,6 +37,7 @@ jobs:
           v=$(ls /usr/bin/llvm-ar-* | sed 's/.*-//' | sort -n | tail -1)
           echo "CC_wasm32_unknown_unknown=clang-$v" >> "$GITHUB_ENV"
           echo "AR_wasm32_unknown_unknown=llvm-ar-$v" >> "$GITHUB_ENV"
+          echo "CFLAGS_wasm32_unknown_unknown=-nostdlibinc" >> "$GITHUB_ENV"
           clang-$v --version
       - name: Nightly Rust for the WebAssembly module with threads
         run: rustup toolchain install nightly-2026-10-15 --profile minimal --component rust-src --target wasm32-unknown-unknown
