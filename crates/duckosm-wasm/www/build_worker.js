@@ -193,21 +193,22 @@ async function byTiles(data, dir, area, fixes, levels, pre, mib) {
 
     // a worker for each step; `onRemove`: the union has read a file
     let k = 0, unionStep = "start";
-    const run = (msg) => new Promise((resolve, reject) => {
+    // the message keeps no File after it is posted (only `what`, `kind` and `onStep` stay): a File keeps the storage of a deleted file
+    const run = ({ onStep, what, ...m }) => new Promise((resolve, reject) => {
       const w = new Worker(new URL("./build_tile_worker.js", import.meta.url), { type: "module" });
+      const kind = m.kind;
       w.onmessage = ({ data: r }) => {
         if (r.remove !== undefined) return drop(r.remove);
-        if (r.step !== undefined) return msg.onStep?.(r);
+        if (r.step !== undefined) return onStep?.(r);
         w.terminate();
-        if (r.error) reject(new Error(`${msg.what}${msg.kind === "union" ? ` (after the step "${unionStep}")` : ""}: ${r.error}`));
+        if (r.error) reject(new Error(`${what}${kind === "union" ? ` (after the step "${unionStep}")` : ""}: ${r.error}`));
         else resolve(r);
       };
       w.onerror = (e) => {
         e.preventDefault();
         w.terminate();
-        reject(new Error(`${msg.what}: the worker stopped (${e.message || "error"}): most likely it had no memory left`));
+        reject(new Error(`${what}: the worker stopped (${e.message || "error"}): most likely it had no memory left`));
       };
-      const { onStep, what, ...m } = msg;
       w.postMessage({ ...opts, ...m, prefix: `w${k++}` });
     });
     // the tiles, the largest file first, at most `workers` at a time
@@ -272,9 +273,9 @@ async function byTiles(data, dir, area, fixes, levels, pre, mib) {
 
     // 4. the union and the steps after it
     postMessage({ step: "the union of the tiles" });
-    const given = { ...common, ...Object.fromEntries([...have].filter(([n]) => n.startsWith("tiles/"))) };
     // the files of the result of the union: its tables (its temporary files are blocks of one file, any number of them)
-    const u = await run({ what: "the union", kind: "union", tiles, slots: 32 * nModes + 16, given, onStep: (s) => {
+    const u = await run({ what: "the union", kind: "union", tiles, slots: 32 * nModes + 16,
+      given: { ...common, ...Object.fromEntries([...have].filter(([n]) => n.startsWith("tiles/"))) }, onStep: (s) => {
       unionStep = s.step;
       unionMib = Math.max(unionMib, s.mib);
       postMessage({ step: `the union: ${s.step}` });

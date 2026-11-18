@@ -329,7 +329,7 @@ dependencies = [
 [[package]]
 name = "duckosm-build"
 version = "0.7.0"
-source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=cc526099f665b52860e063a693ed6820ad7edfc3#cc526099f665b52860e063a693ed6820ad7edfc3"
+source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=a905993b828521936a25684c7f703d6eb0355961#a905993b828521936a25684c7f703d6eb0355961"
 dependencies = [
  "arrow-array",
  "duckosm-core",
@@ -348,7 +348,7 @@ dependencies = [
 [[package]]
 name = "duckosm-core"
 version = "0.7.0"
-source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=cc526099f665b52860e063a693ed6820ad7edfc3#cc526099f665b52860e063a693ed6820ad7edfc3"
+source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=a905993b828521936a25684c7f703d6eb0355961#a905993b828521936a25684c7f703d6eb0355961"
 dependencies = [
  "flate2",
  "geo",
@@ -366,7 +366,7 @@ dependencies = [
 [[package]]
 name = "duckosm-parquet"
 version = "0.7.0"
-source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=cc526099f665b52860e063a693ed6820ad7edfc3#cc526099f665b52860e063a693ed6820ad7edfc3"
+source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=a905993b828521936a25684c7f703d6eb0355961#a905993b828521936a25684c7f703d6eb0355961"
 dependencies = [
  "arrow-array",
  "arrow-schema",
@@ -930,7 +930,7 @@ dependencies = [
 [[package]]
 name = "pbfcut"
 version = "0.2.2"
-source = "git+https://github.com/Khoshkhah/pbfcut.git?rev=f4f232b4923b7aa3105b481cac3647d28264d114#f4f232b4923b7aa3105b481cac3647d28264d114"
+source = "git+https://github.com/Khoshkhah/pbfcut.git?rev=2facc00595ff6397660d76211ca255098affab38#2facc00595ff6397660d76211ca255098affab38"
 dependencies = [
  "flate2",
  "h3o",
