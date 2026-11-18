@@ -397,6 +397,50 @@ The page keeps the selected file only in memory. After a reload, the user select
   the WebAssembly memory of the build module (it only grows, so it is the largest size until then), DuckDB's
   buffers (`duckdb_memory()`) or the memory of the map module.
 
+### The build by tiles
+
+Since 2026-11-17 the page builds every area by tiles (Kaveh: one code path for every area), with the steps of
+`duckosm-rust tiles` (duckOSM `docs/design/build_by_tiles.md`), in `build_worker.js` and `src/tiles.rs`. One
+WebAssembly module has at most 4 GiB of memory; by tiles, France builds too. The input is a region file, or a `.osm.pbf`
+file with a boundary. The Overpass API gives OSM JSON, not a PBF file, so that input stays one build.
+
+1. **The cut to tiles** (`tiles_cut`, the module with threads): the region file to the map tiles of zoom 8 (`?tilezoom=N`)
+   of the boundary, each with its junctions file. There is no step 0: the tile cut reads the region file and cuts it to the
+   boundary (step 0 keeps the ids of the whole area in memory: France did not fit).
+2. **The sidewalk step** of each tile (only with walking), as natively.
+3. **The tile builds** (`tile_build`): a new worker for each tile (`build_tile_worker.js`), the largest tile first, at most
+   `?tileworkers=N` at a time (default: the cores). Each worker has its own module with one thread, so the memory of a
+   tile goes back when the tile ends. The tile file goes after its build.
+4. **The union** (`tiles_union`, one worker with one thread): the tables of the tiles, then the bus routes, the levels, the
+   walls of the buildings ("Wall labels", `main.building_faces`: each tile gives the rings of its buildings) and the tables of
+   the whole area. Each file of a tile goes when the union has read it.
+
+The steps are duckOSM's functions of the native command. Their files go through `duckosm_core::fs`: natively the files of
+`std::fs`; in the page, the files that the page gives (`File`s of OPFS or bytes), the files of the result (each in an open
+file of OPFS of a pool, whose size follows the number of tables), and the temporary files (blocks of one more open file
+of OPFS, `fs::Blocks`, any number of them). The steps with these files run with one thread, because only the thread that
+sets the files sees them.
+
+The `.osm.pbf` button (the cut file of the area, with the layers) cuts the region file when it is clicked (step 0 in
+`build_worker.js`, `cutOnly`): the build by tiles does not need the cut file.
+
+The tables of the page: `visualization.*` follows the size rule of the other tables (a large file is a view). France's
+`edge_levels` (28 million rows) in memory took 2.7 GB of DuckDB's 4 GiB, and DuckDB then read the next file as "too
+small to be a Parquet file". The level editor's save makes a table of such a view first.
+
+Results (Mac mini, headless Chromium; the three modes, the levels `solve`, zoom 8):
+
+| Area | Native one build | Native by tiles | Browser one build | Browser by tiles |
+|---|---|---|---|---|
+| Monaco | 0.18 s | 0.27 s | 2.1 to 2.5 s | 2.5 to 2.6 s |
+| Tartu | 0.91 s | 1.41 s | 3.2 to 3.3 s | 3.8 to 3.9 s |
+| Kentucky | 35.7 s, 3.2 GB | 31.7 s, 1.3 GB | 64.5 s | 55.6 s |
+| France (driving) | 270.7 s, 8.1 GB | 213.6 s, 1.6 GB | does not fit in 4 GB | 296 s, 5.7 GB, 16.2 GB of browser storage |
+
+The tables of the build by tiles equal those of the one build (Monaco, Tartu, Kentucky). Test: `e2e.py <region> out
+--boundary <area> --tiles 14` on Monaco (small tiles), then `tools/compare_parquet.py` with the files of
+`duckosm-rust tiles --zoom 14`.
+
 ### Step 5: the result (the data)
 
 Kaveh's layout of 2026-10-23: the data in card 5, the map in card 6. Since 2026-10-24 the card is short: one line

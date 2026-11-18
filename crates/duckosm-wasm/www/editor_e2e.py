@@ -2,7 +2,7 @@
 editor, make one edit through its API (window.lvApi, as the panel does), Apply, and check the tables, the .duckdb download and the map.
 The out folder gets editor.png (the editor open) and page.duckdb.
 
-    python crates/duckosm-wasm/www/editor_e2e.py [out folder] [page folder]
+    python crates/duckosm-wasm/www/editor_e2e.py [out folder] [page folder] [memory|disk]
 
 The page folder is this one by default; a copy with versions (version_refs.py, as the deploy makes it) also checks that
 each request of the page for a file of the site has the version. It uses tests/data/monaco_sample.osm.pbf and tests/data/monaco.geojson. Build the page first (docs/development.md, "WebAssembly").
@@ -29,7 +29,8 @@ out = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "out-editor")
 out.mkdir(parents=True, exist_ok=True)
 www = sys.argv[2] if len(sys.argv) > 2 else WWW
 server = start(0, quiet=True, directory=www)
-url = f"http://127.0.0.1:{server.server_address[1]}/index.html"
+# a third argument: the home of the tables (?tables=disk: visualization.edge_levels is a view, and the save makes a table of it)
+url = f"http://127.0.0.1:{server.server_address[1]}/index.html" + (f"?tables={sys.argv[3]}" if len(sys.argv) > 3 else "")
 
 
 def sql(page, text):

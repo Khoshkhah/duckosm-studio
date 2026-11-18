@@ -66,8 +66,9 @@ with sync_playwright() as p:
     assert page.evaluate("document.getElementById('areas-card').hidden") and page.is_hidden("#areas-card"), "no saved area, no card \"Your areas\""
     before = build(page, ["driving", "walking"], features=True)
     page.wait_for_function("!document.getElementById('areas-card').hidden", timeout=10_000)   # the card can be folded: the attribute, not the sight
-    cut_len = page.evaluate("import('./app/duck.js').then((d) => (d.cut ? d.cut.size ?? d.cut.length : 0))")   # a File in OPFS (a region file), or bytes
-    assert cut_len > 1000, "the build made a cut file"
+    # the cut file of the build (a region file with the layers: the page cuts it after the build by tiles, and keeps it with the area)
+    cut_len = page.evaluate("window.cutFile().then((f) => (f ? f.size : 0))")
+    assert cut_len > 1000, "the build has a cut file"
     s = saved(page)
     print("saved:", s[0]["slug"], s[0]["tables"][:40], s[0]["hasViz"])
     assert len(s) == 1 and s[0]["hasViz"] and any(t.startswith("walking.") for t in s[0]["tables"]), (len(s), s[0]["hasViz"], [t for t in s[0]["tables"] if "walk" in t][:3])

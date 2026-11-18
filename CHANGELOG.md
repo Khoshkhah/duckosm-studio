@@ -13,6 +13,13 @@ All versions are on the GitHub Releases page of `Khoshkhah/duckosm-rust`. There 
   tile worker writes the rows that its tile owns (`quack_gdal_tile`), and the join writes one GeoParquet file for each layer
   (`quack_gdal_join`); the page gives five downloads. `quack_gdal_e2e.py` checks Monaco (small tiles, at phone size): each layer has
   the rows of the native `duckosm-rust quack --gdal -f geoparquet`.
+- **The build by tiles, for every area** (Kaveh, 2026-11-17). The page builds a region file (or a `.osm.pbf` file with a boundary) with
+  the steps of `duckosm-rust tiles`: the cut to map tiles of zoom 8, a worker for each tile, and the union with the bus routes, the levels,
+  the walls of the buildings and the area tables (`src/tiles.rs`, `build_worker.js`, `build_tile_worker.js`; docs/app.md, "The build by
+  tiles"). France builds in the browser: 296 s, 5.7 GB of WebAssembly memory, 16.2 GB of browser storage (Mac mini, driving). The tables
+  equal those of one build. Only the input from the Overpass API is still one build. `?tilezoom=N` and `?tileworkers=N` set the choices;
+  `tools/compare_parquet.py` compares the files of two builds.
+
 - **`quack.html`: the features table of QuackOSM in the browser** (Kaveh, 2026-11-13). A page that makes QuackOSM's table (`feature_id`, `tags`,
   `geometry`) of a `.osm.pbf` file with duckOSM's Rust `quack` in WebAssembly (`quack` of the module, `quack_worker.js`), sorted as QuackOSM
   sorts it or not, and gives the GeoParquet file to download. Kentucky: 7.1 s (12.5 s sorted), with the same rows as QuackOSM; the WebAssembly
@@ -22,6 +29,11 @@ All versions are on the GitHub Releases page of `Khoshkhah/duckosm-rust`. There 
   needs **Layers** (`set_building_faces` of the WebAssembly module; the build worker gives it). `e2e.py --no-walls` checks it.
 
 ### Changed
+
+- **The .osm.pbf button cuts the region file when it is clicked** (step 0, `cutOnly` of `build_worker.js`): the build by tiles does not
+  need the cut file.
+- **The tables of `visualization.*` follow the size rule of the other tables** (a large file is a view): France's `edge_levels` in memory
+  took 2.7 GB of DuckDB's 4 GiB, and the next file did not load. The level editor's save makes a table of such a view first.
 
 - **Quack page: one worker for each tile, with one thread** (PR 170). "Tile workers" is the number of workers; before, it
   was a budget of threads, and 16 tile workers at zoom 6 on France became 6 workers. **France works on the quack page**

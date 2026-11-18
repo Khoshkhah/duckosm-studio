@@ -1645,6 +1645,7 @@ $("run").onclick = async () => {
     const fixes = fixesText();
     builtFixes = fixes;                          // the fixes file of this build (the .yaml button of card 5)
     savedCut = null;                             // a new build has its own cut file (or none)
+    cutLater = cutMade = null;
     const threads = Number(new URLSearchParams(location.search).get("threads")) || undefined;  // ?threads=N: the size of the pool
     const levels = "solve";   // visualization.edge_levels: always roadstyle's solver (docs/levels.md); the page has no choice (Kaveh, 2026-11-04)
     let msg, download = null;
@@ -1655,6 +1656,8 @@ $("run").onclick = async () => {
     const spatial = feats ? duck.loadSpatial() : null;
     if (source === "region") {
       msg = { region: regionFile, boundary: text(), modes, fixes, levels, threads, raw: feats, walls };   // the worker reads the File piece by piece
+      // the build by tiles makes no cut file: the .osm.pbf button cuts the region file when it is clicked (build_worker.js, cutOnly)
+      if (feats) cutLater = { region: regionFile, boundary: text() };
     } else if (source === "cut") {
       msg = { pbf: await $("pbf").files[0].arrayBuffer(), boundary: area ? text() : null, modes, fixes, levels, threads };
     } else {
@@ -1663,6 +1666,10 @@ $("run").onclick = async () => {
       download = { seconds: (performance.now() - d0) / 1000, bytes: got.bytes.byteLength, server: got.server };
       msg = { json: got.bytes, boundary: text(), modes, fixes, levels, threads, raw: feats, walls };
     }
+    // the build by tiles (build_worker.js) of a region file or of a .osm.pbf file with a boundary: ?tilezoom=N (default 8) and ?tileworkers=N
+    // (default: the cores) set its choices
+    const q = new URLSearchParams(location.search);
+    Object.assign(msg, { tileZoom: q.has("tilezoom") ? Number(q.get("tilezoom")) : undefined, tileWorkers: Number(q.get("tileworkers")) || undefined });
     // the time zone of main.visualization_metadata: the entry of the area's smallest Geofabrik region in the time zone
     // table (www/timezones.json, loaded one time, then from the cache of the browser)
     const region = area?.props.geofabrik?.[0]?.id;
@@ -1670,6 +1677,7 @@ $("run").onclick = async () => {
     if (dem) Object.assign(msg, { dem: dem.bytes, demName: dem.name, demProduct: dem.product, demDatum: dem.vertical_datum, demLicense: dem.license, demNotReference: dem.not_reference });     // the worker gets the bytes (transferred)
     const b0 = performance.now();
     const out = await duck.build(msg, (t) => progress(t + "…"));
+    window.lastBuild = { seconds: out.seconds, log: out.log, memoryMiB: out.memoryMiB, threads: out.threads, tiles: out.tiles };   // for the tests (e2e.py --build-only)
     logSteps(download ? [{ step: "download from " + download.server, ms: download.seconds * 1000 }] : [], "page", true);
     logSteps(out.log, "build");
     const b1 = performance.now();
@@ -1696,7 +1704,7 @@ $("run").onclick = async () => {
     const ready = performance.now();
     window.timings = Object.assign(window.timings || {}, {
       wasmLoad: out.seconds.load, build: out.seconds.build, tables: (loaded - built) / 1000, clickToQuery: (ready - start) / 1000,
-      memoryMiB: out.memoryMiB, threads: out.threads, download, features: featuresSeconds,
+      memoryMiB: out.memoryMiB, threads: out.threads, download, features: featuresSeconds, tiles: out.tiles,
     });
     const got = download ? ` · ${num(download.bytes / 2 ** 20, 1)} MB from ${download.server}` : "";
     progress(`Built in ${num((ready - start) / 1000, 1)} s · ${out.threads} thread${out.threads > 1 ? "s" : ""} · ${out.memoryMiB} MiB${got}`, { final: true });
@@ -1715,7 +1723,7 @@ $("run").onclick = async () => {
         fixesYaml: fixes,
         fixesName: fixes ? $("fixes").files[0]?.name ?? "osm_fixes.yaml" : undefined,
         builtAt: Date.now()
-      }, duck.tables, null, duck.cut);
+      }, duck.tables, null, await cutFile());
     } catch (e) {
       console.warn("Could not save area to OPFS:", e);
       status("The area could not be saved in this browser (" + (e.name === "QuotaExceededError" ? "storage is full" : e.message) + "). It is still on the page.", 8000);
@@ -2570,8 +2578,18 @@ const size = (b) => (b < 2 ** 20 ? `${num(Math.max(1, b / 1024))} KB` : `${mb(b)
 let urls = [], filesToken = 0;
 let builtFixes = null;                           // the text of the fixes that the last build (or the restored area) used
 let savedCut = null;                             // the slug of a restored area that has a cut file in the browser storage (duck.cut is null then)
+let cutLater = null;                             // {region, boundary} of the last build: cutFile() cuts it (the build by tiles makes no cut file)
+let cutMade = null;                              // the cut file that cutFile() made for the last build
+// The cut file of the last build (the file of the .osm.pbf button, kept with a saved area): the build's own, else the cut of the region file
+// (step 0 in the build worker, cutOnly). null: none (no layers, or step 0 does not fit: France's ids take more than 4 GiB).
+async function cutFile() {
+  if (duck.cut) return new Blob([duck.cut], { type: "application/octet-stream" });
+  if (!cutMade && cutLater) cutMade = duck.build({ cut: true, ...cutLater }, () => {}).then((r) => r.file).catch(() => null);
+  return cutMade ? await cutMade : null;
+}
+window.cutFile = cutFile;   // for the tests (saved_e2e.py)
 function files() {
-  $("cutpbf").hidden = !(duck.cut || savedCut);
+  $("cutpbf").hidden = !(duck.cut || savedCut || cutLater);
   urls.forEach(URL.revokeObjectURL);
   urls = [];
   const modes = [...new Set(duck.tables.map((t) => t.mode))].filter((m) => m !== "features");
@@ -2615,7 +2633,12 @@ $("fixesyaml").onclick = () => {
   setTimeout(() => URL.revokeObjectURL(a.href));
 };
 $("cutpbf").onclick = async () => {
-  const data = duck.cut ? new Blob([duck.cut], { type: "application/octet-stream" }) : savedCut ? await areaStore.loadCutFile(savedCut) : null;
+  let data = savedCut ? await areaStore.loadCutFile(savedCut) : null;
+  if (!data) {
+    status("Cutting the region file to the area…");
+    data = await cutFile();
+    status("");
+  }
   if (!data) return status("The cut file is not in this browser any more.");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(data);
