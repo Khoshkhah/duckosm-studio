@@ -164,6 +164,7 @@
     <div><label for="output">Output</label><select id="output">
       <option value="quack">QuackOSM table</option>
       <option value="gdal">GDAL layers</option>
+      <option value="geofabrik">Geofabrik layers</option>
     </select></div>
     <div data-gdal hidden><label for="format">Format</label><select id="format">
       <option value="geoparquet">GeoParquet</option>
@@ -264,9 +265,9 @@
       ["Local file", "A .osm.pbf file on this computer. You can also drop it on this card. The page does not upload it."],
     ]],
     settings: ["Settings", [
-      ["Output", "QuackOSM table: one table of the OSM features (feature_id, tags, geometry), as QuackOSM gives it. GDAL layers: the five layers of GDAL's OSM driver (points, lines, multilinestrings, multipolygons, other_relations), as ogr2ogr and QGIS give them with GDAL's default osmconf.ini: The GDAL layers are always made tile by tile, in the order of the file (no sort)."],
+      ["Output", "QuackOSM table: one table of the OSM features (feature_id, tags, geometry), as QuackOSM gives it. GDAL layers: the five layers of GDAL's OSM driver (points, lines, multilinestrings, multipolygons, other_relations), as ogr2ogr and QGIS give them with GDAL's default osmconf.ini. Geofabrik layers: the 20 layers of Geofabrik's free shapefiles and GeoPackages (gis_osm_roads_free, gis_osm_pois_free, gis_osm_buildings_a_free, ...), with Geofabrik's feature classes, for any area. The layers are always made tile by tile, in the order of the file (no sort)."],
       ["OSM fixes", "The rules of Edit OSM data in Studio (a duckOSM fixes file, as duckosm quack --fixes). The rows get the same edits as the network: the removed ways, the changed tags, the new ways, and the rules oneway, lanes and layer as OSM tags. A rule with no OSM tag (closed to a mode, a turn) is not used. The page selects the fixes of your newest saved area that has fixes. A fixes file: select it on this computer."],
-      ["Format", "GDAL layers only. GeoParquet: one file for each layer. GeoPackage: one .gpkg file with the five layers and their spatial indexes (R-trees). Both: the GeoParquet files and the GeoPackage, from one run. The page writes the GeoPackage directly into the browser storage, not into the memory."],
+      ["Format", "GDAL and Geofabrik layers only. GeoParquet: one file for each layer. GeoPackage: one .gpkg file with the layers and their spatial indexes (R-trees). Both (GDAL): the GeoParquet files and the GeoPackage, from one run. Shapefiles (Geofabrik): one .zip file with a shapefile for each layer, as Geofabrik's .shp.zip. The page writes the files directly into the browser storage, not into the memory."],
       ["Tile by tile", "The file is cut into tiles, and each tile gives its rows. The memory then follows the size of a tile, not of the file. On by default, for every file. It is necessary for a file larger than about 150 MB: the browser has at most 4 GiB of memory. The rows are the same."],
       ["Tile size", "Map tiles of one zoom (zoom 8 is the default, the tile zoom of all parts of duckOSM), or tiles of at most 4 million nodes. With a zoom, a dense city gives a large tile."],
       ["Sort the rows by place, as QuackOSM", "The same rows, in the order of QuackOSM: rows that are near on the map are near in the file, so a query of one area reads less of the file. Without the sort, the file is the same table in another order. Tile by tile, each tile worker sorts its own rows, and the last step merges the sorted parts and shows its progress. In one piece, the sort is the last step and shows no progress. Off by default for a large file."],
@@ -283,6 +284,7 @@
     ]],
     result: ["Result", [
       ["GDAL layers", "One GeoParquet file for each of GDAL's five layers, with its rows and its size, and/or one GeoPackage file with the five layers. QGIS and GDAL open them."],
+      ["Geofabrik layers", "The 20 layers of Geofabrik's free files: one GeoPackage, one zip file of shapefiles, or one GeoParquet file for each layer. QGIS and GDAL open them."],
       ["Download GeoParquet", "The features table of QuackOSM (feature_id, tags, geometry) as a GeoParquet file."],
       ["Make the .duckdb file", "DuckDB in the browser loads the GeoParquet file into the table main.quackosm of a .duckdb file, in the browser storage. Then download it."],
       ["Tiles of each worker", "One row for each worker, one bar for each tile: it shows whether the workers ran at the same time. Move the pointer on a bar to see its tile."],
@@ -474,10 +476,19 @@
     $("cut-label").textContent = $("tiles").checked ? "Cut threads" : "Threads";
   };
   $("tiles").onchange = showTiles;
-  // GDAL's layers: always tile by tile, in the order of the file (no sort)
-  function gdalOut() { return $("output").value === "gdal"; }
+  // GDAL's and Geofabrik's layers: always tile by tile, in the order of the file (no sort)
+  function gdalOut() { return $("output").value !== "quack"; }
+  const FORMATS = {
+    gdal: [["geoparquet", "GeoParquet"], ["gpkg", "GeoPackage"], ["both", "Both"]],
+    geofabrik: [["gpkg", "GeoPackage"], ["shp", "Shapefiles (.zip)"], ["geoparquet", "GeoParquet"]],
+  };
   function showOutput() {
     const gdal = gdalOut();
+    const formats = FORMATS[$("output").value];
+    if (formats && $("format").dataset.output !== $("output").value) {
+      $("format").replaceChildren(...formats.map(([value, text]) => Object.assign(document.createElement("option"), { value, textContent: text })));
+      $("format").dataset.output = $("output").value;
+    }
     if (gdal) {
       $("tiles").checked = true;
       $("sort").checked = false;
@@ -865,22 +876,29 @@
       status("Done.", "done");
       memory(data.mib, data.workersMib, data.workerMibs);
       const L = data.layers;
-      // GDAL's layers: points, lines and multipolygons in place of nodes, ways and relations
+      // the layers: points, lines and polygons (GDAL: multipolygons; Geofabrik: the _a layers) in place of nodes, ways and
+      // relations
+      const geofabrik = !!L && !("points" in L);
+      const sum = (f) => Object.entries(L).filter(([k]) => f(k)).reduce((a, [, v]) => a + v, 0);
+      const lineLayer = (k) => /_(roads|railways|waterways)_free$/.test(k);
+      const counts = !L ? [data.nodes, data.ways, data.relations] : !geofabrik ? [L.points, L.lines, L.multipolygons]
+        : [sum((k) => !lineLayer(k) && !k.endsWith("_a_free")), sum(lineLayer), sum((k) => k.endsWith("_a_free"))];
       $("nodes").previousElementSibling.textContent = L ? "Points" : "Nodes";
       $("ways").previousElementSibling.textContent = L ? "Lines" : "Ways";
-      $("relations").previousElementSibling.textContent = L ? "Multipolygons" : "Relations";
-      const outFiles = L ? [...data.files, ...(data.gpkg ? [data.gpkg] : [])] : [];
-      $("size").previousElementSibling.textContent = !L ? "GeoParquet file" : !data.files.length ? "GeoPackage file" : data.gpkg ? "Output files" : "GeoParquet files";
-      $("nodes").textContent = fmt(L ? L.points : data.nodes);
-      $("ways").textContent = fmt(L ? L.lines : data.ways);
-      $("relations").textContent = fmt(L ? L.multipolygons : data.relations);
+      $("relations").previousElementSibling.textContent = !L ? "Relations" : geofabrik ? "Areas" : "Multipolygons";
+      const outFiles = L ? [...data.files, ...(data.gpkg ? [data.gpkg] : []), ...(data.shp ? [data.shp] : [])] : [];
+      $("size").previousElementSibling.textContent = !L ? "GeoParquet file" : data.shp ? "Shapefiles (.zip)"
+        : !data.files.length ? "GeoPackage file" : data.gpkg ? "Output files" : "GeoParquet files";
+      $("nodes").textContent = fmt(counts[0]);
+      $("ways").textContent = fmt(counts[1]);
+      $("relations").textContent = fmt(counts[2]);
       $("seconds").textContent = `${data.seconds.toFixed(2)} s`;
       $("threads").textContent = `Threads: ${data.threads}`;
       $("mib").textContent = `${fmt(data.mib)} MiB` + (data.workersMib ? ` + ${fmt(data.workersMib)}` : "");
       $("mib").title = data.workersMib ? `${fmt(data.mib)} MiB in the main module, ${fmt(data.workersMib)} MiB in the tile workers` : "";
       $("size").textContent = mb(L ? outFiles.reduce((a, f) => a + f.size, 0) : data.file.size);
       $("size").title = data.storageMib ? `The run used at most ${fmt(data.storageMib)} MB of browser storage` : "";
-      $("command").textContent = `duckosm-rust quack ${file.name}${L ? " --gdal" : ""} -o out -f ${!L ? "geoparquet" : { geoparquet: "geoparquet", gpkg: "gpkg", both: "gpkg,geoparquet" }[$("format").value]}` + (tiles && $("zoom").value ? ` --tile-zoom ${$("zoom").value}` : "") + (fixes ? " --fixes osm_fixes.yaml" : "");
+      $("command").textContent = `duckosm quack ${file.name}${L ? (geofabrik ? " --geofabrik" : " --gdal") : ""} -o out -f ${!L ? "geoparquet" : { geoparquet: "geoparquet", gpkg: "gpkg", both: "gpkg,geoparquet", shp: "shp" }[$("format").value]}` + (tiles && $("zoom").value ? ` --tile-zoom ${$("zoom").value}` : "") + (fixes ? " --fixes osm_fixes.yaml" : "");
       let at = 0;
       // tile by tile: the steps of the page, and the parts of the cut (the last tile ends step 3)
       const steps = !tiles ? data.steps : data.steps.filter((s) => {
@@ -927,16 +945,22 @@
       const base = file.name.replace(/\.osm\.pbf$|\.pbf$/, "");
       if (L) {
         // one download for each layer (the files are in OPFS until the next run)
+        const kind = geofabrik ? "geofabrik" : "gdal";
+        const total = fmt(Object.values(L).reduce((a, n) => a + n, 0));
         $("layers").replaceChildren(...data.files.map((f, i) => {
-          const layer = ["points", "lines", "multilinestrings", "multipolygons", "other_relations"][i];
+          const layer = Object.keys(L)[i];
           return Object.assign(document.createElement("a"), {
-            className: "button secondary", href: URL.createObjectURL(f), download: `${base}_gdal_${layer}.parquet`,
+            className: "button secondary", href: URL.createObjectURL(f), download: `${base}_${kind}_${layer}.parquet`,
             textContent: `${layer} (${fmt(L[layer])} rows, ${mb(f.size)})`,
           });
         }));
         if (data.gpkg) $("layers").append(Object.assign(document.createElement("a"), {
-          className: "button secondary", href: URL.createObjectURL(data.gpkg), download: `${base}_gdal.gpkg`,
-          textContent: `GeoPackage (${fmt(Object.values(L).reduce((a, n) => a + n, 0))} rows, ${mb(data.gpkg.size)})`,
+          className: "button secondary", href: URL.createObjectURL(data.gpkg), download: `${base}_${kind}.gpkg`,
+          textContent: `GeoPackage (${total} rows, ${mb(data.gpkg.size)})`,
+        }));
+        if (data.shp) $("layers").append(Object.assign(document.createElement("a"), {
+          className: "button secondary", href: URL.createObjectURL(data.shp), download: `${base}_${kind}.shp.zip`,
+          textContent: `Shapefiles (${total} rows, ${mb(data.shp.size)})`,
         }));
         $("duckdb").hidden = true;
         $("result").hidden = $("layers").hidden = false;
@@ -965,7 +989,7 @@
     // a test of the cut: quack.html?memory=1 keeps the parts of the cut in memory (else in OPFS)
     const memoryOpt = new URLSearchParams(location.search).get("memory");
     const inMemory = memoryOpt === null ? undefined : memoryOpt !== "0";
-    worker.postMessage({ pbf: file, sort, tiles: tiles ? tileNodes : null, zoom, workers, cutThreads, joinThreads, memory: inMemory, gdal, format: $("format").value, fixes });
+    worker.postMessage({ pbf: file, sort, tiles: tiles ? tileNodes : null, zoom, workers, cutThreads, joinThreads, memory: inMemory, gdal, geofabrik: $("output").value === "geofabrik", format: $("format").value, fixes });
   };
 </script>
 </body>
