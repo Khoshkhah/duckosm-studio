@@ -8,6 +8,7 @@
 // the temporary files of the sort (a strip of QuackOSM's order that is larger than the budget; gdal: the members of the
 // relations and the sort of them)
 const SPILL = 8;
+const SPILL_GDAL = 64;
 // GDAL's layers, in their order
 const LAYERS = ["points", "lines", "multilinestrings", "multipolygons", "other_relations"];
 
@@ -23,7 +24,10 @@ onmessage = async ({ data }) => {
     const files = [];
     for (const name of data.parts) files.push(await (await data.dir.getFileHandle(name)).getFile());
     if (data.sort || data.gdal) {
-      for (let i = 0; i < SPILL; i++) spill.push(await (await data.dir.getFileHandle(`j${i}`, { create: true })).createSyncAccessHandle());
+      // GDAL's layers: the members of the relations wait in a file, and their sort needs a file for each run (France: 8
+      // were not enough)
+      const n = data.gdal ? SPILL_GDAL : SPILL;
+      for (let i = 0; i < n; i++) spill.push(await (await data.dir.getFileHandle(`j${i}`, { create: true })).createSyncAccessHandle());
     }
     if (data.gdal) {
       for (const l of LAYERS) outs.push(await (await data.dir.getFileHandle(`${l}.parquet`, { create: true })).createSyncAccessHandle());

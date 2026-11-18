@@ -7,6 +7,9 @@ All versions are on the GitHub Releases page of `Khoshkhah/duckosm-rust`. There 
 
 ### Added
 
+- **`quack.html`, GDAL layers: France** (Kaveh, 2026-11-18). The join has 64 temporary files for the members of the relations
+  (France stopped with 8), and the files of the tiles are Snappy frames (duckOSM `3a45c4d`; France had about 30 GB of rows).
+  `quack_gdal_e2e.py --no-download` checks a large file with no second copy of its five files on the disk.
 - **`quack.html`: GDAL's layers in the browser** (Kaveh, 2026-11-17). The setting **Output** has a second choice, **GDAL layers**:
   the five layers of GDAL's OSM driver (`points`, `lines`, `multilinestrings`, `multipolygons`, `other_relations`), as `ogr2ogr` and
   QGIS give them with GDAL's default `osmconf.ini`, made by duckOSM's `quack --gdal` engine in WebAssembly, always tile by tile. Each
