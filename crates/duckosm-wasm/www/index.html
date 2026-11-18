@@ -1645,7 +1645,7 @@ $("run").onclick = async () => {
     const fixes = fixesText();
     builtFixes = fixes;                          // the fixes file of this build (the .yaml button of card 5)
     savedCut = null;                             // a new build has its own cut file (or none)
-    cutLater = null;
+    cutLater = cutMade = null;
     const threads = Number(new URLSearchParams(location.search).get("threads")) || undefined;  // ?threads=N: the size of the pool
     const levels = "solve";   // visualization.edge_levels: always roadstyle's solver (docs/levels.md); the page has no choice (Kaveh, 2026-11-04)
     let msg, download = null;
@@ -1723,7 +1723,7 @@ $("run").onclick = async () => {
         fixesYaml: fixes,
         fixesName: fixes ? $("fixes").files[0]?.name ?? "osm_fixes.yaml" : undefined,
         builtAt: Date.now()
-      }, duck.tables, null, duck.cut);
+      }, duck.tables, null, await cutFile());
     } catch (e) {
       console.warn("Could not save area to OPFS:", e);
       status("The area could not be saved in this browser (" + (e.name === "QuotaExceededError" ? "storage is full" : e.message) + "). It is still on the page.", 8000);
@@ -2578,7 +2578,16 @@ const size = (b) => (b < 2 ** 20 ? `${num(Math.max(1, b / 1024))} KB` : `${mb(b)
 let urls = [], filesToken = 0;
 let builtFixes = null;                           // the text of the fixes that the last build (or the restored area) used
 let savedCut = null;                             // the slug of a restored area that has a cut file in the browser storage (duck.cut is null then)
-let cutLater = null;                             // {region, boundary} of the last build: the .osm.pbf button cuts it (the build by tiles makes no cut file)
+let cutLater = null;                             // {region, boundary} of the last build: cutFile() cuts it (the build by tiles makes no cut file)
+let cutMade = null;                              // the cut file that cutFile() made for the last build
+// The cut file of the last build (the file of the .osm.pbf button, kept with a saved area): the build's own, else the cut of the region file
+// (step 0 in the build worker, cutOnly). null: none (no layers, or step 0 does not fit: France's ids take more than 4 GiB).
+async function cutFile() {
+  if (duck.cut) return new Blob([duck.cut], { type: "application/octet-stream" });
+  if (!cutMade && cutLater) cutMade = duck.build({ cut: true, ...cutLater }, () => {}).then((r) => r.file).catch(() => null);
+  return cutMade ? await cutMade : null;
+}
+window.cutFile = cutFile;   // for the tests (saved_e2e.py)
 function files() {
   $("cutpbf").hidden = !(duck.cut || savedCut || cutLater);
   urls.forEach(URL.revokeObjectURL);
@@ -2624,14 +2633,10 @@ $("fixesyaml").onclick = () => {
   setTimeout(() => URL.revokeObjectURL(a.href));
 };
 $("cutpbf").onclick = async () => {
-  let data = duck.cut ? new Blob([duck.cut], { type: "application/octet-stream" }) : savedCut ? await areaStore.loadCutFile(savedCut) : null;
-  if (!data && cutLater) {
+  let data = savedCut ? await areaStore.loadCutFile(savedCut) : null;
+  if (!data) {
     status("Cutting the region file to the area…");
-    try {
-      data = (await duck.build({ cut: true, ...cutLater }, () => {})).file;
-    } catch (e) {
-      return status("The cut did not work: " + e.message);
-    }
+    data = await cutFile();
     status("");
   }
   if (!data) return status("The cut file is not in this browser any more.");
