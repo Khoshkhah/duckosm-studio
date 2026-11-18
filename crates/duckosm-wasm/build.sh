@@ -22,12 +22,23 @@ if [ "$(echo "$DUCKOSM_REV" | wc -w)" -ne 1 ] || [ ${#DUCKOSM_REV} != 40 ]; then
   echo "build.sh: crates/duckosm-wasm/Cargo.toml must give one full duckOSM rev, not: $DUCKOSM_REV" >&2
   exit 1
 fi
+# SQLite (the GeoPackage of quack --gdal) is C code: it needs a clang with the target wasm32 and its llvm-ar. Apple's
+# clang does not have the target: on macOS, use Homebrew's llvm.
+if [ -z "$CC_wasm32_unknown_unknown" ]; then
+  for d in /opt/homebrew/opt/llvm/bin /usr/local/opt/llvm/bin ""; do
+    if [ -z "$d" ] || [ -x "$d/clang" ]; then
+      export CC_wasm32_unknown_unknown=${d:+$d/}clang AR_wasm32_unknown_unknown=${d:+$d/}llvm-ar
+      break
+    fi
+  done
+fi
 cargo build --release --target wasm32-unknown-unknown -p duckosm-wasm
 wasm-bindgen --target web --out-dir crates/duckosm-wasm/www/pkg target/wasm32-unknown-unknown/release/duckosm_wasm.wasm
 # the linker flags of wasm-bindgen's threads example: this nightly does not add them for +atomics
 RUSTFLAGS='-C target-feature=+atomics,+bulk-memory,+mutable-globals,+simd128 -C link-arg=--shared-memory
   -C link-arg=--max-memory=4294967296 -C link-arg=--import-memory -C link-arg=--export=__wasm_init_tls
   -C link-arg=--export=__tls_size -C link-arg=--export=__tls_align -C link-arg=--export=__tls_base' \
+  CFLAGS_wasm32_unknown_unknown='-matomics -mbulk-memory' \
   cargo +$NIGHTLY build --release --target wasm32-unknown-unknown -p duckosm-wasm --features threads \
   --target-dir target/threads -Z build-std=panic_abort,std
 wasm-bindgen --target web --out-dir crates/duckosm-wasm/www/pkg-threads \

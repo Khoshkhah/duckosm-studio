@@ -24,6 +24,13 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+      # SQLite (the GeoPackage of quack --gdal) is C code: the newest clang of the image and its llvm-ar build it for wasm32
+      - name: A clang with the target wasm32
+        run: |
+          v=$(ls /usr/bin/llvm-ar-* | sed 's/.*-//' | sort -n | tail -1)
+          echo "CC_wasm32_unknown_unknown=clang-$v" >> "$GITHUB_ENV"
+          echo "AR_wasm32_unknown_unknown=llvm-ar-$v" >> "$GITHUB_ENV"
+          clang-$v --version
       - name: The WebAssembly module builds, and its byte functions give the files of the path functions
         run: |
           cargo build --release -p duckosm-wasm --target wasm32-unknown-unknown
@@ -95,6 +102,12 @@ jobs:
       # folder of this tab and the open area stay
       - name: Delete all removes only Studio's files (Playwright, Monaco)
         run: cd crates/duckosm-wasm/www && python3 storage_e2e.py "$RUNNER_TEMP/out-storage"
+      # quack.html, GDAL layers (quack_gdal_e2e.py, Monaco at phone size): the five GeoParquet files and the GeoPackage of one run; the
+      # GeoPackage must pass SQLite's integrity_check and have the rows of each layer and of its R-tree
+      - name: quack.html makes GDAL's layers as GeoParquet and GeoPackage (Playwright, Monaco)
+        run: |
+          pip install pyarrow
+          cd crates/duckosm-wasm/www && python3 quack_gdal_e2e.py "$RUNNER_TEMP/out-quack-gdal" --format both
       # The page on a phone (iPhone 13 and 390 px): the sheet, Build in view when it is ready, the fixes editor and the design panel in the
       # sheet. A page change needs this check before a merge.
       - name: The page on a phone (Playwright, Monaco)

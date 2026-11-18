@@ -71,6 +71,7 @@ Run it on a current build (`build.sh` at the pins), and say in the pull request 
 | `wasm-bindgen` | `wasm-bindgen-cli` 0.2.129, installed with `cargo install` at user level (`~/.cargo/bin`). Its version must be the same as the `wasm-bindgen` crate in `Cargo.lock`. |
 | `node` | Version 24, installed (system). It runs the WebAssembly build without a browser. |
 | `nightly-2026-10-15` with `rust-src` | Installed on 2026-10-22 (`rustup toolchain install`). Only for the WebAssembly module with threads: it builds the standard library again with atomics. |
+| `clang` and `llvm-ar` with the target wasm32 | SQLite (the GeoPackage of `quack.html`, `src/gpkg_vfs.rs`) is C code that `sqlite-wasm-rs` compiles for wasm32. `build.sh` uses `CC_wasm32_unknown_unknown` and `AR_wasm32_unknown_unknown`, else Homebrew's llvm on macOS (Apple's clang does not have the target), else `clang` and `llvm-ar`. CI takes the newest `clang-N` of the image. |
 
 ## Install Rust
 

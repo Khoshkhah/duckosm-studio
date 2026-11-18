@@ -7,6 +7,12 @@ All versions are on the GitHub Releases page of `Khoshkhah/duckosm-rust`. There 
 
 ### Added
 
+- **`quack.html`, GDAL layers: the GeoPackage** (Kaveh, 2026-11-18). The new setting **Format** gives GeoParquet, GeoPackage or
+  both, as `duckosm quack --gdal -f`. The join writes the GeoPackage with duckOSM's writer (the `gpkg` feature of `duckosm-build`:
+  rusqlite on `sqlite-wasm-rs`) through a small SQLite VFS (`src/gpkg_vfs.rs`) directly into its file in OPFS: no copy in memory
+  and no second file. Kentucky on the Mac mini: 13.0 s, a join worker of 229 MiB, a file of 0.89 GB; the rows equal those of the
+  native GeoPackage, `integrity_check` is ok, and `ogrinfo` opens it. `build.sh` and CI need a clang with the target wasm32
+  (macOS: Homebrew's llvm). `quack_gdal_e2e.py --format gpkg|both` checks it.
 - **`quack.html`, GDAL layers: France** (Kaveh, 2026-11-18). The join has 64 temporary files for the members of the relations
   (France stopped with 8), and the files of the tiles are Snappy frames (duckOSM `3a45c4d`; France had about 30 GB of rows).
   `quack_gdal_e2e.py --no-download` checks a large file with no second copy of its five files on the disk.
