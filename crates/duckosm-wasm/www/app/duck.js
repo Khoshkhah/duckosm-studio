@@ -146,11 +146,13 @@ const selectWkb = (table, cols) => {
 // this tab, and the page keeps only its File (no bytes in memory): the downloads, the zip and the saved area read it. Then the table is either
 //   memory: a DuckDB table made from the file (the fastest queries), or
 //   disk:   a DuckDB view over the file: DuckDB reads only the parts that a query needs, and keeps nothing.
-// ?tables=memory, disk or auto (the default): auto puts a file larger than AUTO_DISK on disk. The schema visualization stays in memory, because
-// the level editor writes it. A browser with no OPFS (some private windows) keeps each file as a Blob, and each table in memory, as before.
+// ?tables=memory, disk or auto (the default): auto puts a file larger than AUTO_DISK on disk, also of the schema visualization: the level editor writes it,
+// and its save makes a table of such a view first (levelsData). A browser with no OPFS (some private windows) keeps each file as a Blob, and each table in memory, as before.
 const HOME = new URLSearchParams(location.search).get("tables") || "auto";
 const AUTO_DISK = 256 << 10;
-const homeOf = (mode, file) => !(file instanceof File) || mode === "visualization" || HOME === "memory" ? "memory"
+// visualization.* follows the same rule: France's edge_levels (28 million rows) in memory took 2.7 GB of DuckDB's 4 GiB, and the next file did not load. The
+// level editor writes these tables, so its save makes a table of a view first (levelsData).
+const homeOf = (mode, file) => !(file instanceof File) || HOME === "memory" ? "memory"
   : HOME === "disk" || file.size > AUTO_DISK ? "disk" : "memory";
 // The folder of this tab: tables-<id>. A Web Lock with its name lives as long as the tab, so a build removes only the folders of closed tabs, and two tabs do not
 // remove the files of each other. Null: the browser has no OPFS that can write.
@@ -752,7 +754,15 @@ export async function levelsData() {
         else tables.push(t);
       }
     } });
-  return { edges: () => adapter().edges(), storedLevels: () => adapter().storedLevels(), saveLevels: (f, o) => adapter().saveLevels(f, o) };
+  // the editor writes visualization.* (DELETE and INSERT): a table on disk (a view of its file) becomes a table in DuckDB first
+  const writable = async () => {
+    for (const t of tables.filter((t) => t.mode === "visualization" && t.home === "disk")) {
+      await conn.query(`DROP VIEW visualization.${t.table}; CREATE TABLE visualization.${t.table} AS SELECT * FROM read_parquet('${t.name}')`);
+      await db.dropFile(t.name);
+      t.home = "memory";
+    }
+  };
+  return { edges: () => adapter().edges(), storedLevels: () => adapter().storedLevels(), saveLevels: async (f, o) => { await writable(); return adapter().saveLevels(f, o); } };
 }
 
 // the data of an area from the Overpass API: the highway ways and ferry lines in the bounding box of each outer ring, with all their

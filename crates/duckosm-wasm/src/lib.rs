@@ -12,6 +12,7 @@ use wasm_bindgen::prelude::*;
 
 #[cfg(feature = "threads")]
 mod alloc;
+mod tiles;
 #[cfg(feature = "threads")]
 #[global_allocator]
 static ALLOC: alloc::Cached = alloc::Cached;
@@ -160,52 +161,16 @@ impl Seek for BlobRead {
     }
 }
 
-/// duckOSM's SQL of the base-map layers (`features.*`): it loads the `raw_*.parquet` files of [`build_area`] with
+/// duckOSM's SQL of the base-map layers (`features.*`): it loads the `raw_*.parquet` files of a build with
 /// `raw` into `raw.*` and makes the layers. It needs DuckDB's spatial extension (docs/features.md).
 #[wasm_bindgen]
 pub fn features_sql() -> String {
     FEATURES_SQL.to_string()
 }
 
-/// Build duckOSM's tables of an area: `region` is a `.osm.pbf` file (a `File` or `Blob`) that covers the
-/// `boundary` (GeoJSON, as `duckosm boundary` writes it). Step 0 cuts it to the area file (in memory), and the build
-/// reads the area file. With
-/// `raw`, the output also has `raw_nodes.parquet`, `raw_ways.parquet` and `raw_relations.parquet`: duckOSM's
-/// `raw.*` of the area, cut as osmium's `smart` does, the input of [`features_sql`], and the cut itself as
-/// `cut.osm.pbf` (the file for the user to download).
-#[wasm_bindgen]
-pub fn build_area(
-    region: Blob,
-    boundary: &str,
-    modes: &str,
-    fixes_yaml: Option<String>,
-    raw: Option<bool>,
-    levels: Option<String>,
-) -> Result<Output, JsError> {
-    let text = boundary;
-    let boundary = Boundary::parse(boundary).map_err(|e| JsError::new(&e))?;
-    let area = cut(|| BlobRead::new(region.clone()), &boundary)?;
-    let open = || -> Result<Box<dyn Read + Send + '_>, String> { Ok(Box::new(io::Cursor::new(&area[..]))) };
-    js_build(
-        Input::Area(&open, &boundary),
-        modes,
-        fixes_yaml,
-        Some(text),
-        raw.unwrap_or(false),
-        levels,
-    )
-}
-
-/// Step 0: cut the region file to the area file (a `.osm.pbf` file), with only lists of ids in memory.
-// ponytail: the area file stays in memory (Kentucky: 149 MB); a file in OPFS keeps it out when an area needs it
-fn cut<R: Read + Seek + Send>(open: impl Fn() -> Result<R, String>, boundary: &Boundary) -> Result<Vec<u8>, JsError> {
-    let (area, _) = duckosm_core::cutstream::cut_to_pbf(open, boundary, Vec::new()).map_err(|e| JsError::new(&e))?;
-    Ok(area)
-}
-
 /// Step 0 in OPFS: cut the region file `region` (a `File` or `Blob`) to the `boundary` and write the area file through
-/// `out`, a `FileSystemSyncAccessHandle` that the worker opened. Then [`build_area_file`] reads the area file. Gives the
-/// size of the area file in bytes.
+/// `out`, a `FileSystemSyncAccessHandle` that the worker opened: the file of the page's .osm.pbf button (the build by tiles
+/// does not need it). Gives the size of the area file in bytes.
 #[wasm_bindgen]
 pub fn cut_area(region: Blob, boundary: &str, out: web_sys::FileSystemSyncAccessHandle) -> Result<f64, JsError> {
     let boundary = Boundary::parse(boundary).map_err(|e| JsError::new(&e))?;
@@ -491,54 +456,6 @@ impl Seek for Counted {
     }
 }
 
-/// Build duckOSM's tables of an area from its area file (`area`: the file of [`cut_area`], as a `File`). `spill` is a
-/// pool of open files in OPFS (`FileSystemSyncAccessHandle`) for the temporary files of the network step, so they are
-/// not in the WebAssembly memory (Kentucky: at most 11 at once). `outs` are open files in OPFS for the files of the
-/// result: each file of the result goes to the next one, so the result is not in the memory of the tab (Kentucky with
-/// the layers: 2.6 GB). `Output::files` then maps each file name to its number in `outs`. The other arguments are
-/// those of [`build_area`].
-#[allow(clippy::too_many_arguments)]
-#[wasm_bindgen]
-pub fn build_area_file(
-    area: Blob,
-    boundary: &str,
-    modes: &str,
-    fixes_yaml: Option<String>,
-    raw: Option<bool>,
-    levels: Option<String>,
-    spill: Array,
-    outs: Array,
-) -> Result<Output, JsError> {
-    let text = boundary;
-    let boundary = Boundary::parse(boundary).map_err(|e| JsError::new(&e))?;
-    let open = || -> Result<Box<dyn Read + Send>, String> {
-        Ok(Box::new(io::BufReader::with_capacity(1 << 20, BlobRead::new(area.clone())?)))
-    };
-    let pool = std::rc::Rc::new(OpfsPool {
-        free: std::cell::RefCell::new(spill.iter().map(|h| h.unchecked_into()).collect()),
-    });
-    if spill.length() > 0 {
-        duckosm_core::spill::set_temp_store(Some(std::rc::Rc::new(move || {
-            Box::new(OpfsStore(pool.clone())) as Box<dyn duckosm_core::spill::Store>
-        })));
-    }
-    let outs: Vec<web_sys::FileSystemSyncAccessHandle> = outs.iter().map(|h| h.unchecked_into()).collect();
-    let (files, failed) = (Object::new(), std::sync::Arc::new(std::sync::Mutex::new(None)));
-    let mut next = 0;
-    let res = js_build_to(Input::Area(&open, &boundary), modes, fixes_yaml, Some(text), raw.unwrap_or(false), levels, files.clone(), |name| {
-        let h = outs.get(next).cloned().ok_or_else(|| format!("the result has more than {} files", outs.len()))?;
-        Reflect::set(&files, &name.into(), &(next as u32).into()).map_err(|_| format!("cannot keep {name}"))?;
-        next += 1;
-        Ok(BufWriter::with_capacity(1 << 20, OpfsOut { f: OpfsFile { h, at: 0.0 }, failed: failed.clone() }))
-    });
-    duckosm_core::spill::set_temp_store(None);
-    // a writer that is dropped does not give its error: the first one is kept here
-    if let Some(e) = failed.lock().expect("one thread").take() {
-        return Err(JsError::new(&e));
-    }
-    res
-}
-
 /// A file of the result in OPFS. It keeps its first error, because a writer that is dropped (`BufWriter`) loses it.
 struct OpfsOut {
     f: OpfsFile,
@@ -648,7 +565,8 @@ struct OpfsStore(std::rc::Rc<OpfsPool>);
 struct OpfsBlob {
     h: Option<web_sys::FileSystemSyncAccessHandle>,
     pos: f64,
-    pool: std::rc::Rc<OpfsPool>,
+    /// the pool that gets the file back, empty, at the drop; none: a named file of the page (`tiles::PageFs`), which stays
+    pool: Option<std::rc::Rc<OpfsPool>>,
 }
 
 // SAFETY: the store is set for the calling thread only (`spill::set_temp_store`), so the handles stay on the thread
@@ -661,15 +579,15 @@ impl duckosm_core::spill::Store for OpfsStore {
             io::Error::other("OPFS: all files of the pool for the temporary files are in use")
         })?;
         h.truncate_with_f64(0.0).map_err(opfs_err)?;
-        Ok(Box::new(OpfsBlob { h: Some(h), pos: 0.0, pool: self.0.clone() }))
+        Ok(Box::new(OpfsBlob { h: Some(h), pos: 0.0, pool: Some(self.0.clone()) }))
     }
 }
 
 impl Drop for OpfsBlob {
     fn drop(&mut self) {
-        if let Some(h) = self.h.take() {
+        if let (Some(pool), Some(h)) = (&self.pool, self.h.take()) {
             let _ = h.truncate_with_f64(0.0);
-            self.pool.free.borrow_mut().push(h);
+            pool.free.borrow_mut().push(h);
         }
     }
 }
@@ -712,30 +630,6 @@ impl Seek for OpfsBlob {
     }
 }
 
-/// The same as [`build_area`], with the bytes of the region file (for Node, which has no `FileReaderSync`).
-#[wasm_bindgen]
-pub fn build_area_bytes(
-    region: &[u8],
-    boundary: &str,
-    modes: &str,
-    fixes_yaml: Option<String>,
-    raw: Option<bool>,
-    levels: Option<String>,
-) -> Result<Output, JsError> {
-    let text = boundary;
-    let boundary = Boundary::parse(boundary).map_err(|e| JsError::new(&e))?;
-    let area = cut(|| Ok(io::Cursor::new(region)), &boundary)?;
-    let open = || -> Result<Box<dyn Read + Send + '_>, String> { Ok(Box::new(io::Cursor::new(&area[..]))) };
-    js_build(
-        Input::Area(&open, &boundary),
-        modes,
-        fixes_yaml,
-        Some(text),
-        raw.unwrap_or(false),
-        levels,
-    )
-}
-
 /// Build duckOSM's tables of `modes` (comma separated: driving, walking, cycling) from the bytes of a `.osm.pbf`
 /// file, with the default options of the CLI. `fixes_yaml`: the text of an OSM fixes file (duckOSM
 /// `osm_overrides`), or nothing. `boundary`: the boundary of the area (GeoJSON), only for `main.boundary` and
@@ -760,8 +654,8 @@ pub fn build(
 
 /// The same as [`build`], from OSM JSON: the answer of the Overpass API to the query of the page (the highway
 /// ways and ferry lines with their nodes, and the `type=restriction` relations). With a `boundary` (GeoJSON),
-/// only the ways with a node inside are kept, as in [`build_area`]. With `raw`, the output also has the
-/// `raw_*.parquet` files of [`build_area`] (cut as osmium's `smart` does), from the objects of the base-map layers
+/// only the ways with a node inside are kept, as in the cut of a region file. With `raw`, the output also has the
+/// `raw_*.parquet` files (cut as osmium's `smart` does), from the objects of the base-map layers
 /// that the query also asked for.
 #[wasm_bindgen]
 pub fn build_osm_json(
@@ -837,6 +731,29 @@ pub fn set_dem(
     DEM_INFO.with(|d| *d.borrow_mut() = (product, vertical_datum, license, not_reference.unwrap_or(false)));
 }
 
+/// The options of a build of the page: the modes (comma separated), `raw` (the base-map layers), the method of the levels, and
+/// what the calls `set_building_faces`, `set_timezone_entry` and `set_dem` set (the build takes the DEM).
+fn page_params(modes: &str, raw: bool, levels: Option<&str>) -> Result<Params, String> {
+    let (dem_product, dem_vertical_datum, dem_license, dem_not_reference) = DEM_INFO.with(|d| d.borrow_mut().clone());
+    let mut p = Params {
+        modes: Mode::parse_all(&modes.split(',').collect::<Vec<_>>())?,
+        raw,
+        building_faces: raw && BUILDING_FACES.with(|b| b.get()), // with the layers, and "Wall labels" on: the walls of the buildings (main.building_faces)
+        built_at: Some((js_sys::Date::now() * 1000.0) as i64),
+        timezone_entry: TIMEZONE_ENTRY.with(|e| e.borrow().clone()),
+        dem_bytes: DEM.with(|d| d.borrow_mut().take()),
+        dem_product,
+        dem_vertical_datum,
+        dem_license,
+        dem_not_reference,
+        ..Params::default()
+    };
+    if let Some(m) = levels {
+        p.levels = parse_levels(m)?;
+    }
+    Ok(p)
+}
+
 /// The build with each file of the result as parts in JavaScript memory (`Output::files`: name to an array of parts).
 fn js_build(
     input: Input,
@@ -868,24 +785,8 @@ fn js_build_to<W: Write + Send>(
     file: impl FnMut(&str) -> Result<W, String>,
 ) -> Result<Output, JsError> {
     let e = |e: String| JsError::new(&e);
-    let (dem_product, dem_vertical_datum, dem_license, dem_not_reference) = DEM_INFO.with(|d| d.borrow_mut().clone());
-    let mut p = Params {
-        modes: Mode::parse_all(&modes.split(',').collect::<Vec<_>>()).map_err(e)?,
-        raw,
-        cut_pbf: raw && matches!(input, Input::Area(..)), // the cut file: only of a region file
-        building_faces: raw && BUILDING_FACES.with(|b| b.get()), // with the layers, and "Wall labels" on: the walls of the buildings (main.building_faces)
-        built_at: Some((js_sys::Date::now() * 1000.0) as i64),
-        timezone_entry: TIMEZONE_ENTRY.with(|e| e.borrow().clone()),
-        dem_bytes: DEM.with(|d| d.borrow_mut().take()),
-        dem_product,
-        dem_vertical_datum,
-        dem_license,
-        dem_not_reference,
-        ..Params::default()
-    };
-    if let Some(m) = levels.as_deref() {
-        p.levels = parse_levels(m).map_err(e)?;
-    }
+    let mut p = page_params(modes, raw, levels.as_deref()).map_err(e)?;
+    p.cut_pbf = raw && matches!(input, Input::Area(..)); // the cut file: only of a region file
     let fixes = match fixes_yaml {
         Some(text) => parse_osm_fixes(&text, "the OSM fixes file").map_err(e)?,
         None => Default::default(),

@@ -4,13 +4,17 @@ out folder gets make_duckdb.sql from the zip, page.duckdb (the button "Download 
 the page as JSON (docs/browser.md, steps B3 and B4).
 
     python crates/duckosm-wasm/www/e2e.py <file.osm.pbf> <out folder> [--boundary area.geojson] [--modes driving,walking,cycling] [--fixes file.yaml]
-        [--no-features] [--no-walls] [--www folder]
+        [--no-features] [--no-walls] [--www folder] [--tiles ZOOM [--tile-workers N]]
 
 With --boundary, the PBF file is a region file and the page cuts it to the boundary; without, the file is
 already cut. With --boundary and the PBF file "overpass", the data comes from the Overpass API. With --boundary
 and the PBF file "relay", the page gets the smallest extract through the relay of serve.py (docs/relay.md) and
 keeps it in the browser. With a region file, the page also makes the base-map layers (docs/features.md), unless
 --no-features: the out folder gets their features_<table>.parquet files (tools/compare_features.py --page checks them).
+
+--tiles sets the zoom of the tiles of the build (docs/app.md, "The build by tiles"). On Monaco, small tiles (zoom 14) put many roads
+across the edges of the tiles; tools/compare_parquet.py compares the files with those of
+`duckosm-rust tiles` at the same zoom.
 
 --www serves another folder: a copy with versions (version_refs.py, as the deploy makes it); then each request of the
 page for a file of the site must have the version. Build the page first (docs/development.md, "WebAssembly"). The page loads duckdb-wasm from cdn.jsdelivr.net, so
@@ -44,17 +48,31 @@ a.add_argument("--threads", type=int, help="the size of the thread pool (default
 a.add_argument("--view", help="lng,lat,zoom: move the map there before the picture (map.png)")
 a.add_argument("--boundary-shots", action="store_true", help="pictures at a point of the boundary (z12, z16; flat and pitch 60), OpenFreeMap base")
 a.add_argument("--www", default=str(WWW), help="the page's folder (default: this one)")
+a.add_argument("--tiles", type=int, metavar="ZOOM", help="the zoom of the tiles of the build (?tilezoom=ZOOM; the page's default is 8; Monaco: 14, small tiles)")
+a.add_argument("--tile-workers", type=int, help="with --tiles: the tile workers at a time")
+a.add_argument("--param", action="append", default=[], help="one more parameter of the page's address, name=value (for example tables=disk)")
+a.add_argument("--keep-profile", action="store_true", help="with --build-only: keep the browser profile (its OPFS files) and print its folder")
+a.add_argument("--build-only", action="store_true", help="stop after the build: print the times, the memory and the steps (a large area, for example France)")
 args = a.parse_args()
 out = pathlib.Path(args.out)
 out.mkdir(parents=True, exist_ok=True)
 
 server = start(0, isolated=not args.one_thread, quiet=True, directory=args.www)
 params = [f"threads={args.threads}"] * bool(args.threads) + ["relay=relay"] * (args.pbf == "relay")
+params += args.param
+params += [f"tilezoom={args.tiles}"] * (args.tiles is not None) + [f"tileworkers={args.tile_workers}"] * bool(args.tile_workers)
 url = f"http://127.0.0.1:{server.server_address[1]}/index.html" + ("?" + "&".join(params) if params else "")
 
 with sync_playwright() as p:
-    browser = p.chromium.launch()
-    page = browser.new_page(accept_downloads=True)
+    if args.build_only:
+        # a profile on disk, as a person's browser: the OPFS quota of a new context (an incognito window) is too small for a large area
+        import shutil
+        import tempfile
+        profile = tempfile.mkdtemp(prefix="studio-e2e-")
+        browser = p.chromium.launch_persistent_context(profile, accept_downloads=True)
+    else:
+        browser = p.chromium.launch()
+    page = browser.new_page(accept_downloads=True) if not args.build_only else browser.new_page()
     page.on("pageerror", lambda e: print("page error:", e))
     unversioned = unversioned_requests(page, args.www)
     page.goto(url)
@@ -109,8 +127,23 @@ with sync_playwright() as p:
                            timeout=1_800_000)
     status = page.inner_text("#buildstatus")
     if status.startswith("Error"):
+        if args.build_only:
+            print("build:", json.dumps(page.evaluate("window.lastBuild ?? null"), indent=1))
+            browser.close()
+            if args.keep_profile:
+                print("profile:", profile)
+            else:
+                shutil.rmtree(profile, ignore_errors=True)   # the files of a large area in OPFS
         raise SystemExit(status)
     print(status)
+    if args.build_only:
+        print(json.dumps(page.evaluate("window.timings"), indent=1))
+        print("build:", json.dumps(page.evaluate("window.lastBuild"), indent=1))
+        print("steps:", " | ".join(page.eval_on_selector_all("#steplog tbody tr", "rs => rs.map((r) => [...r.cells].map((c) => c.textContent).join(' ').trim())")))
+        browser.close()
+        server.shutdown()
+        shutil.rmtree(profile, ignore_errors=True)
+        raise SystemExit(0)
     # the build details of card 4 (folded): one table row each
     print("build details:", " | ".join(page.eval_on_selector_all("#builddetails tr", "rs => rs.map((r) => [...r.cells].map((c) => c.textContent).join(' ').trim())")))
     print("query:", page.evaluate("window.duckApi.query('SELECT count(*) AS n FROM driving.edges').then((r) => String(r.toArray()[0].n))"), "driving edges")
@@ -125,7 +158,6 @@ with sync_playwright() as p:
     print("walls of the buildings:", walls)
     if source == "region":
         assert walls == (not args.no_features and not args.no_walls), ("main.building_faces follows 'Wall labels'", walls)
-    assert "visualization.edge_levels" not in disk, "the level editor writes visualization.*: it stays in memory"
     # the draw after the build opens the next step and folds card 5 (the cards follow the steps, panel_e2e.py): open card 5 for its downloads
     page.wait_for_function("/drawn|failed/.test(document.getElementById('mapnote').textContent) && !window.mapDrawing", timeout=600_000)
     if "folded" in (page.get_attribute("#step5-card", "class") or ""):
