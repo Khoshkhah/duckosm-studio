@@ -246,6 +246,39 @@ export async function restoreTables(savedTables) {
   await endLoad();
 }
 
+// A table of the last build into the folder `dir` of a saved area (app/area_store.js), with no copy: its file in the build's folder of
+// this tab moves there (FileSystemFileHandle.move), and DuckDB reads the moved file under the same name. false: the table is not a
+// file of the build in OPFS (a table in memory, a browser with no move), and the caller copies it.
+export async function moveTable(t, dir, name = t.name) {
+  let h = t.handle;
+  if (!h) {
+    const tab = await tableFolder();
+    if (!tab || !buildFolder || !(t.file instanceof File) || !onDisk.has(t.file)) return false;
+    h = await (await tab.getDirectoryHandle(buildFolder)).getFileHandle(t.file.name).catch(() => null);
+  }
+  if (!h || typeof h.move !== "function") return false;
+  await h.move(dir, name);
+  const f = await h.getFile();
+  onDisk.add(f);
+  if (t.home === "disk") {      // a File of the old place does not read after the move
+    await db.dropFile(t.name).catch(() => {});
+    await db.registerFileHandle(t.name, f, (await import(DUCKDB)).DuckDBDataProtocol.BROWSER_FILEREADER, true);
+  }
+  t.file = f;
+  t.handle = h;
+  return true;
+}
+// Before a delete of the saved area of the open tables: their moved files go back into the build's folder of this tab, so the tables still answer
+export async function unmoveTables() {
+  const tab = await tableFolder(), moved = tables.filter((t) => t.handle);
+  if (!tab || !buildFolder || !moved.length) return;
+  const dir = await tab.getDirectoryHandle(buildFolder, { create: true });
+  for (const t of moved) {
+    await moveTable(t, dir, t.file.name).catch(() => {});
+    delete t.handle;
+  }
+}
+
 export const query = (sql) => conn.query(sql);
 /** The area's ground for roadstyle's map terrain (roadstyle docs/design/ground_terrain.md): {facts, archive}, the ground's facts from
  * main.elevation_metadata (the row of ele) and its terrain file (Terrarium PNG tiles in one PMTiles archive) that roadstyle's engine makes

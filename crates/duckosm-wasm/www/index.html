@@ -1480,6 +1480,7 @@ async function paintStorage(list) {
   $("storage-clear").onclick = async () => {
     if (!await rs.confirm({ title: "Delete all of Studio's files?", text: `The saved areas, the kept region files and the files of old builds go from this browser (${gb(free)}). ` +
       "The open area stays. Other pages of this site keep their files. You cannot undo this.", ok: "Delete all", danger: true })) return;
+    await duck.unmoveTables();                  // the open tables' files go back to the folder of this tab first
     const n = await storage.clear(storageOpts(list));
     localStorage.removeItem("duckosm.lastArea");
     status(`Deleted ${gb(n)} from this browser.`, 5000);
@@ -1538,6 +1539,7 @@ async function renderSavedAreasList() {
       btn.onclick = async () => {
         const slug = btn.dataset.slug, name = list.find((a) => a.slug === slug)?.name || slug;
         if (!await rs.confirm({ title: `Delete ${name}?`, text: "Its tables, its map and its design go from this browser. You cannot undo this.", ok: "Delete", danger: true })) return;
+        if (slug === areaStore.sanitizeSlug(areaName)) await duck.unmoveTables();
         await areaStore.deleteArea(slug);
         if (localStorage.getItem("duckosm.lastArea") === slug) localStorage.removeItem("duckosm.lastArea");
         renderSavedAreasList();
@@ -1709,7 +1711,6 @@ $("run").onclick = async () => {
     const got = download ? ` · ${num(download.bytes / 2 ** 20, 1)} MB from ${download.server}` : "";
     progress(`Built in ${num((ready - start) / 1000, 1)} s · ${out.threads} thread${out.threads > 1 ? "s" : ""} · ${out.memoryMiB} MiB${got}`, { final: true });
     buildDetails(out.summary);
-    files();
     // Auto-save built area and Parquet tables to OPFS browser storage
     const areaSlug = areaStore.sanitizeSlug(areaName);
     try {
@@ -1723,7 +1724,7 @@ $("run").onclick = async () => {
         fixesYaml: fixes,
         fixesName: fixes ? $("fixes").files[0]?.name ?? "osm_fixes.yaml" : undefined,
         builtAt: Date.now()
-      }, duck.tables, null, await cutFile());
+      }, duck.tables, null, await cutFile(), duck.moveTable);
     } catch (e) {
       console.warn("Could not save area to OPFS:", e);
       status("The area could not be saved in this browser (" + (e.name === "QuotaExceededError" ? "storage is full" : e.message) + "). It is still on the page.", 8000);
@@ -1731,6 +1732,7 @@ $("run").onclick = async () => {
     localStorage.setItem("duckosm.lastArea", areaSlug);
     if (designPanel) areaStore.saveDesign(areaSlug, designPanel.text()).catch(() => {});
     renderSavedAreasList();
+    files();                                      // the links again: the save moved the files of the build into the saved area
     // the networks of the build: one row for each, with its roads (edges) and junctions (nodes), in roadstyle's table
     const NET = { driving: ["car", "Driving"], walking: ["walk", "Walking"], cycling: ["bike", "Cycling"] };
     $("resultline").innerHTML = '<table class="rs-table"><thead><tr><th>Network</th><th>Roads</th><th>Junctions</th></tr></thead><tbody>' +
