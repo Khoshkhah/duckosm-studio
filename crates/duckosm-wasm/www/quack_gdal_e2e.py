@@ -13,7 +13,6 @@ import pathlib
 import shutil
 import tempfile
 
-import pyarrow.parquet as pq
 from playwright.sync_api import TimeoutError as PlaywrightTimeout, sync_playwright
 
 from serve import WWW, start
@@ -79,6 +78,8 @@ with sync_playwright() as p:
     assert links == [f"{pathlib.Path(args.pbf).name.removesuffix('.osm.pbf')}_gdal_{l}.parquet" for l in LAYERS], links
     assert page.is_hidden("#duckdb") and page.is_hidden("#download")
     bad = 0
+    if not args.no_download:
+        import pyarrow.parquet as pq  # only to read the downloads (a computer with no pyarrow can run --no-download)
     for i, layer in enumerate(LAYERS if not args.no_download else []):
         with page.expect_download() as d:
             page.click(f"#layers a >> nth={i}")
