@@ -6,7 +6,8 @@ tiles (at most 2000 nodes, so ways, routes and multipolygons cross the edges of 
 `duckosm-rust quack FILE --gdal -f geoparquet -o DIR --name <name>` (the same rows, in any order). With --format gpkg or
 both, the page also makes the GeoPackage: SQLite's integrity_check must be ok, GDAL's ogrinfo (when it is installed) must
 open it, and with --native the rows of each layer (geometry as hex, no fid) must equal those of DIR/<name>_gdal.gpkg of
-`duckosm quack FILE --gdal -o DIR --name <name>`, as sets. Build the page first (build.sh).
+`duckosm quack FILE --gdal -o DIR --name <name>`, as sets. With --fixes FILE, the page gets that OSM fixes file
+(Settings, OSM fixes), and the native files must be made with the same --fixes. Build the page first (build.sh).
 
     python crates/duckosm-wasm/www/quack_gdal_e2e.py [out folder] [--pbf file.osm.pbf] [--zoom Z] [--native DIR] [--name N]
         [--format geoparquet|gpkg|both]
@@ -34,6 +35,7 @@ a.add_argument("--name", default="monaco", help="the --name of the native files"
 a.add_argument("--keep", action="store_true", help="keep the downloaded files of a large file")
 a.add_argument("--no-download", action="store_true", help="check the five downloads but do not save them (a large file: no second copy on the disk)")
 a.add_argument("--format", default="geoparquet", choices=["geoparquet", "gpkg", "both"])
+a.add_argument("--fixes", help="an OSM fixes file for the page (Settings, OSM fixes)")
 args = a.parse_args()
 parquet, gpkg = args.format != "gpkg", args.format != "geoparquet"
 out = pathlib.Path(args.out)
@@ -51,6 +53,11 @@ with sync_playwright() as p:
     page.on("pageerror", lambda e: errs.append(str(e)))
     page.goto(url)
     assert page.evaluate("crossOriginIsolated"), "the page is not cross-origin isolated (serve.py sends COOP and COEP)"
+    if args.fixes:
+        page.select_option("#fixes-src", "file")
+        page.set_input_files("#fixes-file", args.fixes)
+        got = page.eval_on_selector("#fixes-src", "s => [s.value, s.selectedOptions[0].text]")
+        assert got == ["file", "File: " + pathlib.Path(args.fixes).name], got
     page.click("label[for=src-f]")
     page.set_input_files("#file", args.pbf)
     page.select_option("#output", "gdal")
@@ -80,7 +87,7 @@ with sync_playwright() as p:
     print("   " + "\n   ".join(steps))
     layers = page.evaluate("(window.lastResult || {}).layers")
     print("   layers:", layers, "| most browser storage:", page.evaluate("(window.lastResult || {}).storageMib"), "MB | join memory:", page.evaluate("(window.lastResult || {}).joinMib"), "MiB")
-    if monaco:
+    if monaco and not args.fixes:
         assert layers == MONACO, layers
     links = page.eval_on_selector_all("#layers a", "as => as.map(a => a.download)")
     base = pathlib.Path(args.pbf).name.removesuffix('.osm.pbf')

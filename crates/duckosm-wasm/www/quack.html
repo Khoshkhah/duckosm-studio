@@ -170,6 +170,10 @@
       <option value="gpkg">GeoPackage</option>
       <option value="both">Both</option>
     </select></div>
+    <div><label for="fixes-src">OSM fixes</label><select id="fixes-src">
+      <option value="">None</option>
+      <option value="file">A fixes file (.yaml)</option>
+    </select><input id="fixes-file" type="file" accept=".yaml,.yml" hidden aria-label="Fixes file"></div>
   </div>
   <label class="check"><input id="tiles" type="checkbox"> Tile by tile</label>
   <label class="check"><input id="sort" type="checkbox" checked> Sort the rows by place, as QuackOSM</label>
@@ -236,6 +240,7 @@
   <form method="dialog"><button>Close</button></form></dialog>
 <script type="module">
   import * as regions from "./app/regions.js";
+  import * as areaStore from "./app/area_store.js";
   const $ = (id) => document.getElementById(id);
   const fmt = (n) => n.toLocaleString("en-US");
   const mb = (b) => `${(b / 2 ** 20).toFixed(1)} MB`;
@@ -260,6 +265,7 @@
     ]],
     settings: ["Settings", [
       ["Output", "QuackOSM table: one table of the OSM features (feature_id, tags, geometry), as QuackOSM gives it. GDAL layers: the five layers of GDAL's OSM driver (points, lines, multilinestrings, multipolygons, other_relations), as ogr2ogr and QGIS give them with GDAL's default osmconf.ini: The GDAL layers are always made tile by tile, in the order of the file (no sort)."],
+      ["OSM fixes", "The rules of Edit OSM data in Studio (a duckOSM fixes file, as duckosm quack --fixes). The rows get the same edits as the network: the removed ways, the changed tags, the new ways, and the rules oneway, lanes and layer as OSM tags. A rule with no OSM tag (closed to a mode, a turn) is not used. The page selects the fixes of your newest saved area that has fixes. A fixes file: select it on this computer."],
       ["Format", "GDAL layers only. GeoParquet: one file for each layer. GeoPackage: one .gpkg file with the five layers and their spatial indexes (R-trees). Both: the GeoParquet files and the GeoPackage, from one run. The page writes the GeoPackage directly into the browser storage, not into the memory."],
       ["Tile by tile", "The file is cut into tiles, and each tile gives its rows. The memory then follows the size of a tile, not of the file. Use it for a file larger than about 150 MB: the browser has at most 4 GiB of memory. The rows are the same."],
       ["Tile size", "Map tiles of one zoom (zoom 8 is the default, the tile zoom of all parts of duckOSM), or tiles of at most 4 million nodes. With a zoom, a dense city gives a large tile."],
@@ -705,6 +711,31 @@
     }
   };
 
+  // ---- the OSM fixes: the fixes of a saved area of Studio (its meta.json keeps them), or a fixes file
+  const savedFixes = new Map();
+  areaStore.listSavedAreas().then((list) => {
+    for (const m of list) {
+      if (!m.fixesYaml || !m.slug || savedFixes.has(m.slug)) continue;
+      savedFixes.set(m.slug, m.fixesYaml);
+      $("fixes-src").insertBefore(new Option(`Fixes of ${m.name || m.slug}`, `area:${m.slug}`), $("fixes-src").lastElementChild);
+    }
+    // the newest saved area with fixes (the list is newest first)
+    if (savedFixes.size && $("fixes-src").value === "") $("fixes-src").selectedIndex = 1;
+  }).catch(() => {});
+  $("fixes-src").onchange = () => { if ($("fixes-src").value === "file") $("fixes-file").click(); };
+  $("fixes-file").onchange = () => {
+    const f = $("fixes-file").files[0];
+    $("fixes-src").lastElementChild.textContent = f ? `File: ${f.name}` : "A fixes file (.yaml)";
+    if (!f) $("fixes-src").value = "";
+  };
+  // the text of the fixes of the run, or null
+  async function fixesText() {
+    const v = $("fixes-src").value;
+    if (v.startsWith("area:")) return savedFixes.get(v.slice(5)) ?? null;
+    if (v === "file") return (await $("fixes-file").files[0]?.text()) ?? null;
+    return null;
+  }
+
   // ---- the run
   $("run").onclick = async () => {
     const gdal = gdalOut();
@@ -714,6 +745,7 @@
       "has at most 4 GiB of memory, and Île-de-France (338 MB) needs more in one run. Make the table tile by tile, or the " +
       "run most likely stops with an error. Run in one run anyway?")) return;
     const sort = $("sort").checked;
+    const fixes = await fixesText();
     const name = (s) => (tiles ? TILE_LABELS[s] : label(s));
     $("run").disabled = true;
     $("stop").disabled = false;
@@ -845,7 +877,7 @@
       $("mib").title = data.workersMib ? `${fmt(data.mib)} MiB in the main module, ${fmt(data.workersMib)} MiB in the tile workers` : "";
       $("size").textContent = mb(L ? outFiles.reduce((a, f) => a + f.size, 0) : data.file.size);
       $("size").title = data.storageMib ? `The run used at most ${fmt(data.storageMib)} MB of browser storage` : "";
-      $("command").textContent = `duckosm-rust quack ${file.name}${L ? " --gdal" : ""} -o out -f ${!L ? "geoparquet" : { geoparquet: "geoparquet", gpkg: "gpkg", both: "gpkg,geoparquet" }[$("format").value]}` + (tiles && $("zoom").value ? ` --tile-zoom ${$("zoom").value}` : "");
+      $("command").textContent = `duckosm-rust quack ${file.name}${L ? " --gdal" : ""} -o out -f ${!L ? "geoparquet" : { geoparquet: "geoparquet", gpkg: "gpkg", both: "gpkg,geoparquet" }[$("format").value]}` + (tiles && $("zoom").value ? ` --tile-zoom ${$("zoom").value}` : "") + (fixes ? " --fixes osm_fixes.yaml" : "");
       let at = 0;
       // tile by tile: the steps of the page, and the parts of the cut (the last tile ends step 3)
       const steps = !tiles ? data.steps : data.steps.filter((s) => {
@@ -930,7 +962,7 @@
     // a test of the cut: quack.html?memory=1 keeps the parts of the cut in memory (else in OPFS)
     const memoryOpt = new URLSearchParams(location.search).get("memory");
     const inMemory = memoryOpt === null ? undefined : memoryOpt !== "0";
-    worker.postMessage({ pbf: file, sort, tiles: tiles ? tileNodes : null, zoom, workers, cutThreads, joinThreads, memory: inMemory, gdal, format: $("format").value });
+    worker.postMessage({ pbf: file, sort, tiles: tiles ? tileNodes : null, zoom, workers, cutThreads, joinThreads, memory: inMemory, gdal, format: $("format").value, fixes });
   };
 </script>
 </body>
