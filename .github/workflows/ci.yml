@@ -24,13 +24,14 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      # SQLite (the GeoPackage of quack --gdal) is C code: the newest clang of the image and its llvm-ar build it for wasm32
+      # SQLite (the GeoPackage of quack --gdal) is C code: the newest clang of the image and its llvm-ar build it for wasm32 (clang 15:
+      # the C23 attributes of the shim of sqlite-wasm-rs need -fdouble-square-bracket-attributes)
       - name: A clang with the target wasm32
         run: |
           v=$(ls /usr/bin/llvm-ar-* | sed 's/.*-//' | sort -n | tail -1)
           echo "CC_wasm32_unknown_unknown=clang-$v" >> "$GITHUB_ENV"
           echo "AR_wasm32_unknown_unknown=llvm-ar-$v" >> "$GITHUB_ENV"
-          echo "CFLAGS_wasm32_unknown_unknown=-nostdlibinc" >> "$GITHUB_ENV"
+          echo "CFLAGS_wasm32_unknown_unknown=-nostdlibinc -fdouble-square-bracket-attributes" >> "$GITHUB_ENV"
           clang-$v --version
       - name: The WebAssembly module builds, and its byte functions give the files of the path functions
         run: |
