@@ -175,16 +175,17 @@ async function byTiles(data, dir, area, fixes, levels, pre, mib) {
     const open = async (n) => (await dir.getFileHandle(n, { create: true })).createSyncAccessHandle();
     let cut;
     try {
-      slots.push(...await Promise.all(Array.from({ length: cutSlots }, (_, i) => open(`c-s${i}`))));
+      // one after the other, as in build_tile_worker.js
+      for (let i = 0; i < cutSlots; i++) slots.push(await open(`c-s${i}`));
       temp = await open("c-t");
       cut = pkg.tiles_cut({ "area.osm.pbf": area, ...common }, zoom, data.modes, !!data.raw, slots, temp);
     } finally {
       for (const h of [...slots, temp].filter(Boolean)) h.close();
     }
     const used = new Set(Object.values(cut.files).map((i) => `c-s${i}`));
-    await Promise.all(Object.entries(cut.files).map(async ([n, i]) => keep({ [n]: await (await dir.getFileHandle(`c-s${i}`)).getFile() })));
-    for (let i = 0; i < cutSlots; i++) if (!used.has(`c-s${i}`)) dir.removeEntry(`c-s${i}`).catch(() => {});
-    dir.removeEntry("c-t").catch(() => {});
+    for (const [n, i] of Object.entries(cut.files)) keep({ [n]: await (await dir.getFileHandle(`c-s${i}`)).getFile() });
+    for (let i = 0; i < cutSlots; i++) if (!used.has(`c-s${i}`)) await dir.removeEntry(`c-s${i}`).catch(() => {});
+    await dir.removeEntry("c-t").catch(() => {});
     opts.module = await compiling;
     const tiles = cut.tiles;
     const tname = (tl) => tl.join("_");
@@ -198,7 +199,6 @@ async function byTiles(data, dir, area, fixes, levels, pre, mib) {
         if (r.remove !== undefined) return drop(r.remove);
         if (r.step !== undefined) return msg.onStep?.(r);
         w.terminate();
-        for (const n of r.unused ?? []) dir.removeEntry(n).catch(() => {});   // not waited for: the next step does not need it
         if (r.error) reject(new Error(`${msg.what}${msg.kind === "union" ? ` (after the step "${unionStep}")` : ""}: ${r.error}`));
         else resolve(r);
       };

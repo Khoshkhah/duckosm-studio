@@ -6,8 +6,7 @@
 // files of this step, slots: the number of the files of the result that the step can write (its other files are blocks of one file), given: {name: File or Uint8Array}, tile: [z, x, y]
 // or tiles: [[z, x, y], ...] (the union), modes, raw, levels, walls, tz, dem, demName, demProduct, demDatum, demLicense,
 // demNotReference, module: the compiled module}. Out: {step, ms, mib} (each step of the engine), {remove: name} (the union has
-// read a given file: it can go), then {files: {name: File}, unused: the names of its OPFS files to delete, summary, rows, mib} or
-// {error}.
+// read a given file: it can go), then {files: {name: File}, summary, rows, mib} or {error}.
 
 onmessage = async ({ data }) => {
   const slots = [];
@@ -20,8 +19,9 @@ onmessage = async ({ data }) => {
     pkg.set_timezone_entry(data.tz);
     pkg.set_dem(data.demName, data.dem ? new Uint8Array(data.dem) : undefined, data.demProduct, data.demDatum, data.demLicense, !!data.demNotReference);
     const open = async (n) => (await data.dir.getFileHandle(n, { create: true })).createSyncAccessHandle();
-    // the files open at the same time: one after the other, the 160 files of a tile took about 0.2 s
-    slots.push(...await Promise.all(Array.from({ length: data.slots }, (_, i) => open(name("s", i)))));
+    // ponytail: the files open one after the other (about 0.2 s for the 160 files of a tile); opened at the same time
+    // (Promise.all), a build stopped for ever now and then (dem_e2e.py, 2026-11-17)
+    for (let i = 0; i < data.slots; i++) slots.push(await open(name("s", i)));
     // the temporary files of the step, named or not, are blocks of one file (src/tiles.rs, duckosm_core::fs::Blocks)
     temp = await open(name("t", ""));
     const res = data.kind === "union"
@@ -31,14 +31,15 @@ onmessage = async ({ data }) => {
     slots.length = 0;
     temp = null;
     const files = {}, used = new Set();
-    await Promise.all(Object.entries(res.files).map(async ([file, i]) => {
+    for (const [file, i] of Object.entries(res.files)) {
       files[file] = await (await data.dir.getFileHandle(name("s", i))).getFile();
       used.add(name("s", i));
-    }));
-    // the files of the pool that the step did not use, and the temporary file: build_worker.js deletes them after the step
-    const unused = [name("t", ""), ...Array.from({ length: data.slots }, (_, i) => name("s", i)).filter((n) => !used.has(n))];
+    }
+    // the files of the pool that the step did not use, and the temporary file
+    for (let i = 0; i < data.slots; i++) if (!used.has(name("s", i))) await data.dir.removeEntry(name("s", i)).catch(() => {});
+    await data.dir.removeEntry(name("t", "")).catch(() => {});
     // the memory of this worker (its WebAssembly memory never shrinks: the most that the step used)
-    postMessage({ files, unused, summary: res.summary, rows: res.rows, mib: Math.round(wasm.memory.buffer.byteLength / 2 ** 20) });
+    postMessage({ files, summary: res.summary, rows: res.rows, mib: Math.round(wasm.memory.buffer.byteLength / 2 ** 20) });
   } catch (e) {
     for (const h of [...slots, temp].filter(Boolean)) h.close();
     postMessage({ error: self.duckosmPanic || String((e && e.message) || e) });
