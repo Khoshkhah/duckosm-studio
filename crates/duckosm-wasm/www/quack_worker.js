@@ -4,9 +4,10 @@
 // the table tile by tile (a large file), or null; zoom: tile by tile with the map tiles of this zoom, or null; cutThreads:
 // the threads of the cut (and of one run); workers: the tile workers; joinThreads: the threads of the join (a worker of its
 // own, quack_join_worker.js); gdal: GDAL's five layers in place of the table, always tile by tile (zoom 8 when no tile size
-// is given)}. Out: {nodes, ways, relations, steps: for
+// is given); format: GDAL's layers as "geoparquet", "gpkg" (one GeoPackage) or "both"}. Out: {nodes, ways, relations, steps: for
 // each step its time since the start (ms) and the WebAssembly memory (MiB), file: the GeoParquet file (a File in OPFS),
-// seconds, threads, mib} (gdal: files, the GeoParquet file of each layer, and layers, the rows of each layer) or {error}. The page makes a new worker for each run: the
+// seconds, threads, mib} (gdal: files, the GeoParquet file of each layer, gpkg, the GeoPackage, and layers, the rows of
+// each layer) or {error}. The page makes a new worker for each run: the
 // memory of a WebAssembly module never shrinks. A cross-origin isolated page gets the module with threads
 // (pkg-threads), another page the module with one thread (pkg), as in build_worker.js.
 //
@@ -255,16 +256,18 @@ async function byTilesRun(data, dir, spill, fh, t0, steps, mib, workerMib, stora
       w.terminate();
       reject(new Error(`the join worker stopped (${e.message || "error"})`));
     };
-    w.postMessage({ dir, parts: todo.map((i) => `part-${i}.${ext}`), sort: data.sort !== false, threads: joinThreads, gdal: !!data.gdal });
+    w.postMessage({ dir, parts: todo.map((i) => `part-${i}.${ext}`), sort: data.sort !== false, threads: joinThreads, gdal: !!data.gdal, format: data.format });
   });
   // with the sort, the join is the sort: a merge of the sorted parts
   step(data.sort !== false && !data.gdal ? "quack 5: the sort" : "quack by tiles 4: the join of the parts");
   for (const i of todo) await dir.removeEntry(`part-${i}.${ext}`).catch(() => {});
   const files = [];
-  if (data.gdal) {
+  let gpkg = null;
+  if (data.gdal && (data.format || "geoparquet") !== "geoparquet") gpkg = await (await dir.getFileHandle("quack.gpkg")).getFile();
+  if (data.gdal && (data.format || "geoparquet") !== "gpkg") {
     for (const l of ["points", "lines", "multilinestrings", "multipolygons", "other_relations"]) files.push(await (await dir.getFileHandle(`${l}.parquet`)).getFile());
   }
   const seconds = (performance.now() - t0) / 1000;
   const workersMib = [...workerMib.values()].reduce((a, b) => a + b, 0);
-  postMessage({ ...totals, layers, files, steps, timeline, tileSteps, workers, workersMib, joinMib, file: await fh.getFile(), seconds, storageMib: Math.round(storageMax() / 2 ** 20), threads: `cut ${threads}, ${workers} tile workers, join ${joinThreads}`, mib: mib() });
+  postMessage({ ...totals, layers, files, gpkg, steps, timeline, tileSteps, workers, workersMib, joinMib, file: await fh.getFile(), seconds, storageMib: Math.round(storageMax() / 2 ** 20), threads: `cut ${threads}, ${workers} tile workers, join ${joinThreads}`, mib: mib() });
 }

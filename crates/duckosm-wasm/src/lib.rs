@@ -13,6 +13,8 @@ use wasm_bindgen::prelude::*;
 #[cfg(feature = "threads")]
 mod alloc;
 mod tiles;
+#[cfg(target_arch = "wasm32")]
+mod gpkg_vfs;
 #[cfg(feature = "threads")]
 #[global_allocator]
 static ALLOC: alloc::Cached = alloc::Cached;
@@ -400,9 +402,10 @@ pub fn quack_gdal_tile(tile: Blob, z: u8, x: u32, y: u32, out: web_sys::FileSyst
 
 /// quack --gdal, step 4: the join of the files of [`quack_gdal_tile`] (`parts`) into one GeoParquet file for each of
 /// GDAL's five layers (`outs`, open files in OPFS, in the order points, lines, multilinestrings, multipolygons,
-/// other_relations). The members of the relations wait in the temporary files of `spill`. Gives the rows of each layer.
+/// other_relations; empty: no GeoParquet) and/or the GeoPackage `gpkg` (an open file in OPFS), as `duckosm quack --gdal`.
+/// The members of the relations wait in the temporary files of `spill`. Gives the rows of each layer.
 #[wasm_bindgen]
-pub fn quack_gdal_join(parts: Array, spill: Array, outs: Array) -> Result<Object, JsError> {
+pub fn quack_gdal_join(parts: Array, spill: Array, outs: Array, gpkg: Option<web_sys::FileSystemSyncAccessHandle>) -> Result<Object, JsError> {
     let pool = std::rc::Rc::new(OpfsPool { free: std::cell::RefCell::new(spill.iter().map(|h| h.unchecked_into()).collect()) });
     duckosm_core::spill::set_temp_store(Some(std::rc::Rc::new(move || {
         Box::new(OpfsStore(pool.clone())) as Box<dyn duckosm_core::spill::Store>
@@ -414,8 +417,11 @@ pub fn quack_gdal_join(parts: Array, spill: Array, outs: Array) -> Result<Object
         .iter()
         .map(|h| BufWriter::with_capacity(1 << 20, OpfsOut { f: OpfsFile { h: h.unchecked_into(), at: 0.0 }, failed: failed.clone() }))
         .collect();
-    if files.len() != 5 {
+    if !files.is_empty() && files.len() != 5 {
         return Err(JsError::new("quack_gdal_join: one open file for each of the five layers"));
+    }
+    if files.is_empty() && gpkg.is_none() {
+        return Err(JsError::new("quack_gdal_join: no output (GeoParquet or GeoPackage)"));
     }
     let readers = parts
         .iter()
@@ -423,7 +429,15 @@ pub fn quack_gdal_join(parts: Array, spill: Array, outs: Array) -> Result<Object
         .map(|(i, p)| Ok(Part { r: BlobRead::exact(p.unchecked_into())?, i }))
         .collect::<Result<Vec<_>, String>>()
         .map_err(|e| JsError::new(&e))?;
-    let res = duckosm_build::quack_gdal::quack_gdal_join_to(readers, None, Some(files));
+    // the GeoPackage goes directly into its OPFS file (gpkg_vfs.rs); SQLite gives the file this name
+    let path = std::path::Path::new("quack.gpkg");
+    #[cfg(target_arch = "wasm32")]
+    if let Some(h) = gpkg.clone() {
+        gpkg_vfs::open_next(h).map_err(|e| JsError::new(&e))?;
+    }
+    let res = duckosm_build::quack_gdal::quack_gdal_join_to(readers, gpkg.is_some().then_some(path), (!files.is_empty()).then_some(files));
+    #[cfg(target_arch = "wasm32")]
+    gpkg_vfs::close();
     duckosm_core::spill::set_temp_store(None);
     if let Some(e) = failed.lock().expect("one thread").take() {
         return Err(JsError::new(&e));

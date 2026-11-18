@@ -11,8 +11,9 @@ crate-type = ["cdylib", "rlib"]
 # The engine is in the duckOSM repository (rust/). One rev for all its crates; docs/development.md, "Where the engine lives".
 duckosm-core = { git = "https://github.com/Khoshkhah/duckOSM.git", rev = "3a45c4d6cdaa9d893c9317b92a4ae77223524482" }
 # write_tables and the fixes reader, without DuckDB. zstd is a C library: snap (pure Rust) is the
-# compression in WebAssembly.
-duckosm-build = { git = "https://github.com/Khoshkhah/duckOSM.git", rev = "3a45c4d6cdaa9d893c9317b92a4ae77223524482", default-features = false, features = ["snap"] }
+# compression in WebAssembly. gpkg: the GeoPackage of quack --gdal (SQLite: in WebAssembly, rusqlite uses sqlite-wasm-rs,
+# whose C code needs a clang with the target wasm32, build.sh).
+duckosm-build = { git = "https://github.com/Khoshkhah/duckOSM.git", rev = "3a45c4d6cdaa9d893c9317b92a4ae77223524482", default-features = false, features = ["snap", "gpkg"] }
 wasm-bindgen = "0.2"
 js-sys = "0.3"
 # read a region file piece by piece from the browser (Blob.slice and FileReaderSync, in the build worker)
@@ -20,6 +21,10 @@ web-sys = { version = "0.3", features = ["Blob", "FileReaderSync", "FileSystemSy
 # WebAssembly threads (docs/development.md, "WebAssembly threads"): rayon gets a pool of Web Workers. Only in the
 # build with the feature "threads", which needs nightly Rust and a page with cross-origin isolation.
 wasm-bindgen-rayon = { version = "1.3", features = ["no-bundler"], optional = true }
+
+# the SQLite VFS of the GeoPackage in OPFS (src/gpkg_vfs.rs); the same sqlite-wasm-rs as rusqlite's
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+sqlite-wasm-rs = "0.5"
 
 [features]
 threads = ["dep:wasm-bindgen-rayon"]
