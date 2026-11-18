@@ -160,6 +160,12 @@
 
 <section class="card">
   <h2>Settings <button type="button" class="help" data-help="settings" aria-label="Help">?</button></h2>
+  <div class="grid">
+    <div><label for="output">Output</label><select id="output">
+      <option value="quack">QuackOSM table</option>
+      <option value="gdal">GDAL layers</option>
+    </select></div>
+  </div>
   <label class="check"><input id="tiles" type="checkbox"> Tile by tile</label>
   <label class="check"><input id="sort" type="checkbox" checked> Sort the rows by place, as QuackOSM</label>
   <div class="grid">
@@ -206,6 +212,7 @@
     <a id="duckdb-download" class="button" hidden>Download .duckdb</a>
     <button id="clear" type="button" class="secondary">Clear</button>
   </div>
+  <div class="row" id="layers" hidden></div>
   <p class="hint" id="duckdb-status"></p>
   <progress id="duckdb-bar" hidden></progress>
   <div id="timeline" hidden>
@@ -247,6 +254,7 @@
       ["Local file", "A .osm.pbf file on this computer. You can also drop it on this card. The page does not upload it."],
     ]],
     settings: ["Settings", [
+      ["Output", "QuackOSM table: one table of the OSM features (feature_id, tags, geometry), as QuackOSM gives it. GDAL layers: the five layers of GDAL's OSM driver (points, lines, multilinestrings, multipolygons, other_relations), as ogr2ogr and QGIS give them with GDAL's default osmconf.ini: one GeoParquet file for each layer. The GDAL layers are always made tile by tile, in the order of the file (no sort)."],
       ["Tile by tile", "The file is cut into tiles, and each tile gives its rows. The memory then follows the size of a tile, not of the file. Use it for a file larger than about 150 MB: the browser has at most 4 GiB of memory. The rows are the same."],
       ["Tile size", "Map tiles of one zoom (zoom 8 is the default, the tile zoom of all parts of duckOSM), or tiles of at most 4 million nodes. With a zoom, a dense city gives a large tile."],
       ["Sort the rows by place, as QuackOSM", "The same rows, in the order of QuackOSM: rows that are near on the map are near in the file, so a query of one area reads less of the file. Without the sort, the file is the same table in another order. Tile by tile, each tile worker sorts its own rows, and the last step merges the sorted parts and shows its progress. In one piece, the sort is the last step and shows no progress. Off by default for a large file."],
@@ -262,6 +270,7 @@
       ["No news", "A thread of the browser that has no memory left stops with no message. After 60 s with no news, the page tells you. Then click Stop."],
     ]],
     result: ["Result", [
+      ["GDAL layers", "One GeoParquet file for each of GDAL's five layers, with its rows and its size. QGIS and GDAL open them."],
       ["Download GeoParquet", "The features table of QuackOSM (feature_id, tags, geometry) as a GeoParquet file."],
       ["Make the .duckdb file", "DuckDB in the browser loads the GeoParquet file into the table main.quackosm of a .duckdb file, in the browser storage. Then download it."],
       ["Tiles of each worker", "One row for each worker, one bar for each tile: it shows whether the workers ran at the same time. Move the pointer on a bar to see its tile."],
@@ -287,6 +296,7 @@
     const f = source() === "file" ? $("file").files[0] ?? null : regionFile;
     // a large file: tile by tile, and no sort (the sort of a country takes minutes)
     if (f && f !== file) $("tiles").checked = !($("sort").checked = f.size <= LARGE);
+    if (f && gdalOut()) showOutput();
     file = f;
     $("input-text").textContent = !file ? "" : `Input: ${file.name}, ${mb(file.size)}` +
       (source() === "region" ? " (in the storage of this site)" : "") + (file.size > LARGE ? ". A large file: tile by tile, no sort." : "");
@@ -449,6 +459,19 @@
     $("cut-label").textContent = $("tiles").checked ? "Cut threads" : "Threads";
   };
   $("tiles").onchange = showTiles;
+  // GDAL's layers: always tile by tile, in the order of the file (no sort)
+  function gdalOut() { return $("output").value === "gdal"; }
+  function showOutput() {
+    const gdal = gdalOut();
+    if (gdal) {
+      $("tiles").checked = true;
+      $("sort").checked = false;
+    }
+    $("tiles").disabled = $("sort").disabled = gdal;
+    $("run").textContent = gdal ? "Make the layers" : "Make the table";
+    showTiles();
+  }
+  $("output").onchange = showOutput;
   showTiles();
   // at least 8 threads and tile workers, not only what the browser reports: Brave reports fewer cores than the computer
   // has (a page with 4 threads on 8 cores used 50 % of the CPU). Many more threads than cores make the cut slower
@@ -569,10 +592,12 @@
     for await (const name of root.keys()) {
       if (name.startsWith("quack")) await root.removeEntry(name, { recursive: true }).catch(() => {});
     }
-    for (const a of [$("download"), $("duckdb-download")]) {
+    for (const a of [$("download"), $("duckdb-download"), ...$("layers").querySelectorAll("a")]) {
       if (a.href) URL.revokeObjectURL(a.href);
       a.removeAttribute("href");
     }
+    $("layers").replaceChildren();
+    $("layers").hidden = true;
     parquet = null;
     await showStorage();
   }
@@ -675,7 +700,8 @@
 
   // ---- the run
   $("run").onclick = async () => {
-    const tiles = $("tiles").checked;
+    const gdal = gdalOut();
+    const tiles = $("tiles").checked || gdal;
     runByTiles = tiles;
     if (!tiles && file.size > 300 * 2 ** 20 && !confirm(`${file.name} is ${(file.size / 2 ** 20).toFixed(0)} MB. The browser ` +
       "has at most 4 GiB of memory, and Île-de-France (338 MB) needs more in one run. Make the table tile by tile, or the " +
@@ -684,7 +710,7 @@
     const name = (s) => (tiles ? TILE_LABELS[s] : label(s));
     $("run").disabled = true;
     $("stop").disabled = false;
-    $("result").hidden = $("download").hidden = $("duckdb-download").hidden = true;
+    $("result").hidden = $("download").hidden = $("duckdb-download").hidden = $("layers").hidden = true;
     $("duckdb").hidden = $("duckdb").disabled = false;
     $("duckdb-status").textContent = "";
     $("progress").hidden = false;
@@ -796,16 +822,22 @@
       $("clock").textContent = `${data.seconds.toFixed(1)} s`;
       status("Done.", "done");
       memory(data.mib, data.workersMib, data.workerMibs);
-      $("nodes").textContent = fmt(data.nodes);
-      $("ways").textContent = fmt(data.ways);
-      $("relations").textContent = fmt(data.relations);
+      const L = data.layers;
+      // GDAL's layers: points, lines and multipolygons in place of nodes, ways and relations
+      $("nodes").previousElementSibling.textContent = L ? "Points" : "Nodes";
+      $("ways").previousElementSibling.textContent = L ? "Lines" : "Ways";
+      $("relations").previousElementSibling.textContent = L ? "Multipolygons" : "Relations";
+      $("size").previousElementSibling.textContent = L ? "GeoParquet files" : "GeoParquet file";
+      $("nodes").textContent = fmt(L ? L.points : data.nodes);
+      $("ways").textContent = fmt(L ? L.lines : data.ways);
+      $("relations").textContent = fmt(L ? L.multipolygons : data.relations);
       $("seconds").textContent = `${data.seconds.toFixed(2)} s`;
       $("threads").textContent = `Threads: ${data.threads}`;
       $("mib").textContent = `${fmt(data.mib)} MiB` + (data.workersMib ? ` + ${fmt(data.workersMib)}` : "");
       $("mib").title = data.workersMib ? `${fmt(data.mib)} MiB in the main module, ${fmt(data.workersMib)} MiB in the tile workers` : "";
-      $("size").textContent = mb(data.file.size);
+      $("size").textContent = mb(L ? data.files.reduce((a, f) => a + f.size, 0) : data.file.size);
       $("size").title = data.storageMib ? `The run used at most ${fmt(data.storageMib)} MB of browser storage` : "";
-      $("command").textContent = `duckosm-rust quack ${file.name} -o out -f geoparquet` + (tiles && $("zoom").value ? ` --tile-zoom ${$("zoom").value}` : "");
+      $("command").textContent = `duckosm-rust quack ${file.name}${L ? " --gdal" : ""} -o out -f geoparquet` + (tiles && $("zoom").value ? ` --tile-zoom ${$("zoom").value}` : "");
       let at = 0;
       // tile by tile: the steps of the page, and the parts of the cut (the last tile ends step 3)
       const steps = !tiles ? data.steps : data.steps.filter((s) => {
@@ -849,6 +881,20 @@
       report("end", { seconds: data.seconds, threads: data.threads, mib: data.mib, workersMib: data.workersMib,
         storageMib: data.storageMib, steps: stepTimes(), tiles: $("timeline-text").textContent,
         facts: $("facts").textContent, cut: cutParts.join(", ") });
+      const base = file.name.replace(/\.osm\.pbf$|\.pbf$/, "");
+      if (L) {
+        // one download for each layer (the files are in OPFS until the next run)
+        $("layers").replaceChildren(...data.files.map((f, i) => {
+          const layer = ["points", "lines", "multilinestrings", "multipolygons", "other_relations"][i];
+          return Object.assign(document.createElement("a"), {
+            className: "button secondary", href: URL.createObjectURL(f), download: `${base}_gdal_${layer}.parquet`,
+            textContent: `${layer} (${fmt(L[layer])} rows, ${mb(f.size)})`,
+          });
+        }));
+        $("duckdb").hidden = true;
+        $("result").hidden = $("layers").hidden = false;
+        return;
+      }
       const a = $("download");
       if (a.href) URL.revokeObjectURL(a.href);
       // the file is in OPFS (not in the memory of the tab) until the next run
@@ -872,7 +918,7 @@
     // a test of the cut: quack.html?memory=1 keeps the parts of the cut in memory (else in OPFS)
     const memoryOpt = new URLSearchParams(location.search).get("memory");
     const inMemory = memoryOpt === null ? undefined : memoryOpt !== "0";
-    worker.postMessage({ pbf: file, sort, tiles: tiles ? tileNodes : null, zoom, workers, cutThreads, joinThreads, memory: inMemory });
+    worker.postMessage({ pbf: file, sort, tiles: tiles ? tileNodes : null, zoom, workers, cutThreads, joinThreads, memory: inMemory, gdal });
   };
 </script>
 </body>

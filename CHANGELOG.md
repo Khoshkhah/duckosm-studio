@@ -7,6 +7,12 @@ All versions are on the GitHub Releases page of `Khoshkhah/duckosm-rust`. There 
 
 ### Added
 
+- **`quack.html`: GDAL's layers in the browser** (Kaveh, 2026-11-17). The setting **Output** has a second choice, **GDAL layers**:
+  the five layers of GDAL's OSM driver (`points`, `lines`, `multilinestrings`, `multipolygons`, `other_relations`), as `ogr2ogr` and
+  QGIS give them with GDAL's default `osmconf.ini`, made by duckOSM's `quack --gdal` engine in WebAssembly, always tile by tile. Each
+  tile worker writes the rows that its tile owns (`quack_gdal_tile`), and the join writes one GeoParquet file for each layer
+  (`quack_gdal_join`); the page gives five downloads. `quack_gdal_e2e.py` checks Monaco (small tiles, at phone size): each layer has
+  the rows of the native `duckosm-rust quack --gdal -f geoparquet`.
 - **`quack.html`: the features table of QuackOSM in the browser** (Kaveh, 2026-11-13). A page that makes QuackOSM's table (`feature_id`, `tags`,
   `geometry`) of a `.osm.pbf` file with duckOSM's Rust `quack` in WebAssembly (`quack` of the module, `quack_worker.js`), sorted as QuackOSM
   sorts it or not, and gives the GeoParquet file to download. Kentucky: 7.1 s (12.5 s sorted), with the same rows as QuackOSM; the WebAssembly

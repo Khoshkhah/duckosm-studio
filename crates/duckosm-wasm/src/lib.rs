@@ -410,6 +410,71 @@ pub fn quack_join(parts: Array, sort: bool, spill: Array, out: web_sys::FileSyst
     Ok(res.map_err(|e| JsError::new(&e))? as f64)
 }
 
+/// quack --gdal, step 3 (GDAL's layers, duckOSM `docs/rust/quack.md`, "GDAL layers"): the rows of GDAL's layers that tile
+/// `[z, x, y]` owns, from its own file `tile` (a file of [`quack_cut`]), through `out` (an open file in OPFS) for
+/// [`quack_gdal_join`]. The temporary files are in `spill`. Gives `{points, lines, multilinestrings, multipolygons,
+/// other_relations}` (the members of the relations of the last two, one for each member).
+#[wasm_bindgen]
+pub fn quack_gdal_tile(tile: Blob, z: u8, x: u32, y: u32, out: web_sys::FileSystemSyncAccessHandle, spill: Array) -> Result<Object, JsError> {
+    let pool = std::rc::Rc::new(OpfsPool { free: std::cell::RefCell::new(spill.iter().map(|h| h.unchecked_into()).collect()) });
+    duckosm_core::spill::set_temp_store(Some(std::rc::Rc::new(move || {
+        Box::new(OpfsStore(pool.clone())) as Box<dyn duckosm_core::spill::Store>
+    })));
+    let _ = duckosm_core::util::STEP_HOOK.set(quack_step);
+    QUACK_START.with(|t| t.set(js_sys::Date::now()));
+    let failed = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let file = BufWriter::with_capacity(1 << 20, OpfsOut { f: OpfsFile { h: out, at: 0.0 }, failed: failed.clone() });
+    let open = || -> Result<_, String> { Ok(io::BufReader::with_capacity(1 << 20, BlobRead::new(tile.clone())?)) };
+    let res = duckosm_build::quack_gdal::quack_gdal_tile_to(open, duckosm_core::tiles::Tile { z, x, y }, file);
+    duckosm_core::spill::set_temp_store(None);
+    if let Some(e) = failed.lock().expect("one thread").take() {
+        return Err(JsError::new(&e));
+    }
+    layer_counts(&res.map_err(|e| JsError::new(&e))?)
+}
+
+/// quack --gdal, step 4: the join of the files of [`quack_gdal_tile`] (`parts`) into one GeoParquet file for each of
+/// GDAL's five layers (`outs`, open files in OPFS, in the order points, lines, multilinestrings, multipolygons,
+/// other_relations). The members of the relations wait in the temporary files of `spill`. Gives the rows of each layer.
+#[wasm_bindgen]
+pub fn quack_gdal_join(parts: Array, spill: Array, outs: Array) -> Result<Object, JsError> {
+    let pool = std::rc::Rc::new(OpfsPool { free: std::cell::RefCell::new(spill.iter().map(|h| h.unchecked_into()).collect()) });
+    duckosm_core::spill::set_temp_store(Some(std::rc::Rc::new(move || {
+        Box::new(OpfsStore(pool.clone())) as Box<dyn duckosm_core::spill::Store>
+    })));
+    let _ = duckosm_core::util::STEP_HOOK.set(quack_step);
+    QUACK_START.with(|t| t.set(js_sys::Date::now()));
+    let failed = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let files: Vec<_> = outs
+        .iter()
+        .map(|h| BufWriter::with_capacity(1 << 20, OpfsOut { f: OpfsFile { h: h.unchecked_into(), at: 0.0 }, failed: failed.clone() }))
+        .collect();
+    if files.len() != 5 {
+        return Err(JsError::new("quack_gdal_join: one open file for each of the five layers"));
+    }
+    let readers = parts
+        .iter()
+        .enumerate()
+        .map(|(i, p)| Ok(Part { r: BlobRead::exact(p.unchecked_into())?, i }))
+        .collect::<Result<Vec<_>, String>>()
+        .map_err(|e| JsError::new(&e))?;
+    let res = duckosm_build::quack_gdal::quack_gdal_join_to(readers, None, Some(files));
+    duckosm_core::spill::set_temp_store(None);
+    if let Some(e) = failed.lock().expect("one thread").take() {
+        return Err(JsError::new(&e));
+    }
+    layer_counts(&res.map_err(|e| JsError::new(&e))?)
+}
+
+/// The rows of each of GDAL's layers as an object.
+fn layer_counts(n: &[usize; 6]) -> Result<Object, JsError> {
+    let o = Object::new();
+    for (i, k) in ["points", "lines", "multilinestrings", "multipolygons", "other_relations"].iter().enumerate() {
+        Reflect::set(&o, &(*k).into(), &(n[i + 1] as f64).into()).map_err(|_| JsError::new(k))?;
+    }
+    Ok(o)
+}
+
 /// A part of [`quack_join`]. The join drops it when it has read all its rows: the drop tells the page `{done: i}`, and
 /// the page deletes the file of the part, so the parts and the joined file are not on the disk at the same time.
 struct Part {

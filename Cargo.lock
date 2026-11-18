@@ -329,11 +329,12 @@ dependencies = [
 [[package]]
 name = "duckosm-build"
 version = "0.7.0"
-source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=f7beb36019674defb2bb4af3225dd4a1db4ee0db#f7beb36019674defb2bb4af3225dd4a1db4ee0db"
+source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=430ed64849dd68f4cc9fabf35f1b354884846e00#430ed64849dd68f4cc9fabf35f1b354884846e00"
 dependencies = [
  "arrow-array",
  "duckosm-core",
  "duckosm-parquet",
+ "geo",
  "h3o",
  "rayon",
  "roadstyle-levels",
@@ -347,7 +348,7 @@ dependencies = [
 [[package]]
 name = "duckosm-core"
 version = "0.7.0"
-source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=f7beb36019674defb2bb4af3225dd4a1db4ee0db#f7beb36019674defb2bb4af3225dd4a1db4ee0db"
+source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=430ed64849dd68f4cc9fabf35f1b354884846e00#430ed64849dd68f4cc9fabf35f1b354884846e00"
 dependencies = [
  "flate2",
  "geo",
@@ -365,7 +366,7 @@ dependencies = [
 [[package]]
 name = "duckosm-parquet"
 version = "0.7.0"
-source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=f7beb36019674defb2bb4af3225dd4a1db4ee0db#f7beb36019674defb2bb4af3225dd4a1db4ee0db"
+source = "git+https://github.com/Khoshkhah/duckOSM.git?rev=430ed64849dd68f4cc9fabf35f1b354884846e00#430ed64849dd68f4cc9fabf35f1b354884846e00"
 dependencies = [
  "arrow-array",
  "arrow-schema",
@@ -526,6 +527,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "geo-traits"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e7c353d12a704ccfab1ba8bfb1a7fe6cb18b665bf89d37f4f7890edcd260206"
+
+[[package]]
 name = "geo-types"
 version = "0.7.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -599,6 +606,8 @@ dependencies = [
  "ahash",
  "either",
  "float_eq",
+ "geo",
+ "geo-traits",
  "h3o-bit",
  "libm",
  "ordered-float",
@@ -920,8 +929,8 @@ dependencies = [
 
 [[package]]
 name = "pbfcut"
-version = "0.1.0"
-source = "git+https://github.com/Khoshkhah/pbfcut.git?rev=8e565be800fac2ef6e1422cece95e766ba866516#8e565be800fac2ef6e1422cece95e766ba866516"
+version = "0.2.2"
+source = "git+https://github.com/Khoshkhah/pbfcut.git?rev=2facc00595ff6397660d76211ca255098affab38#2facc00595ff6397660d76211ca255098affab38"
 dependencies = [
  "flate2",
  "h3o",
