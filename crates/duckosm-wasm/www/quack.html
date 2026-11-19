@@ -1089,7 +1089,8 @@
     delete src.tiles;
     src.url = `pmtiles://${f.name}`;
     previewMap?.remove();
-    previewMap = new maplibregl.Map({ container: "preview", style, center: [h.centerLon, h.centerLat], zoom: Math.min(h.centerZoom + 1, 14), cooperativeGestures: true });
+    // the box of the file (the center can be in the sea: the boundary lines of a coast go into the sea)
+    previewMap = new maplibregl.Map({ container: "preview", style, bounds: [h.minLon, h.minLat, h.maxLon, h.maxLat], cooperativeGestures: true });
     previewMap.addControl(new maplibregl.NavigationControl({ showCompass: false }));
     window.previewMap = previewMap;
     previewMap.once("idle", () => { $("preview").dataset.ready = "1"; });

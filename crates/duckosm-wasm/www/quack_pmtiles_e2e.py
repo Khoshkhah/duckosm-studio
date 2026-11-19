@@ -80,7 +80,7 @@ with sync_playwright() as p:
         # the map of the file: MapLibre loads its tiles, and the map has features of the file
         page.wait_for_selector("#preview[data-ready]", timeout=60000)
         n = page.evaluate("window.previewMap.queryRenderedFeatures().filter(f => f.source === 'versatiles-shortbread').length")
-        assert n > 0, "the map shows no feature of the file"
+        assert n > 50, f"the map shows only {n} features of the file"
         print(f"   the map shows {n} features of the file")
         page.wait_for_timeout(1000)
         page.screenshot(path=str(out / f"quack-pmtiles-{name}.png"), full_page=True)
