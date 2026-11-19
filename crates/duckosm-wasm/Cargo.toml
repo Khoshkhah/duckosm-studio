@@ -9,11 +9,11 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # The engine is in the duckOSM repository (rust/). One rev for all its crates; docs/development.md, "Where the engine lives".
-duckosm-core = { git = "https://github.com/Khoshkhah/duckOSM.git", rev = "9e3591699724e0fe69324a672f5b615d2f3975a5" }
+duckosm-core = { git = "https://github.com/Khoshkhah/duckOSM.git", rev = "92cd8f0d8147b7056f63f07341a9d41d0f6ae8c7" }
 # write_tables and the fixes reader, without DuckDB. zstd is a C library: snap (pure Rust) is the
 # compression in WebAssembly. gpkg: the GeoPackage of quack --gdal (SQLite: in WebAssembly, rusqlite uses sqlite-wasm-rs,
 # whose C code needs a clang with the target wasm32, build.sh).
-duckosm-build = { git = "https://github.com/Khoshkhah/duckOSM.git", rev = "9e3591699724e0fe69324a672f5b615d2f3975a5", default-features = false, features = ["snap", "gpkg"] }
+duckosm-build = { git = "https://github.com/Khoshkhah/duckOSM.git", rev = "92cd8f0d8147b7056f63f07341a9d41d0f6ae8c7", default-features = false, features = ["snap", "gpkg"] }
 wasm-bindgen = "0.2"
 js-sys = "0.3"
 # read a region file piece by piece from the browser (Blob.slice and FileReaderSync, in the build worker)
@@ -33,4 +33,4 @@ threads = ["dep:wasm-bindgen-rayon"]
 # the tests read the page's time zone table
 serde_json = "1"
 # the native build of the tests finds the time zone with tzf-rs (the browser module does not have it)
-duckosm-build = { git = "https://github.com/Khoshkhah/duckOSM.git", rev = "9e3591699724e0fe69324a672f5b615d2f3975a5", default-features = false, features = ["snap", "tzf"] }
+duckosm-build = { git = "https://github.com/Khoshkhah/duckOSM.git", rev = "92cd8f0d8147b7056f63f07341a9d41d0f6ae8c7", default-features = false, features = ["snap", "tzf"] }
