@@ -5,6 +5,10 @@ All versions are on the GitHub Releases page of `Khoshkhah/duckosm-rust`. There 
 
 ## Not released
 
+### Changed
+
+- roadstyle pin `9df3ceda` → `53135c49` (roadstyle main, PR 195): the map and the dashboard of roadstyle main, the same commit as duckOSM.
+
 ### Added
 
 - **`quack.html`, GDAL layers: the GeoPackage** (Kaveh, 2026-11-18). The new setting **Format** gives GeoParquet, GeoPackage or
