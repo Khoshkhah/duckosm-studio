@@ -151,8 +151,8 @@ fn browser_area_build_equals_native_build() {
     .unwrap();
     // 3 modes x 10 files (edges, private_edges, nodes, virtual_nodes, ways, way_nodes, edge_id_map, edge_graph,
     // turn_permission, and in driving the two turn restriction tables and the lane profile) + 4 area files + 3 raw
-    // files + the 2 levels files (solve) + the 2 bus files + the cut file
-    assert_eq!(names.len(), 3 * 9 + 3 + 4 + 3 + 2 + 2 + 1, "{names:?}");
+    // files + the 2 levels files (solve) + the 2 bus files + the cut file + 3 modes x 2 tile files (tile_nodes, tile_edges)
+    assert_eq!(names.len(), 3 * 9 + 3 + 4 + 3 + 2 + 2 + 1 + 3 * 2, "{names:?}");
     assert!(names.contains(&"cut.osm.pbf".to_string()));
     assert!(names.contains(&"raw_ways.parquet".to_string()));
     for n in &names {
