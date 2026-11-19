@@ -43,6 +43,7 @@ All keys are BIGINT. Keep them as BIGINT in every join. If a program reads them 
 | `edge_id_map` | The edges that each merged edge comes from. |
 | `ways`, `way_nodes` | The OSM ways of the network, with their tags and their nodes in order. |
 | `virtual_nodes` | Always empty, as in duckOSM. |
+| `tile_nodes`, `tile_edges` | The map tile of each node at zoom 28, and the tiles of the two ends of each edge, for tileroute. [Tile keys](https://khoshkhah.github.io/duckOSM/reference/database/#tile-keys) gives the key. |
 
 An example: the length of the driving roads, by class.
 
