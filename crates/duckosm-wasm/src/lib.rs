@@ -261,6 +261,82 @@ pub fn quack(
     Ok(o)
 }
 
+/// duckOSM's `quack --pmtiles` (docs/exports/pmtiles.md of duckOSM): vector tiles of the Shortbread schema (zoom 0 to
+/// 14) of the `.osm.pbf` file `pbf`, in one PMTiles file written through `out` (an open file in OPFS). `spill` is the
+/// pool of open files in OPFS for the temporary files (the rows of the tiles wait there for their sort). With
+/// `tile_nodes` or `tile_zoom` (0 to 14), the engine reads the file tile by tile (as [`quack`]), so the memory follows
+/// the size of a tile. `fixes`: the
+/// text of an OSM fixes file. Gives `{features, tiles, bytes, layers, steps}`: `layers` is `{name: [features at zoom 0
+/// to 14]}`.
+#[wasm_bindgen]
+pub fn quack_pmtiles(
+    pbf: Blob,
+    spill: Array,
+    out: web_sys::FileSystemSyncAccessHandle,
+    tile_nodes: Option<f64>,
+    tile_zoom: Option<u8>,
+    fixes: Option<String>,
+) -> Result<Object, JsError> {
+    use duckosm_build::TileSize;
+    let tiles = match (tile_zoom, tile_nodes) {
+        (Some(z), _) if z <= 14 => Some(TileSize::Zoom(z)),
+        (Some(z), _) => return Err(JsError::new(&format!("tile zoom {z}: use 0 to 14"))),
+        (None, n) => n.map(|n| TileSize::Nodes(n as usize)),
+    };
+    QUACK_STEPS.with(|s| s.borrow_mut().clear());
+    let _ = duckosm_core::util::STEP_HOOK.set(quack_step);
+    QUACK_START.with(|t| t.set(js_sys::Date::now()));
+    let pool = std::rc::Rc::new(OpfsPool {
+        free: std::cell::RefCell::new(spill.iter().map(|h| h.unchecked_into()).collect()),
+    });
+    duckosm_core::spill::set_temp_store(Some(std::rc::Rc::new(move || {
+        Box::new(OpfsStore(pool.clone())) as Box<dyn duckosm_core::spill::Store>
+    })));
+    let failed = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let file = BufWriter::with_capacity(1 << 20, OpfsOut { f: OpfsFile { h: out, at: 0.0 }, failed: failed.clone() });
+    let (size, pass) = (pbf.size(), std::cell::Cell::new(0u32));
+    let open = || -> Result<_, String> {
+        pass.set(pass.get() + 1);
+        let r = Counted { r: BlobRead::new(pbf.clone())?, read: 0, next: 0, size, pass: pass.get() };
+        Ok(io::BufReader::with_capacity(1 << 20, r))
+    };
+    let res = (|| {
+        let fixes = fixes.map(|t| quack_fixes_of(&t, &open)).transpose()?;
+        duckosm_build::quack_pmtiles::quack_pmtiles_to(&open, file, tiles, fixes)
+    })();
+    duckosm_core::spill::set_temp_store(None);
+    if let Some(e) = failed.lock().expect("one thread").take() {
+        return Err(JsError::new(&e));
+    }
+    let n = res.map_err(|e| JsError::new(&e))?;
+    let o = Object::new();
+    let set = |k: &str, v: JsValue| Reflect::set(&o, &k.into(), &v).map(|_| ()).map_err(|_| JsError::new(k));
+    set("features", (n.features as f64).into())?;
+    set("tiles", (n.tiles as f64).into())?;
+    set("bytes", (n.bytes as f64).into())?;
+    let layers = Object::new();
+    for (name, zooms) in &n.layer_zoom {
+        let a = Array::new();
+        zooms.iter().for_each(|c| {
+            a.push(&(*c as f64).into());
+        });
+        let _ = Reflect::set(&layers, &(*name).into(), &a);
+    }
+    set("layers", layers.into())?;
+    let steps = Array::new();
+    QUACK_STEPS.with(|s| {
+        for (name, ms, mib) in s.borrow().iter() {
+            let step = Object::new();
+            let _ = Reflect::set(&step, &"step".into(), &name.into());
+            let _ = Reflect::set(&step, &"ms".into(), &(*ms).into());
+            let _ = Reflect::set(&step, &"mib".into(), &(*mib).into());
+            steps.push(&step);
+        }
+    });
+    set("steps", steps.into())?;
+    Ok(o)
+}
+
 /// Quack by tiles with a worker for each tile (`quack_worker.js` and `quack_tile_worker.js`), step 1: the tiles of the
 /// `.osm.pbf` file `pbf` (tiles of at most `tile_nodes` nodes, or of zoom `tile_zoom`), as an array of `[z, x, y]`.
 #[wasm_bindgen]
@@ -638,6 +714,13 @@ impl Write for OpfsOut {
     }
 }
 
+impl io::Seek for OpfsOut {
+    fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
+        let r = self.f.seek(pos);
+        self.note(r)
+    }
+}
+
 fn opfs_err(e: JsValue) -> io::Error {
     io::Error::other(format!("OPFS: {e:?}"))
 }
@@ -706,6 +789,19 @@ impl Write for OpfsFile {
     }
     fn flush(&mut self) -> io::Result<()> {
         self.h.flush().map_err(opfs_err)
+    }
+}
+
+/// The PMTiles writer of `quack_pmtiles` writes the header at the start after the tiles.
+impl io::Seek for OpfsFile {
+    fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
+        let size = || self.h.get_size().map_err(opfs_err);
+        self.at = match pos {
+            io::SeekFrom::Start(n) => n as f64,
+            io::SeekFrom::Current(d) => self.at + d as f64,
+            io::SeekFrom::End(d) => size()? + d as f64,
+        };
+        Ok(self.at as u64)
     }
 }
 

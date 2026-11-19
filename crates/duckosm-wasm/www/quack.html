@@ -1,7 +1,9 @@
 <!doctype html>
 <!-- duckOSM's quack in the browser (docs/rust/quack.md of duckOSM): the features table of QuackOSM of a .osm.pbf file,
      made by the Rust engine in WebAssembly, as a GeoParquet file. quack_e2e.py tests it. The look is the look of pbfcut's
-     online page (pbfcut web/www/index.html). -->
+     online page (pbfcut web/www/index.html). The output "Vector tiles" is duckOSM's quack --pmtiles: the Shortbread vector
+     tiles in one PMTiles file, with a map preview (MapLibre and the VersaTiles style "colorful"); quack_pmtiles_e2e.py
+     tests it. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -93,6 +95,8 @@
   th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   th:first-child, td:first-child { text-align: left; padding-left: 0; white-space: normal; }
   #timeline-svg { display: block; background: var(--field); border-radius: 8px; }
+  #preview { height: 380px; margin-top: 14px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
+  @media (max-width: 560px) { #preview { height: 300px; } }
   code { font-size: .8rem; overflow-wrap: anywhere; }
   /* the help popups (the buttons "?") */
   button.help { width: 18px; height: 18px; padding: 0; margin-left: 4px; border-radius: 50%; border: 1px solid var(--line);
@@ -165,6 +169,7 @@
       <option value="quack">QuackOSM table</option>
       <option value="gdal">GDAL layers</option>
       <option value="geofabrik">Geofabrik layers</option>
+      <option value="pmtiles">Vector tiles (PMTiles, Shortbread)</option>
     </select></div>
     <div data-gdal hidden><label for="format">Format</label><select id="format">
       <option value="geoparquet">GeoParquet</option>
@@ -223,6 +228,8 @@
     <button id="clear" type="button" class="secondary">Clear</button>
   </div>
   <div class="row" id="layers" hidden></div>
+  <div id="preview" hidden role="img" aria-label="a map of the vector tiles"></div>
+  <p class="hint" id="preview-text"></p>
   <p class="hint" id="duckdb-status"></p>
   <progress id="duckdb-bar" hidden></progress>
   <div id="timeline" hidden>
@@ -265,7 +272,7 @@
       ["Local file", "A .osm.pbf file on this computer. You can also drop it on this card. The page does not upload it."],
     ]],
     settings: ["Settings", [
-      ["Output", "QuackOSM table: one table of the OSM features (feature_id, tags, geometry), as QuackOSM gives it. GDAL layers: the five layers of GDAL's OSM driver (points, lines, multilinestrings, multipolygons, other_relations), as ogr2ogr and QGIS give them with GDAL's default osmconf.ini. Geofabrik layers: the 20 layers of Geofabrik's free shapefiles and GeoPackages (gis_osm_roads_free, gis_osm_pois_free, gis_osm_buildings_a_free, ...), with Geofabrik's feature classes, for any area. The layers are always made tile by tile, in the order of the file (no sort)."],
+      ["Output", "QuackOSM table: one table of the OSM features (feature_id, tags, geometry), as QuackOSM gives it. GDAL layers: the five layers of GDAL's OSM driver (points, lines, multilinestrings, multipolygons, other_relations), as ogr2ogr and QGIS give them with GDAL's default osmconf.ini. Geofabrik layers: the 20 layers of Geofabrik's free shapefiles and GeoPackages (gis_osm_roads_free, gis_osm_pois_free, gis_osm_buildings_a_free, ...), with Geofabrik's feature classes, for any area. The layers are always made tile by tile, in the order of the file (no sort). Vector tiles: a base map of the Shortbread schema (shortbread-tiles.org), zoom 0 to 14, in one PMTiles file, as duckosm quack --pmtiles gives it. MapLibre, OpenLayers and QGIS show it with no tile server, with a Shortbread style (for example VersaTiles)."],
       ["OSM fixes", "The rules of Edit OSM data in Studio (a duckOSM fixes file, as duckosm quack --fixes). The rows get the same edits as the network: the removed ways, the changed tags, the new ways, and the rules oneway, lanes and layer as OSM tags. A rule with no OSM tag (closed to a mode, a turn) is not used. The page selects the fixes of your newest saved area that has fixes. A fixes file: select it on this computer."],
       ["Format", "GDAL and Geofabrik layers only. GeoParquet: one file for each layer. GeoPackage: one .gpkg file with the layers and their spatial indexes (R-trees). Both (GDAL): the GeoParquet files and the GeoPackage, from one run. Shapefiles (Geofabrik): one .zip file with a shapefile for each layer, as Geofabrik's .shp.zip. The page writes the files directly into the browser storage, not into the memory."],
       ["Tile by tile", "The file is cut into tiles, and each tile gives its rows. The memory then follows the size of a tile, not of the file. On by default, for every file. It is necessary for a file larger than about 150 MB: the browser has at most 4 GiB of memory. The rows are the same."],
@@ -285,6 +292,7 @@
     result: ["Result", [
       ["GDAL layers", "One GeoParquet file for each of GDAL's five layers, with its rows and its size, and/or one GeoPackage file with the five layers. QGIS and GDAL open them."],
       ["Geofabrik layers", "The 20 layers of Geofabrik's free files: one GeoPackage, one zip file of shapefiles, or one GeoParquet file for each layer. QGIS and GDAL open them."],
+      ["Vector tiles", "The PMTiles file, and a map of it with the VersaTiles style \"colorful\" (the style and the fonts come from tiles.versatiles.org). The sea has the color of the land: the ocean layer of Shortbread is not in the OSM file."],
       ["Download GeoParquet", "The features table of QuackOSM (feature_id, tags, geometry) as a GeoParquet file."],
       ["Make the .duckdb file", "DuckDB in the browser loads the GeoParquet file into the table main.quackosm of a .duckdb file, in the browser storage. Then download it."],
       ["Tiles of each worker", "One row for each worker, one bar for each tile: it shows whether the workers ran at the same time. Move the pointer on a bar to see its tile."],
@@ -313,7 +321,7 @@
       $("tiles").checked = true;
       $("sort").checked = f.size <= LARGE;
     }
-    if (f && gdalOut()) showOutput();
+    if (f && (gdalOut() || pmOut())) showOutput();
     file = f;
     $("input-text").textContent = !file ? "" : `Input: ${file.name}, ${mb(file.size)}` +
       (source() === "region" ? " (in the storage of this site)" : "") + (file.size > LARGE ? ". A large file: no sort." : "");
@@ -472,30 +480,35 @@
   }
   $("zoom").append(new Option("4 million nodes", ""));
   const showTiles = () => {
-    for (const e of document.querySelectorAll("[data-tiles]")) e.hidden = !$("tiles").checked;
-    $("cut-label").textContent = $("tiles").checked ? "Cut threads" : "Threads";
+    // the vector tiles are one run: only the tile size, and the threads of the run
+    const pm = $("output").value === "pmtiles";
+    for (const e of document.querySelectorAll("[data-tiles]")) e.hidden = !$("tiles").checked || (pm && !e.querySelector("#zoom"));
+    $("cut-label").textContent = $("tiles").checked && !pm ? "Cut threads" : "Threads";
   };
   $("tiles").onchange = showTiles;
   // GDAL's and Geofabrik's layers: always tile by tile, in the order of the file (no sort)
-  function gdalOut() { return $("output").value !== "quack"; }
+  function gdalOut() { return ["gdal", "geofabrik"].includes($("output").value); }
+  // the vector tiles: one run (the engine reads the file tile by tile, on by default), no sort
+  function pmOut() { return $("output").value === "pmtiles"; }
   const FORMATS = {
     gdal: [["geoparquet", "GeoParquet"], ["gpkg", "GeoPackage"], ["both", "Both"]],
     geofabrik: [["gpkg", "GeoPackage"], ["shp", "Shapefiles (.zip)"], ["geoparquet", "GeoParquet"]],
   };
   function showOutput() {
-    const gdal = gdalOut();
+    const gdal = gdalOut(), pm = pmOut();
     const formats = FORMATS[$("output").value];
     if (formats && $("format").dataset.output !== $("output").value) {
       $("format").replaceChildren(...formats.map(([value, text]) => Object.assign(document.createElement("option"), { value, textContent: text })));
       $("format").dataset.output = $("output").value;
     }
-    if (gdal) {
+    if (gdal || pm) {
       $("tiles").checked = true;
       $("sort").checked = false;
     }
-    $("tiles").disabled = $("sort").disabled = gdal;
+    $("tiles").disabled = gdal;
+    $("sort").disabled = gdal || pm;
     for (const e of document.querySelectorAll("[data-gdal]")) e.hidden = !gdal;
-    $("run").textContent = gdal ? "Make the layers" : "Make the table";
+    $("run").textContent = gdal ? "Make the layers" : pm ? "Make the tiles" : "Make the table";
     showTiles();
   }
   $("output").onchange = showOutput;
@@ -519,6 +532,14 @@
     "quack 4b: the relations": "5. Make the relation rows (multipolygons)",
     "quack 5: the sort": "6. Sort the rows as QuackOSM and write",
   };
+  // the vector tiles (duckosm_build::quack_pmtiles): the steps of the page; the steps of the engine between them show in
+  // the status
+  const PM_STEPS = ["quack --pmtiles: the boundaries", "quack --pmtiles: the rows of the tiles", "quack --pmtiles: the tiles"];
+  Object.assign(LABELS, {
+    "quack --pmtiles: the boundaries": "1. Read the boundary relations, their ways and nodes",
+    "quack --pmtiles: the rows of the tiles": "2. Read the features, cut them into the tiles of each zoom",
+    "quack --pmtiles: the tiles": "3. Write the tiles (MVT, gzip) into the PMTiles file",
+  });
   const label = (name) => LABELS[name] ?? name;
   // tile by tile (duckosm_core::quack::features_by_tiles): the steps of the page, and the step of each step of the engine
   const TILE_NODES = 4000000;
@@ -613,7 +634,7 @@
   // The files of quack in the storage of the browser (OPFS): the folder of a run (quack-*) and the .duckdb file. They stay
   // for the download until the next run; the page removes them when it opens and before each run, and Clear removes them.
   // The kept region files (regions/) stay.
-  let parquet = null;
+  let parquet = null, previewMap = null;
   async function clearStorage() {
     const root = await navigator.storage.getDirectory();
     for await (const name of root.keys()) {
@@ -625,6 +646,10 @@
     }
     $("layers").replaceChildren();
     $("layers").hidden = true;
+    previewMap?.remove();
+    previewMap = null;
+    $("preview").hidden = true;
+    $("preview-text").textContent = "";
     parquet = null;
     await showStorage();
   }
@@ -752,13 +777,15 @@
 
   // ---- the run
   $("run").onclick = async () => {
-    const gdal = gdalOut();
-    const tiles = $("tiles").checked || gdal;
+    const gdal = gdalOut(), pm = pmOut();
+    // tile by tile with the tile workers (the vector tiles: one run, the engine reads the file tile by tile)
+    const pmTiles = pm && $("tiles").checked;
+    const tiles = !pm && ($("tiles").checked || gdal);
     runByTiles = tiles;
-    if (!tiles && file.size > 300 * 2 ** 20 && !confirm(`${file.name} is ${(file.size / 2 ** 20).toFixed(0)} MB. The browser ` +
+    if (!tiles && !pmTiles && file.size > 300 * 2 ** 20 && !confirm(`${file.name} is ${(file.size / 2 ** 20).toFixed(0)} MB. The browser ` +
       "has at most 4 GiB of memory, and Île-de-France (338 MB) needs more in one run. Make the table tile by tile, or the " +
       "run most likely stops with an error. Run in one run anyway?")) return;
-    const sort = $("sort").checked;
+    const sort = $("sort").checked && !pm;
     const fixes = await fixesText();
     const name = (s) => (tiles ? TILE_LABELS[s] : label(s));
     $("run").disabled = true;
@@ -774,7 +801,7 @@
     await clearStorage();
     // all steps of the run, the first one running; tile by tile: the join is step 4, or with the sort, the sort
     const shown = (s) => (sort ? !(tiles && s === "tiles 4") : !s.startsWith("quack 5"));
-    $("steplist").replaceChildren(...(tiles ? TILE_STEPS : STEPS).filter(shown).map((s, i) => {
+    $("steplist").replaceChildren(...(pm ? PM_STEPS : tiles ? TILE_STEPS : STEPS).filter(shown).map((s, i) => {
       const li = document.createElement("li");
       li.dataset.step = s;
       li.className = i ? "" : "run";
@@ -875,6 +902,7 @@
       $("clock").textContent = `${data.seconds.toFixed(1)} s`;
       status("Done.", "done");
       memory(data.mib, data.workersMib, data.workerMibs);
+      if (data.pmtiles) return showTiles_(data, pmTiles, fixes);
       const L = data.layers;
       // the layers: points, lines and polygons (GDAL: multipolygons; Geofabrik: the _a layers) in place of nodes, ways and
       // relations
@@ -968,6 +996,7 @@
       }
       const a = $("download");
       if (a.href) URL.revokeObjectURL(a.href);
+      a.textContent = "Download GeoParquet";
       // the file is in OPFS (not in the memory of the tab) until the next run
       a.href = URL.createObjectURL(data.file);
       parquet = data.file;
@@ -976,7 +1005,7 @@
     };
     // the size of a tile: a test can set a smaller one (data-tile-nodes of the button)
     const tileNodes = Number($("run").dataset.tileNodes) || TILE_NODES;
-    const zoom = tiles && $("zoom").value !== "" ? Number($("zoom").value) : null;
+    const zoom = (tiles || pmTiles) && $("zoom").value !== "" ? Number($("zoom").value) : null;
     const count = (id) => Math.max(1, Math.min(64, Number($(id).value) || DEFAULT_WORKERS));
     const [cutThreads, workers, joinThreads] = [count("cut-threads"), count("workers"), count("join-threads")];
     const plan = tiles ? `cut ${cutThreads} threads, ${workers} tile workers, join ${joinThreads} threads` : `${cutThreads} threads`;
@@ -989,8 +1018,84 @@
     // a test of the cut: quack.html?memory=1 keeps the parts of the cut in memory (else in OPFS)
     const memoryOpt = new URLSearchParams(location.search).get("memory");
     const inMemory = memoryOpt === null ? undefined : memoryOpt !== "0";
-    worker.postMessage({ pbf: file, sort, tiles: tiles ? tileNodes : null, zoom, workers, cutThreads, joinThreads, memory: inMemory, gdal, geofabrik: $("output").value === "geofabrik", format: $("format").value, fixes });
+    worker.postMessage({ pbf: file, sort, tiles: tiles || (pmTiles && zoom === null) ? tileNodes : null, zoom, workers, cutThreads, joinThreads, memory: inMemory, gdal, geofabrik: $("output").value === "geofabrik", pmtiles: pm, format: $("format").value, fixes });
   };
+
+  // ---- the result of the vector tiles: the numbers, the download and a map of the file
+  function showTiles_(data, pmTiles, fixes) {
+    const zooms = Object.values(data.layers);
+    const at14 = zooms.reduce((a, z) => a + z[14], 0);
+    $("nodes").previousElementSibling.textContent = "Features";
+    $("ways").previousElementSibling.textContent = "Tiles";
+    $("relations").previousElementSibling.textContent = "Layers";
+    $("size").previousElementSibling.textContent = "PMTiles file";
+    $("nodes").textContent = fmt(data.features);
+    $("ways").textContent = fmt(data.tiles);
+    $("relations").textContent = fmt(zooms.length);
+    $("relations").title = `${Object.keys(data.layers).join(", ")}; ${fmt(at14)} features at zoom 14`;
+    $("seconds").textContent = `${data.seconds.toFixed(2)} s`;
+    $("threads").textContent = `Threads: ${data.threads}`;
+    $("mib").textContent = `${fmt(data.mib)} MiB`;
+    $("mib").title = "";
+    $("size").textContent = mb(data.file.size);
+    $("size").title = data.storageMib ? `The run used at most ${fmt(data.storageMib)} MB of browser storage` : "";
+    $("command").textContent = `duckosm quack ${file.name} --pmtiles -o out` + (pmTiles && $("zoom").value ? ` --tile-zoom ${$("zoom").value}` : "") + (fixes ? " --fixes osm_fixes.yaml" : "");
+    let at = 0;
+    $("steps").replaceChildren(...data.steps.map((s) => {
+      const tr = document.createElement("tr");
+      for (const text of [label(s.step), `${((s.ms - at) / 1000).toFixed(1)} s`, `${(s.ms / 1000).toFixed(1)} s`, `${fmt(Math.round(s.mib))} MiB`]) {
+        tr.append(Object.assign(document.createElement("td"), { textContent: text }));
+      }
+      at = s.ms;
+      return tr;
+    }));
+    $("timeline").hidden = true;
+    window.lastResult = data;
+    report("end", { seconds: data.seconds, threads: data.threads, mib: data.mib, storageMib: data.storageMib, steps: stepTimes(), pmtiles: data.tiles });
+    const a = $("download");
+    if (a.href) URL.revokeObjectURL(a.href);
+    a.href = URL.createObjectURL(data.file);
+    a.download = file.name.replace(/\.osm\.pbf$|\.pbf$/, "") + ".pmtiles";
+    a.textContent = "Download PMTiles";
+    $("duckdb").hidden = true;
+    $("result").hidden = a.hidden = false;
+    preview(data.file).catch((e) => { $("preview-text").textContent = `The map does not show: ${(e && e.message) || e}`; });
+  }
+
+  // a map of the PMTiles file (a File in OPFS, read in place) with the VersaTiles style "colorful", whose source is the file
+  const MAPLIBRE = "https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl";
+  const PMTILES = "https://cdn.jsdelivr.net/npm/pmtiles@4.3.0/dist/pmtiles.js";
+  const STYLE = "https://tiles.versatiles.org/assets/styles/colorful/style.json";
+  const script = (src) => new Promise((ok, fail) => {
+    if (document.querySelector(`script[src="${src}"]`)) return ok();
+    document.head.append(Object.assign(document.createElement("script"), { src, onload: ok, onerror: () => fail(new Error(`${src} does not load`)) }));
+  });
+  async function preview(f) {
+    $("preview").hidden = false;
+    $("preview-text").textContent = "Loading the map ...";
+    if (!document.querySelector(`link[href="${MAPLIBRE}.css"]`)) document.head.append(Object.assign(document.createElement("link"), { rel: "stylesheet", href: `${MAPLIBRE}.css` }));
+    await Promise.all([script(`${MAPLIBRE}.js`), script(PMTILES)]);
+    const tiles = new pmtiles.PMTiles(new pmtiles.FileSource(f));
+    const protocol = new pmtiles.Protocol();
+    protocol.add(tiles);
+    maplibregl.removeProtocol?.("pmtiles");
+    maplibregl.addProtocol("pmtiles", protocol.tile);
+    const h = await tiles.getHeader();
+    const style = await (await fetch(STYLE)).json();
+    // only the Shortbread source of the style, from the file (the land cover source of VersaTiles is not in the file)
+    for (const id of Object.keys(style.sources)) if (id !== "versatiles-shortbread") delete style.sources[id];
+    style.layers = style.layers.filter((l) => !l.source || l.source === "versatiles-shortbread");
+    const src = style.sources["versatiles-shortbread"];
+    delete src.tiles;
+    src.url = `pmtiles://${f.name}`;
+    previewMap?.remove();
+    // the box of the file (the center can be in the sea: the boundary lines of a coast go into the sea)
+    previewMap = new maplibregl.Map({ container: "preview", style, bounds: [h.minLon, h.minLat, h.maxLon, h.maxLat], cooperativeGestures: true });
+    previewMap.addControl(new maplibregl.NavigationControl({ showCompass: false }));
+    window.previewMap = previewMap;
+    previewMap.once("idle", () => { $("preview").dataset.ready = "1"; });
+    $("preview-text").textContent = "The map of the file, with the VersaTiles style \"colorful\". The sea has the color of the land: the ocean layer of Shortbread is not in the OSM file.";
+  }
 </script>
 </body>
 </html>

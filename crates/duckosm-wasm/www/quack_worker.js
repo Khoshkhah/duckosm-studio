@@ -9,8 +9,10 @@
 // file (duckosm quack --fixes), or null}. Out: {nodes, ways, relations, steps: for
 // each step its time since the start (ms) and the WebAssembly memory (MiB), file: the GeoParquet file (a File in OPFS),
 // seconds, threads, mib} (gdal: files, the GeoParquet file of each layer, gpkg, the GeoPackage, shp, the zip file of
-// shapefiles, and layers, the rows of
-// each layer) or {error}. The page makes a new worker for each run: the
+// shapefiles, and layers, the rows of each layer) or {error}. pmtiles: the Shortbread vector tiles in one PMTiles file
+// (duckosm quack --pmtiles), in one run of this worker, tile by tile in the engine with tiles or zoom; out: {pmtiles: true,
+// features, tiles, layers (the features of each layer at each zoom), steps, file (the PMTiles file in OPFS), seconds,
+// threads, mib}. The page makes a new worker for each run: the
 // memory of a WebAssembly module never shrinks. A cross-origin isolated page gets the module with threads
 // (pkg-threads), another page the module with one thread (pkg), as in build_worker.js.
 //
@@ -57,6 +59,18 @@ onmessage = async ({ data }) => {
       }
     }
     for (let i = 0; i < SPILL; i++) spill.push(await (await dir.getFileHandle(`t${i}`, { create: true })).createSyncAccessHandle());
+    if (data.pmtiles) {
+      const ph = await dir.getFileHandle("quack.pmtiles", { create: true });
+      out = await ph.createSyncAccessHandle();
+      const t = performance.now();
+      const r = pkg.quack_pmtiles(data.pbf, spill, out, data.tiles ?? undefined, data.zoom ?? undefined, data.fixes ?? undefined);
+      const seconds = (performance.now() - t) / 1000;
+      const mib = Math.round(wasm.memory.buffer.byteLength / 2 ** 20);
+      out.close();
+      out = null;
+      postMessage({ pmtiles: true, features: r.features, tiles: r.tiles, layers: r.layers, steps: r.steps, file: await ph.getFile(), seconds, storageMib: Math.round((await navigator.storage.estimate()).usage / 2 ** 20), threads, mib });
+      return;
+    }
     const fh = await dir.getFileHandle("quack.parquet", { create: true });
     // GDAL's layers: the tile workers and the join make them, also for one tile
     if (data.gdal && !data.tiles && data.zoom == null) data.zoom = 8;
