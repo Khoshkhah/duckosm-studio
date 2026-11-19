@@ -423,7 +423,8 @@ pub fn quack_join(parts: Array, sort: bool, spill: Array, out: web_sys::FileSyst
 /// `[z, x, y]` owns, from its own file `tile` (a file of [`quack_cut`]), through `out` (an open file in OPFS) for
 /// [`quack_gdal_join`]. The temporary files are in `spill`. Gives `{points, lines, multilinestrings, multipolygons,
 /// other_relations}` (the members of the relations of the last two, one for each member). `fixes`: the JSON of
-/// [`quack_fixes`].
+/// [`quack_fixes`]. `geofabrik`: the 20 layers of Geofabrik's free files (`duckosm quack --geofabrik`) in place of GDAL's;
+/// the counts then have the names of the tables (`gis_osm_roads_free`, ...).
 #[wasm_bindgen]
 pub fn quack_gdal_tile(
     tile: Blob,
@@ -433,7 +434,9 @@ pub fn quack_gdal_tile(
     out: web_sys::FileSystemSyncAccessHandle,
     spill: Array,
     fixes: Option<String>,
+    geofabrik: Option<bool>,
 ) -> Result<Object, JsError> {
+    let mode = layer_mode(geofabrik);
     let fixes = fixes_of_json(fixes)?;
     let pool = std::rc::Rc::new(OpfsPool { free: std::cell::RefCell::new(spill.iter().map(|h| h.unchecked_into()).collect()) });
     duckosm_core::spill::set_temp_store(Some(std::rc::Rc::new(move || {
@@ -444,20 +447,31 @@ pub fn quack_gdal_tile(
     let failed = std::sync::Arc::new(std::sync::Mutex::new(None));
     let file = BufWriter::with_capacity(1 << 20, OpfsOut { f: OpfsFile { h: out, at: 0.0 }, failed: failed.clone() });
     let open = || -> Result<_, String> { Ok(io::BufReader::with_capacity(1 << 20, BlobRead::new(tile.clone())?)) };
-    let res = duckosm_build::quack_gdal::quack_gdal_tile_to(open, duckosm_core::tiles::Tile { z, x, y }, file, fixes.as_ref());
+    let res = duckosm_build::quack_gdal::quack_gdal_tile_to(open, duckosm_core::tiles::Tile { z, x, y }, mode, file, fixes.as_ref());
     duckosm_core::spill::set_temp_store(None);
     if let Some(e) = failed.lock().expect("one thread").take() {
         return Err(JsError::new(&e));
     }
-    layer_counts(&res.map_err(|e| JsError::new(&e))?)
+    layer_counts(mode, &res.map_err(|e| JsError::new(&e))?)
 }
 
 /// quack --gdal, step 4: the join of the files of [`quack_gdal_tile`] (`parts`) into one GeoParquet file for each of
 /// GDAL's five layers (`outs`, open files in OPFS, in the order points, lines, multilinestrings, multipolygons,
 /// other_relations; empty: no GeoParquet) and/or the GeoPackage `gpkg` (an open file in OPFS), as `duckosm quack --gdal`.
-/// The members of the relations wait in the temporary files of `spill`. Gives the rows of each layer.
+/// The members of the relations wait in the temporary files of `spill`. Gives the rows of each layer. `geofabrik`: the 20
+/// layers of Geofabrik's free files (`outs`: one file for each, in the order of the tables), and `shp` (an open file in
+/// OPFS) the zip file of their shapefiles, as `duckosm quack --geofabrik`.
 #[wasm_bindgen]
-pub fn quack_gdal_join(parts: Array, spill: Array, outs: Array, gpkg: Option<web_sys::FileSystemSyncAccessHandle>) -> Result<Object, JsError> {
+pub fn quack_gdal_join(
+    parts: Array,
+    spill: Array,
+    outs: Array,
+    gpkg: Option<web_sys::FileSystemSyncAccessHandle>,
+    shp: Option<web_sys::FileSystemSyncAccessHandle>,
+    geofabrik: Option<bool>,
+) -> Result<Object, JsError> {
+    let mode = layer_mode(geofabrik);
+    let layers = duckosm_build::quack_gdal::schema(mode).layers as usize;
     let pool = std::rc::Rc::new(OpfsPool { free: std::cell::RefCell::new(spill.iter().map(|h| h.unchecked_into()).collect()) });
     duckosm_core::spill::set_temp_store(Some(std::rc::Rc::new(move || {
         Box::new(OpfsStore(pool.clone())) as Box<dyn duckosm_core::spill::Store>
@@ -469,12 +483,13 @@ pub fn quack_gdal_join(parts: Array, spill: Array, outs: Array, gpkg: Option<web
         .iter()
         .map(|h| BufWriter::with_capacity(1 << 20, OpfsOut { f: OpfsFile { h: h.unchecked_into(), at: 0.0 }, failed: failed.clone() }))
         .collect();
-    if !files.is_empty() && files.len() != 5 {
-        return Err(JsError::new("quack_gdal_join: one open file for each of the five layers"));
+    if !files.is_empty() && files.len() != layers {
+        return Err(JsError::new(&format!("quack_gdal_join: one open file for each of the {layers} layers")));
     }
-    if files.is_empty() && gpkg.is_none() {
-        return Err(JsError::new("quack_gdal_join: no output (GeoParquet or GeoPackage)"));
+    if files.is_empty() && gpkg.is_none() && shp.is_none() {
+        return Err(JsError::new("quack_gdal_join: no output (GeoParquet, GeoPackage or shapefiles)"));
     }
+    let shp = shp.map(|h| BufWriter::with_capacity(1 << 20, OpfsOut { f: OpfsFile { h, at: 0.0 }, failed: failed.clone() }));
     let readers = parts
         .iter()
         .enumerate()
@@ -487,21 +502,31 @@ pub fn quack_gdal_join(parts: Array, spill: Array, outs: Array, gpkg: Option<web
     if let Some(h) = gpkg.clone() {
         gpkg_vfs::open_next(h).map_err(|e| JsError::new(&e))?;
     }
-    let res = duckosm_build::quack_gdal::quack_gdal_join_to(readers, gpkg.is_some().then_some(path), (!files.is_empty()).then_some(files));
+    let res = duckosm_build::quack_gdal::quack_gdal_join_to(readers, mode, gpkg.is_some().then_some(path), (!files.is_empty()).then_some(files), shp);
     #[cfg(target_arch = "wasm32")]
     gpkg_vfs::close();
     duckosm_core::spill::set_temp_store(None);
     if let Some(e) = failed.lock().expect("one thread").take() {
         return Err(JsError::new(&e));
     }
-    layer_counts(&res.map_err(|e| JsError::new(&e))?)
+    layer_counts(mode, &res.map_err(|e| JsError::new(&e))?)
 }
 
-/// The rows of each of GDAL's layers as an object.
-fn layer_counts(n: &[usize; 6]) -> Result<Object, JsError> {
+fn layer_mode(geofabrik: Option<bool>) -> duckosm_build::quack_gdal::Mode {
+    if geofabrik == Some(true) {
+        duckosm_build::quack_gdal::Mode::Geofabrik
+    } else {
+        duckosm_build::quack_gdal::Mode::Gdal
+    }
+}
+
+/// The rows of each layer as an object, by the name of the layer (GDAL: `points`, ...; Geofabrik: `gis_osm_roads_free`, ...).
+fn layer_counts(mode: duckosm_build::quack_gdal::Mode, n: &[usize]) -> Result<Object, JsError> {
+    let s = duckosm_build::quack_gdal::schema(mode);
     let o = Object::new();
-    for (i, k) in ["points", "lines", "multilinestrings", "multipolygons", "other_relations"].iter().enumerate() {
-        Reflect::set(&o, &(*k).into(), &(n[i + 1] as f64).into()).map_err(|_| JsError::new(k))?;
+    for l in 1..=s.layers {
+        let k = (s.table)(l);
+        Reflect::set(&o, &k.into(), &(n[l as usize] as f64).into()).map_err(|_| JsError::new(k))?;
     }
     Ok(o)
 }

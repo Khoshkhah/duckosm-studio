@@ -3,11 +3,21 @@
 // wait for each other. A worker of a large tile has the module with threads and a pool of its own.
 // In: {dir: the folder of the run in OPFS, i: the number of the tile, tile: [z, x, y], module: the compiled module
 // (one thread), threads: the threads of this worker (the first message sets them), sort: a part sorted for the merge
-// of the join, gdal: GDAL's layers in place of the table, fixes: the OSM fixes as JSON (quack_fixes), or undefined}. The worker reads tile-<i>.pbf
+// of the join, gdal: GDAL's layers in place of the table, geofabrik: Geofabrik's layers in place of GDAL's (with gdal),
+// fixes: the OSM fixes as JSON (quack_fixes), or undefined}. The worker reads tile-<i>.pbf
 // and writes part-<i>.parquet (gdal: part-<i>.rows): the rows that the tile owns. Out: {i, nodes, ways, relations, ms,
 // mib: the memory of this worker} (gdal: also {layers: the rows of each layer}) or {i, error}.
 
 let pkg = null, wasm = null, spill = null;
+
+// nodes, ways and relations for the steps of the page, from the rows of the layers: GDAL's points, lines and polygons, or
+// Geofabrik's point, line and area (_a) layers
+function layerSums(n) {
+  if ("points" in n) return { nodes: n.points, ways: n.lines + n.multipolygons, relations: n.multilinestrings + n.other_relations };
+  const sum = (f) => Object.entries(n).filter(([k]) => f(k)).reduce((a, [, v]) => a + v, 0);
+  const line = (k) => /_(roads|railways|waterways)_free$/.test(k);
+  return { nodes: sum((k) => !line(k) && !k.endsWith("_a_free")), ways: sum(line), relations: sum((k) => k.endsWith("_a_free")) };
+}
 // the temporary files of a tile (the buckets of the nodes and of the points: about 100 each for France), as in one run
 const SPILL = 192;
 
@@ -37,8 +47,8 @@ onmessage = async ({ data }) => {
       let r;
       if (data.gdal) {
         // GDAL's layers: the counts of the layers, and nodes, ways and relations for the steps of the page
-        const n = pkg.quack_gdal_tile(file, data.tile[0], data.tile[1], data.tile[2], out, spill, data.fixes);
-        r = { layers: n, nodes: n.points, ways: n.lines + n.multipolygons, relations: n.multilinestrings + n.other_relations };
+        const n = pkg.quack_gdal_tile(file, data.tile[0], data.tile[1], data.tile[2], out, spill, data.fixes, !!data.geofabrik);
+        r = { layers: n, ...layerSums(n) };
       } else {
         r = pkg.quack_tile(file, data.tile[0], data.tile[1], data.tile[2], out, spill, data.sort, data.fixes);
       }
