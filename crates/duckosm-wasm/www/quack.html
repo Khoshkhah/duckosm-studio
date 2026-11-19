@@ -175,7 +175,7 @@
       <option value="file">A fixes file (.yaml)</option>
     </select><input id="fixes-file" type="file" accept=".yaml,.yml" hidden aria-label="Fixes file"></div>
   </div>
-  <label class="check"><input id="tiles" type="checkbox"> Tile by tile</label>
+  <label class="check"><input id="tiles" type="checkbox" checked> Tile by tile</label>
   <label class="check"><input id="sort" type="checkbox" checked> Sort the rows by place, as QuackOSM</label>
   <div class="grid">
     <div data-tiles><label for="zoom">Tile size</label><select id="zoom"></select></div>
@@ -245,7 +245,7 @@
   const fmt = (n) => n.toLocaleString("en-US");
   const mb = (b) => `${(b / 2 ** 20).toFixed(1)} MB`;
   const LIMIT = 4096;   // MiB: the most memory of WebAssembly (32 bit)
-  const LARGE = 150 * 2 ** 20;   // a file larger than this is made tile by tile
+  const LARGE = 150 * 2 ** 20;   // a file larger than this gets no sort
 
   // ---- light or dark: the choice of the person (the same key as Studio), else the setting of the system
   $("theme").onclick = () => {
@@ -267,7 +267,7 @@
       ["Output", "QuackOSM table: one table of the OSM features (feature_id, tags, geometry), as QuackOSM gives it. GDAL layers: the five layers of GDAL's OSM driver (points, lines, multilinestrings, multipolygons, other_relations), as ogr2ogr and QGIS give them with GDAL's default osmconf.ini: The GDAL layers are always made tile by tile, in the order of the file (no sort)."],
       ["OSM fixes", "The rules of Edit OSM data in Studio (a duckOSM fixes file, as duckosm quack --fixes). The rows get the same edits as the network: the removed ways, the changed tags, the new ways, and the rules oneway, lanes and layer as OSM tags. A rule with no OSM tag (closed to a mode, a turn) is not used. The page selects the fixes of your newest saved area that has fixes. A fixes file: select it on this computer."],
       ["Format", "GDAL layers only. GeoParquet: one file for each layer. GeoPackage: one .gpkg file with the five layers and their spatial indexes (R-trees). Both: the GeoParquet files and the GeoPackage, from one run. The page writes the GeoPackage directly into the browser storage, not into the memory."],
-      ["Tile by tile", "The file is cut into tiles, and each tile gives its rows. The memory then follows the size of a tile, not of the file. Use it for a file larger than about 150 MB: the browser has at most 4 GiB of memory. The rows are the same."],
+      ["Tile by tile", "The file is cut into tiles, and each tile gives its rows. The memory then follows the size of a tile, not of the file. On by default, for every file. It is necessary for a file larger than about 150 MB: the browser has at most 4 GiB of memory. The rows are the same."],
       ["Tile size", "Map tiles of one zoom (zoom 8 is the default, the tile zoom of all parts of duckOSM), or tiles of at most 4 million nodes. With a zoom, a dense city gives a large tile."],
       ["Sort the rows by place, as QuackOSM", "The same rows, in the order of QuackOSM: rows that are near on the map are near in the file, so a query of one area reads less of the file. Without the sort, the file is the same table in another order. Tile by tile, each tile worker sorts its own rows, and the last step merges the sorted parts and shows its progress. In one piece, the sort is the last step and shows no progress. Off by default for a large file."],
       ["Threads", "In one run: the threads of the run. Tile by tile: the threads of the cut."],
@@ -303,15 +303,18 @@
   // ---- the input: a Geofabrik region (its file kept in the storage of the site, app/regions.js) or a local file
   let file = null, region = null, regionFile = null;
   const source = () => document.querySelector("input[name=src]:checked").value;
-  // the input of the run; a large file is made tile by tile
+  // the input of the run: always tile by tile at first; a large file gets no sort
   function setInput() {
     const f = source() === "file" ? $("file").files[0] ?? null : regionFile;
-    // a large file: tile by tile, and no sort (the sort of a country takes minutes)
-    if (f && f !== file) $("tiles").checked = !($("sort").checked = f.size <= LARGE);
+    // tile by tile for every file (Kaveh, 2026-11-18); no sort for a large file (the sort of a country takes minutes)
+    if (f && f !== file) {
+      $("tiles").checked = true;
+      $("sort").checked = f.size <= LARGE;
+    }
     if (f && gdalOut()) showOutput();
     file = f;
     $("input-text").textContent = !file ? "" : `Input: ${file.name}, ${mb(file.size)}` +
-      (source() === "region" ? " (in the storage of this site)" : "") + (file.size > LARGE ? ". A large file: tile by tile, no sort." : "");
+      (source() === "region" ? " (in the storage of this site)" : "") + (file.size > LARGE ? ". A large file: no sort." : "");
     showTiles();
     $("run").disabled = !file || !!worker;
   }

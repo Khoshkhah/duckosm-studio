@@ -43,6 +43,8 @@ All versions are on the GitHub Releases page of `Khoshkhah/duckosm-rust`. There 
 
 ### Changed
 
+- **`quack.html`: Tile by tile is on by default** (Kaveh, 2026-11-18), for every file, not only for a file larger than 150 MB.
+  The sort stays on for a small file and off for a large file.
 - **The .osm.pbf button cuts the region file when it is clicked** (step 0, `cutOnly` of `build_worker.js`): the build by tiles does not
   need the cut file.
 - **The tables of `visualization.*` follow the size rule of the other tables** (a large file is a view): France's `edge_levels` in memory
